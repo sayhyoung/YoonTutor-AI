@@ -6,20 +6,27 @@ from modules.log_manager import get_all_logs
 
 st.set_page_config(page_title="교사용 대시보드", page_icon="👩‍🏫", layout="wide")
 
-st.title("👩‍🏫 윤선생 AI 학습 관리자")
-
-password = st.sidebar.text_input("관리자 비밀번호", type="password")
-if password != "1234":
-    st.warning("비밀번호를 입력하세요.")
+# ✅ [수정] 이중 로그인 방지 (세션 상태 확인)
+if "user_role" not in st.session_state or st.session_state["user_role"] != "teacher":
+    st.warning("관리자 로그인이 필요합니다. 메인 화면에서 로그인해주세요.")
+    st.switch_page("main.py")
     st.stop()
 
-if st.sidebar.button("새로고침 🔄"):
-    st.rerun()
+st.title("👩‍🏫 윤선생 AI 학습 관리자")
+
+# 로그아웃 버튼 (선택 사항)
+with st.sidebar:
+    st.write(f"로그인 상태: 선생님 모드")
+    if st.button("새로고침 🔄"):
+        st.rerun()
+    if st.button("로그아웃 🚪"):
+        st.session_state["user_role"] = None
+        st.switch_page("main.py")
 
 df = get_all_logs()
 
 if df.empty:
-    st.info("데이터가 없습니다.")
+    st.info("아직 학습 데이터가 없습니다.")
 else:
     # 1. 상단 지표
     col1, col2, col3 = st.columns(3)
@@ -27,7 +34,7 @@ else:
     col2.metric("전체 평균 점수", f"{int(df['score'].mean())}점")
     col3.metric("최근 학습자", df.iloc[0]['name'])
 
-    # 2. 성취도 추이 (그래프 축 고정 수정)
+    # 2. 성취도 추이 (그래프)
     st.markdown("---")
     st.subheader("📈 최근 성취도 추이 (개인별)")
     
@@ -37,9 +44,7 @@ else:
     fig = px.line(chart_df, x="timestamp", y="score", color="name", markers=True,
                   title="학생별 성취도 변화", labels={"timestamp": "학습 일시", "score": "점수", "name": "학생 이름"})
     
-    # [핵심 수정] Y축을 0~105로 고정 (100점이 잘 보이도록 약간 여유)
     fig.update_yaxes(range=[0, 105])
-    
     st.plotly_chart(fig, use_container_width=True)
 
     # 3. 상세 분석
@@ -61,7 +66,9 @@ else:
                         elif val == 'Perfect': return 'color: green; font-weight: bold'
                         return ''
                     
+                    # 보여줄 컬럼 선택 (source_sheet 유무에 따라)
                     cols_to_show = ['source_sheet', 'question', 'status'] if 'source_sheet' in detail_df.columns else ['question', 'status']
+                    
                     st.dataframe(detail_df[cols_to_show].style.map(highlight_status, subset=['status']), use_container_width=True)
                 else:
                     st.write("상세 문항 데이터 없음")
