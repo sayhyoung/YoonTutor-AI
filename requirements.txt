@@ -1,0 +1,9 @@
+streamlit
+pandas
+langchain
+langchain-openai
+langchain-core
+python-dotenv
+gspread
+oauth2client
+plotly
