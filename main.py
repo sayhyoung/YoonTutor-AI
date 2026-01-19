@@ -5,19 +5,42 @@ st.set_page_config(page_title="윤선생 AI 튜터", page_icon="🎓", layout="w
 
 st.markdown("""
     <style>
-        /* 1. 오른쪽 상단 햄버거 메뉴(점 3개) 숨기기 */
-        #MainMenu {visibility: hidden;}
+        /* 1. 상단 헤더 전체 숨기기 (햄버거 메뉴, 깃허브 아이콘 등) */
+        header {
+            visibility: hidden !important;
+            height: 0px !important;
+        }
         
-        /* 2. 하단 'Made with Streamlit' 푸터 숨기기 */
-        footer {visibility: hidden;}
+        /* 2. 툴바 및 깃허브 링크 버튼 숨기기 */
+        [data-testid="stToolbar"] {
+            visibility: hidden !important;
+            display: none !important;
+        }
         
-        /* 3. 상단 헤더 줄 숨기기 (선택사항 - 깔끔하게 하려면 추천) */
-        header {visibility: hidden;}
+        /* 3. 혹시라도 남아있는 깃허브 링크(a 태그) 강제 숨김 */
+        a[href^="https://github.com"] {
+            display: none !important;
+        }
+
+        /* 4. 하단 푸터 숨기기 */
+        footer {
+            visibility: hidden !important;
+            display: none !important;
+        }
         
-        /* 4. Streamlit Cloud의 'Manage app' 버튼 숨기기 */
-        .stDeployButton {display:none;}
+        /* 5. 콘텐츠 영역을 위로 바짝 당기기 (헤더가 사라진 빈 공간 제거) */
+        .block-container {
+            padding-top: 0rem !important; 
+        }
+        
+        /* 6. 배포 버튼 숨기기 */
+        .stDeployButton {
+            display: none !important;
+        }
     </style>
 """, unsafe_allow_html=True)
+
+
 # 구글 시트 주소 (여기에 하나만 정의해두면 편합니다)
 SHEET_URL = "https://docs.google.com/spreadsheets/d/18CTkxyG79jZRzniWxM1Xde8TngSi-eAUqOBF98Aash0/edit"
 
