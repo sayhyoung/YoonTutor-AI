@@ -3,6 +3,21 @@ from modules.db_manager import get_student_name
 
 st.set_page_config(page_title="윤선생 AI 튜터", page_icon="🎓", layout="wide")
 
+st.markdown("""
+    <style>
+        /* 1. 오른쪽 상단 햄버거 메뉴(점 3개) 숨기기 */
+        #MainMenu {visibility: hidden;}
+        
+        /* 2. 하단 'Made with Streamlit' 푸터 숨기기 */
+        footer {visibility: hidden;}
+        
+        /* 3. 상단 헤더 줄 숨기기 (선택사항 - 깔끔하게 하려면 추천) */
+        header {visibility: hidden;}
+        
+        /* 4. Streamlit Cloud의 'Manage app' 버튼 숨기기 */
+        .stDeployButton {display:none;}
+    </style>
+""", unsafe_allow_html=True)
 # 구글 시트 주소 (여기에 하나만 정의해두면 편합니다)
 SHEET_URL = "https://docs.google.com/spreadsheets/d/18CTkxyG79jZRzniWxM1Xde8TngSi-eAUqOBF98Aash0/edit"
 

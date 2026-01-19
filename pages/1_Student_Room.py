@@ -6,6 +6,23 @@ from modules.log_manager import save_learning_log
 from langchain_core.messages import HumanMessage, AIMessage
 
 st.set_page_config(page_title="학생용 학습방", page_icon="✏️")
+
+st.markdown("""
+    <style>
+        /* 1. 오른쪽 상단 햄버거 메뉴(점 3개) 숨기기 */
+        #MainMenu {visibility: hidden;}
+        
+        /* 2. 하단 'Made with Streamlit' 푸터 숨기기 */
+        footer {visibility: hidden;}
+        
+        /* 3. 상단 헤더 줄 숨기기 (선택사항 - 깔끔하게 하려면 추천) */
+        header {visibility: hidden;}
+        
+        /* 4. Streamlit Cloud의 'Manage app' 버튼 숨기기 */
+        .stDeployButton {display:none;}
+    </style>
+""", unsafe_allow_html=True)
+
 SHEET_URL = "https://docs.google.com/spreadsheets/d/18CTkxyG79jZRzniWxM1Xde8TngSi-eAUqOBF98Aash0/edit"
 
 if "user_role" not in st.session_state or st.session_state["user_role"] != "student":

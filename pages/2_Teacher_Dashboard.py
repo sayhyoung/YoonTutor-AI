@@ -5,6 +5,21 @@ import plotly.express as px
 from modules.log_manager import get_all_logs
 
 st.set_page_config(page_title="교사용 대시보드", page_icon="👩‍🏫", layout="wide")
+st.markdown("""
+    <style>
+        /* 1. 오른쪽 상단 햄버거 메뉴(점 3개) 숨기기 */
+        #MainMenu {visibility: hidden;}
+        
+        /* 2. 하단 'Made with Streamlit' 푸터 숨기기 */
+        footer {visibility: hidden;}
+        
+        /* 3. 상단 헤더 줄 숨기기 (선택사항 - 깔끔하게 하려면 추천) */
+        header {visibility: hidden;}
+        
+        /* 4. Streamlit Cloud의 'Manage app' 버튼 숨기기 */
+        .stDeployButton {display:none;}
+    </style>
+""", unsafe_allow_html=True)
 
 # ✅ [수정] 이중 로그인 방지 (세션 상태 확인)
 if "user_role" not in st.session_state or st.session_state["user_role"] != "teacher":
