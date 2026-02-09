@@ -3,6 +3,9 @@ import os
 from datetime import datetime
 import json
 
+from datetime import datetime
+import pytz  # 👈 한국 시간 계산을 위해 꼭 필요!
+
 LOG_FILE = "study_logs.csv"
 
 def save_learning_log(member_id, student_name, total_questions, result_details):
@@ -10,7 +13,9 @@ def save_learning_log(member_id, student_name, total_questions, result_details):
     학습 결과를 저장합니다.
     result_details: [{'question': 'dad', 'status': 'Perfect', 'type': '단어'}, ...]
     """
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 🇰🇷 한국 표준시(KST)로 변경
+    kst = pytz.timezone('Asia/Seoul')
+    now = datetime.now(kst).strftime("%Y-%m-%d %H:%M:%S")
     
     # 1. 점수 계산 (Failed = 50점으로 수정)
     total_score = 0
