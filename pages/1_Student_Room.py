@@ -180,13 +180,13 @@ if st.session_state.chat_started:
                         st.session_state.is_finished = True
                         # save_learning_log 함수 호출 시 인자 개수 주의 (코드에 맞게 수정 필요)
                         try:
-                            save_learning_log(str(member_id), user_name, total_q, len(st.session_state.learning_results), 0, st.session_state.learning_results)
+                            save_learning_log(str(user_id), user_name, total_q, len(st.session_state.learning_results), 0, st.session_state.learning_results)
                         except:
                             # 인자 개수가 다를 경우 대비 (구버전 호환)
-                            save_learning_log(str(member_id), user_name, total_q, st.session_state.learning_results)
+                            save_learning_log(str(user_id), user_name, total_q, st.session_state.learning_results)
                             
                         st.balloons()
-                        
+
                     clean_text = ai_reply.replace("[PERFECT]", "").replace("[GOOD]", "").replace("[FAILED]", "").replace("[DONE]", "")
                     st.write(clean_text)
                     st.session_state.messages.append(AIMessage(content=ai_reply))
