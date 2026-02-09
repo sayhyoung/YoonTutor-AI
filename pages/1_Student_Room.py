@@ -60,6 +60,10 @@ if "chat_started" not in st.session_state: st.session_state.chat_started = False
 if "is_finished" not in st.session_state: st.session_state.is_finished = False
 if "learning_results" not in st.session_state: st.session_state.learning_results = [] 
 if "current_q_index" not in st.session_state: st.session_state.current_q_index = 0
+if "attempt_count" not in st.session_state: st.session_state.attempt_count = 0  # 👈 [추가] 시도 횟수 0으로 초기화
+
+
+
 
 with st.sidebar:
     if st.button("처음부터 다시 하기 🔄"):
@@ -108,15 +112,16 @@ if st.session_state.chat_started:
     if not st.session_state.is_finished:
         if user_input := st.chat_input("정답 입력..."):
             st.session_state.messages.append(HumanMessage(content=user_input))
+            st.session_state.attempt_count += 1  # 👈 [추가] 입력할 때마다 시도 횟수 증가
             st.rerun()
 
     if st.session_state.messages and isinstance(st.session_state.messages[-1], HumanMessage) and not st.session_state.is_finished:
         with chat_container:
              with st.chat_message("assistant", avatar="🦉"):
-                with st.spinner("채점 중..."):
+               with st.spinner("채점 중..."):
                     ai_reply = get_ai_response(st.session_state.messages)
                     
-                    # [핵심 수정] 현재 문제 내용 가져오기 로직 강화
+                    # 1. 현재 문제 정보 가져오기 (기존 코드 유지)
                     curr_content = "내용 없음"
                     curr_type = "기타"
                     
@@ -124,23 +129,44 @@ if st.session_state.chat_started:
                         row = st.session_state.wrong_df.iloc[st.session_state.current_q_index]
                         curr_type = row.get('source_sheet', '기타')
                         
-                        # 시트 타입에 따라 우선순위 컬럼 지정
-                        if curr_type == '단어':
-                            curr_content = row.get('단어', '')
-                        elif curr_type == '문장':
-                            curr_content = row.get('문장', '')
-                        elif curr_type == '평가':
-                            curr_content = row.get('문제 내용', '')
+                        if curr_type == '단어': curr_content = row.get('단어', '')
+                        elif curr_type == '문장': curr_content = row.get('문장', '')
+                        elif curr_type == '평가': curr_content = row.get('문제 내용', '')
                         
-                        # 만약 비어있다면 다른 컬럼에서라도 찾기 (안전장치)
                         if not curr_content:
                             curr_content = row.get('단어') or row.get('문장') or row.get('문제 내용') or "확인 필요"
 
+                    # 2. [핵심 수정] 시도 횟수 기반 채점 로직
                     status = None
-                    if "[PERFECT]" in ai_reply: status = "Perfect"; st.toast("완벽해! (100점) 💯", icon="🎉")
-                    elif "[GOOD]" in ai_reply: status = "Good"; st.toast("잘했어! (75점) 👍", icon="✅")
-                    elif "[FAILED]" in ai_reply: status = "Not mastered"; st.toast("아쉽지만 다음엔 맞힐거야 (50점)", icon="💪")
+                    is_correct = False
                     
+                    # 정답인지 오답인지 태그로 판단
+                    if "[PERFECT]" in ai_reply or "[GOOD]" in ai_reply:
+                        is_correct = True
+                    
+                    # 정답을 맞췄거나, 3번 틀려서 FAILED(정답공개)가 떴을 때 상태 결정
+                    if is_correct or "[FAILED]" in ai_reply:
+                        attempts = st.session_state.attempt_count
+                        
+                        if is_correct:
+                            # 1번 만에 맞춤 -> Perfect
+                            if attempts == 1: 
+                                status = "Perfect"
+                                st.toast(f"완벽해! 한 번에 맞췄어! (100점) 💯", icon="🎉")
+                            # 2~3번 만에 맞춤 -> Good
+                            elif 2 <= attempts <= 3: 
+                                status = "Good"
+                                st.toast(f"{attempts}번 만에 성공! 잘했어 (75점) 👍", icon="✅")
+                            # 4번 이상 -> Not mastered
+                            else: 
+                                status = "Not mastered"
+                                st.toast(f"맞췄지만 여러 번 시도했어. 복습하자! (50점)", icon="⚠️")
+                        else:
+                            # 틀려서 정답이 공개된 경우 -> Not mastered
+                            status = "Not mastered"
+                            st.toast("아쉽지만 다음엔 맞힐거야 (50점)", icon="💪")
+                    
+                    # 3. 결과 저장 및 다음 문제로 넘기기
                     if status:
                         st.session_state.learning_results.append({
                             "question": curr_content,
@@ -148,12 +174,19 @@ if st.session_state.chat_started:
                             "source_sheet": curr_type
                         })
                         st.session_state.current_q_index += 1
+                        st.session_state.attempt_count = 0  # 👈 [중요] 다음 문제를 위해 카운트 리셋
 
                     if "[DONE]" in ai_reply:
                         st.session_state.is_finished = True
-                        save_learning_log(user_id, user_name, total_q, st.session_state.learning_results)
+                        # save_learning_log 함수 호출 시 인자 개수 주의 (코드에 맞게 수정 필요)
+                        try:
+                            save_learning_log(str(member_id), user_name, total_q, len(st.session_state.learning_results), 0, st.session_state.learning_results)
+                        except:
+                            # 인자 개수가 다를 경우 대비 (구버전 호환)
+                            save_learning_log(str(member_id), user_name, total_q, st.session_state.learning_results)
+                            
                         st.balloons()
-                    
+                        
                     clean_text = ai_reply.replace("[PERFECT]", "").replace("[GOOD]", "").replace("[FAILED]", "").replace("[DONE]", "")
                     st.write(clean_text)
                     st.session_state.messages.append(AIMessage(content=ai_reply))

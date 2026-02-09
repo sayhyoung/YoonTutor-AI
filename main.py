@@ -82,7 +82,7 @@ with tab2:
     st.subheader("선생님은 비밀번호를 입력해주세요.")
     col_t1, col_t2 = st.columns([3, 1])
     with col_t1:
-        teacher_pw = st.text_input("관리자 비밀번호", type="password", key="teacher_pw_input")
+        teacher_pw = st.text_input("관리자 비밀번호(1234)", type="password", key="teacher_pw_input")
     with col_t2:
         st.write("")
         st.write("")
