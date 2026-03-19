@@ -21,34 +21,55 @@ def get_common_css():
             padding-bottom: 2rem !important;
         }
 
-        /* ── 사이드바 ── */
+        /* ── 사이드바 배경 ── */
         [data-testid="stSidebar"] {
             background: linear-gradient(180deg, #0F172A 0%, #1E293B 100%) !important;
         }
+        /* Streamlit 기본 페이지 네비게이션 숨기기 */
+        [data-testid="stSidebarNav"],
+        [data-testid="stSidebarNavItems"],
+        section[data-testid="stSidebarNav"] {
+            display: none !important;
+        }
+        /* 사이드바 모든 텍스트 밝게 (셀렉터 폭넓게) */
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] span,
+        [data-testid="stSidebar"] div,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] small,
         [data-testid="stSidebar"] .stMarkdown p,
-        [data-testid="stSidebar"] .stMarkdown span,
-        [data-testid="stSidebar"] label {
+        [data-testid="stSidebar"] .stMarkdown span {
             color: #CBD5E1 !important;
         }
-        [data-testid="stSidebarContent"] .stButton button {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.07) !important;
+        /* 사이드바 버튼 — 폭넓은 셀렉터로 Cloud 호환 */
+        [data-testid="stSidebar"] button,
+        [data-testid="stSidebar"] .stButton > button,
+        [data-testid="stSidebarContent"] button {
+            width: 100% !important;
+            background: rgba(255, 255, 255, 0.08) !important;
             color: #E2E8F0 !important;
-            border: 1px solid rgba(255, 255, 255, 0.12) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
             border-radius: 10px !important;
             font-size: 0.875rem !important;
             padding: 0.5rem 0.75rem !important;
             transition: all 0.2s ease !important;
-            margin-bottom: 4px;
+            margin-bottom: 4px !important;
         }
-        [data-testid="stSidebarContent"] .stButton button:hover {
-            background: rgba(67, 97, 238, 0.35) !important;
+        [data-testid="stSidebar"] button:hover,
+        [data-testid="stSidebar"] .stButton > button:hover,
+        [data-testid="stSidebarContent"] button:hover {
+            background: rgba(67, 97, 238, 0.4) !important;
             border-color: #4361EE !important;
             color: white !important;
         }
-        /* 사이드바 토글 */
-        [data-testid="stSidebar"] [data-testid="stToggle"] label {
+        /* 사이드바 토글 텍스트 */
+        [data-testid="stSidebar"] [data-testid="stToggle"] label,
+        [data-testid="stSidebar"] [data-testid="stToggle"] p {
             color: #CBD5E1 !important;
+        }
+        /* 사이드바 구분선 */
+        [data-testid="stSidebar"] hr {
+            border-color: rgba(255,255,255,0.1) !important;
         }
 
         /* ── 진행 바 ── */
