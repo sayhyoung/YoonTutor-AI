@@ -21,8 +21,16 @@ st.markdown("""
         max-width: 480px !important;
         padding-top: 3rem !important;
     }
-    /* 사이드바 햄버거 버튼 숨기기 */
+    /* 사이드바 햄버거 버튼 숨기기 (로그인 페이지는 사이드바 불필요) */
     [data-testid="collapsedControl"] { display: none !important; }
+    /* 모바일에서도 헤더 숨김 (로그인 페이지는 사이드바 없음) */
+    @media (max-width: 768px) {
+        header { visibility: hidden !important; height: 0px !important; }
+        .block-container {
+            max-width: 100% !important;
+            padding: 1.5rem 1rem 1rem 1rem !important;
+        }
+    }
     /* form 테두리 제거 */
     [data-testid="stForm"] {
         border: none !important;

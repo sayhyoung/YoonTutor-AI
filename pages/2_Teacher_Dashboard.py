@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="관리자 대시보드",
     page_icon="👩‍🏫",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 st.markdown(get_common_css(), unsafe_allow_html=True)
 

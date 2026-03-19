@@ -1,13 +1,39 @@
 def get_common_css():
     return """
     <style>
-        /* ── Streamlit 기본 UI 요소 숨기기 ── */
+        /* ── Streamlit 기본 UI 요소 숨기기 (데스크탑) ── */
         header { visibility: hidden !important; height: 0px !important; }
         [data-testid="stToolbar"] { visibility: hidden !important; display: none !important; }
         a[href^="https://github.com"] { display: none !important; }
         footer { visibility: hidden !important; display: none !important; }
         .stDeployButton { display: none !important; }
         [data-testid="stDecoration"] { display: none !important; }
+
+        /* ── 모바일: 햄버거 버튼(사이드바 열기) 복원 ── */
+        @media (max-width: 768px) {
+            header {
+                visibility: visible !important;
+                height: auto !important;
+                background: #0F172A !important;
+            }
+            /* 헤더 안에서 불필요한 버튼만 숨김 */
+            [data-testid="stToolbar"] { display: none !important; }
+            .stDeployButton { display: none !important; }
+            /* 햄버거 버튼(사이드바 토글) 색상 */
+            [data-testid="collapsedControl"] svg,
+            button[data-testid="baseButton-headerNoPadding"] svg {
+                fill: white !important;
+            }
+            /* 메인 컨텐츠 패딩 축소 */
+            .block-container {
+                padding-left: 0.75rem !important;
+                padding-right: 0.75rem !important;
+                padding-top: 0.5rem !important;
+            }
+            /* 메트릭 카드 폰트 축소 */
+            [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+            [data-testid="stMetricLabel"] { font-size: 0.75rem !important; }
+        }
 
         /* ── 전역 스타일 ── */
         .stApp {
@@ -118,20 +144,25 @@ def get_common_css():
             box-shadow: 0 6px 16px rgba(67, 97, 238, 0.4) !important;
         }
 
-        /* ── 탭 ── */
+        /* ── 탭 (등폭·중앙정렬 적용) ── */
         .stTabs [data-baseweb="tab-list"] {
+            display: flex !important;
+            width: 100% !important;
             background: #EEF2FF;
             padding: 4px;
             border-radius: 12px;
             gap: 4px;
         }
         .stTabs [data-baseweb="tab"] {
+            flex: 1 !important;
+            text-align: center !important;
+            justify-content: center !important;
             border-radius: 8px !important;
             font-weight: 600 !important;
             color: #64748B !important;
             border: none !important;
             background: transparent !important;
-            padding: 8px 20px !important;
+            padding: 8px 12px !important;
         }
         .stTabs [aria-selected="true"] {
             background: white !important;
