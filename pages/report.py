@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="나의 학습 리포트",
     page_icon="📊",
     layout="centered",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 st.markdown(get_common_css(), unsafe_allow_html=True)
 

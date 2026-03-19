@@ -1,13 +1,21 @@
 def get_common_css():
     return """
     <style>
-        /* ── Streamlit 기본 UI 요소 숨기기 (데스크탑) ── */
+        /* ── Streamlit 기본 UI 요소 숨기기 ── */
         header { visibility: hidden !important; height: 0px !important; }
         [data-testid="stToolbar"] { visibility: hidden !important; display: none !important; }
+        [data-testid="stToolbarActions"] { display: none !important; }
         a[href^="https://github.com"] { display: none !important; }
         footer { visibility: hidden !important; display: none !important; }
         .stDeployButton { display: none !important; }
         [data-testid="stDecoration"] { display: none !important; }
+        /* 우측 하단 GitHub·Streamlit 아이콘 숨기기 */
+        #MainMenu { display: none !important; }
+        [data-testid="stActionButton"] { display: none !important; }
+        [data-testid="stStatusWidget"] { display: none !important; }
+        [class*="StatusWidget"] { display: none !important; }
+        [class*="ActionButton"] { display: none !important; }
+        .stApp [data-testid="stBottom"] { display: none !important; }
 
         /* ── 모바일: 햄버거 버튼(사이드바 열기) 복원 ── */
         @media (max-width: 768px) {
