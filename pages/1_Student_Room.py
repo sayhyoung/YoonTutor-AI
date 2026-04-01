@@ -334,13 +334,6 @@ if st.session_state.chat_started:
                 st.session_state.attempt_count += 1
                 st.rerun()
 
-        # 텍스트 채팅 입력
-        user_input = st.chat_input("답을 입력하거나 모르는 게 있으면 질문해봐...")
-        if user_input:
-            st.session_state.messages.append(HumanMessage(content=user_input))
-            st.session_state.attempt_count += 1
-            st.rerun()
-
         # ── AI 응답 처리 ──
         if (
             st.session_state.messages
@@ -414,3 +407,15 @@ if st.session_state.chat_started:
                         st.write(clean_text)
                         st.session_state.messages.append(AIMessage(content=ai_reply))
                         st.rerun()
+
+# ── 텍스트 입력창 (최상위 레벨 — Streamlit Cloud에서 항상 렌더링) ──────────────
+_chat_active = (
+    st.session_state.get("chat_started", False)
+    and not st.session_state.get("is_finished", False)
+)
+_placeholder = "답을 입력하거나 모르는 게 있으면 질문해봐..." if _chat_active else "학습을 시작하면 입력할 수 있어요"
+user_input = st.chat_input(_placeholder, disabled=not _chat_active)
+if user_input and _chat_active:
+    st.session_state.messages.append(HumanMessage(content=user_input))
+    st.session_state.attempt_count += 1
+    st.rerun()
