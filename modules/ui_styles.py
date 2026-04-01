@@ -15,7 +15,7 @@ def get_common_css():
         [data-testid="stStatusWidget"] { display: none !important; }
         [class*="StatusWidget"] { display: none !important; }
         [class*="ActionButton"] { display: none !important; }
-        .stApp [data-testid="stBottom"] { display: none !important; }
+        /* stBottom은 chat_input을 포함하므로 숨기지 않음 */
 
         /* ── 모바일: 햄버거 버튼(사이드바 열기) 복원 ── */
         @media (max-width: 768px) {
