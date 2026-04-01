@@ -30,15 +30,15 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(
-        '<div style="font-size:0.72rem; color:#64748B; font-weight:700; '
-        'letter-spacing:0.06em; margin-bottom:6px;">메뉴</div>',
+        '<div style="font-size:0.65rem; color:#475569; font-weight:700; '
+        'letter-spacing:0.06em; text-transform:uppercase; margin-bottom:8px;">메뉴</div>',
         unsafe_allow_html=True,
     )
 
-    if st.button("🎯 학습 코칭룸으로", type="primary", use_container_width=True):
+    if st.button("AI 코칭룸으로", type="primary", use_container_width=True):
         st.switch_page("pages/1_Student_Room.py")
 
-    if st.button("🏠 홈으로 (로그아웃)", use_container_width=True):
+    if st.button("로그아웃", use_container_width=True):
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.switch_page("main.py")
@@ -46,11 +46,20 @@ with st.sidebar:
 # ── 메인 헤더 ──────────────────────────────
 st.markdown(
     f"""
-    <div style="padding:0.5rem 0 1rem 0; border-bottom:2px solid #E8EDFF; margin-bottom:1rem;">
-        <h2 style="margin:0; color:#0F172A; font-weight:800;">📊 나의 학습 리포트</h2>
-        <p style="color:#64748B; margin:0.25rem 0 0 0; font-size:0.9rem;">
-            <b>{user_name}</b> 학생의 누적 학습 성취 분석
-        </p>
+    <div style="padding:0.25rem 0 1.25rem 0; border-bottom:1px solid rgba(99,120,221,0.13);
+                margin-bottom:1.25rem; display:flex; align-items:center; gap:12px;">
+        <div style="width:40px; height:40px; background:linear-gradient(135deg,#10B981,#34D399);
+                    border-radius:12px; display:flex; align-items:center; justify-content:center;
+                    font-size:1.1rem; flex-shrink:0; box-shadow:0 4px 12px rgba(16,185,129,0.3);">
+            📊
+        </div>
+        <div>
+            <h2 style="margin:0; color:#0F172A; font-weight:800; font-size:1.3rem;
+                       letter-spacing:-0.02em; line-height:1.2;">학습 리포트</h2>
+            <p style="color:#64748B; margin:2px 0 0 0; font-size:0.83rem; font-weight:500;">
+                {user_name} 학생의 누적 학습 성취 분석
+            </p>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,

@@ -56,15 +56,22 @@ with st.sidebar:
         pct = int(done_q_sb / total_q_sb * 100) if total_q_sb > 0 else 0
         st.markdown(
             f"""
-            <div style="background:rgba(255,255,255,0.05); border-radius:10px; padding:0.7rem 0.9rem;
-                        margin-bottom:0.8rem; border:1px solid rgba(255,255,255,0.08);">
-                <div style="font-size:0.68rem; color:#64748B; margin-bottom:4px;">오늘의 학습 진행률</div>
-                <div style="font-size:1.3rem; color:#7DD3FC; font-weight:800;">{done_q_sb} / {total_q_sb} 문제</div>
-                <div style="background:rgba(255,255,255,0.1); border-radius:99px; height:6px; margin-top:6px;">
-                    <div style="background:linear-gradient(90deg,#4361EE,#4CC9F0); border-radius:99px;
-                                height:6px; width:{pct}%;"></div>
+            <div style="background:rgba(255,255,255,0.04); border-radius:12px;
+                        padding:0.75rem 1rem; margin-bottom:0.8rem;
+                        border:1px solid rgba(255,255,255,0.07);">
+                <div style="font-size:0.65rem; color:#475569; margin-bottom:6px;
+                            font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">
+                    오늘의 진행률
                 </div>
-                <div style="font-size:0.7rem; color:#94A3B8; margin-top:4px;">{pct}% 완료</div>
+                <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;">
+                    <span style="font-size:1.25rem; color:#60A5FA; font-weight:800;
+                                 letter-spacing:-0.02em;">{done_q_sb}<span style="font-size:0.85rem; font-weight:600; color:#334155;">/{total_q_sb}</span></span>
+                    <span style="font-size:0.75rem; color:#60A5FA; font-weight:700;">{pct}%</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.08); border-radius:99px; height:5px; overflow:hidden;">
+                    <div style="background:linear-gradient(90deg,#4361EE,#4CC9F0); border-radius:99px;
+                                height:5px; width:{pct}%; transition:width 0.4s ease;"></div>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -78,15 +85,15 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown(
-        '<div style="font-size:0.72rem; color:#64748B; font-weight:700; '
-        'letter-spacing:0.06em; margin-bottom:6px;">메뉴</div>',
+        '<div style="font-size:0.65rem; color:#475569; font-weight:700; '
+        'letter-spacing:0.06em; text-transform:uppercase; margin-bottom:8px;">메뉴</div>',
         unsafe_allow_html=True,
     )
 
-    if st.button("📈 나의 학습 리포트", use_container_width=True):
+    if st.button("학습 리포트", use_container_width=True):
         st.switch_page("pages/report.py")
 
-    if st.button("🔄 처음부터 다시 시작", use_container_width=True):
+    if st.button("처음부터 다시 시작", use_container_width=True):
         for k in [
             "messages", "chat_started", "is_finished", "learning_results",
             "current_q_index", "ai_report_comment", "wrong_df",
@@ -96,7 +103,7 @@ with st.sidebar:
                 del st.session_state[k]
         st.rerun()
 
-    if st.button("🏠 홈으로 (로그아웃)", use_container_width=True):
+    if st.button("로그아웃", use_container_width=True):
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.switch_page("main.py")
@@ -104,11 +111,20 @@ with st.sidebar:
 # ── 메인 헤더 ──────────────────────────────
 st.markdown(
     f"""
-    <div style="padding:0.5rem 0 1rem 0; border-bottom:2px solid #E8EDFF; margin-bottom:1rem;">
-        <h2 style="margin:0; color:#0F172A; font-weight:800;">🎯 AI 코칭룸</h2>
-        <p style="color:#64748B; margin:0.25rem 0 0 0; font-size:0.9rem;">
-            <b>{user_name}</b> 학생의 맞춤형 영어 학습 세션
-        </p>
+    <div style="padding:0.25rem 0 1.25rem 0; border-bottom:1px solid rgba(99,120,221,0.13);
+                margin-bottom:1.25rem; display:flex; align-items:center; gap:12px;">
+        <div style="width:40px; height:40px; background:linear-gradient(135deg,#4361EE,#4CC9F0);
+                    border-radius:12px; display:flex; align-items:center; justify-content:center;
+                    font-size:1.1rem; flex-shrink:0; box-shadow:0 4px 12px rgba(67,97,238,0.3);">
+            🎯
+        </div>
+        <div>
+            <h2 style="margin:0; color:#0F172A; font-weight:800; font-size:1.3rem;
+                       letter-spacing:-0.02em; line-height:1.2;">AI 코칭룸</h2>
+            <p style="color:#64748B; margin:2px 0 0 0; font-size:0.83rem; font-weight:500;">
+                {user_name} 학생의 맞춤형 영어 학습
+            </p>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -209,10 +225,17 @@ if st.session_state.chat_started:
 
         st.markdown(
             """
-            <div style="text-align:center; padding:1.5rem 0 1rem 0;">
-                <div style="font-size:3rem; line-height:1;">🏆</div>
-                <h2 style="color:#0F172A; margin:0.4rem 0 0.2rem 0;">학습 완료!</h2>
-                <p style="color:#64748B; font-size:0.9rem;">오늘의 학습 결과를 확인해봐</p>
+            <div style="text-align:center; padding:1.5rem 0 1.25rem 0;">
+                <div style="width:64px; height:64px; margin:0 auto 0.9rem auto;
+                            background:linear-gradient(135deg,#F59E0B,#FBBF24);
+                            border-radius:18px; display:flex; align-items:center;
+                            justify-content:center; font-size:1.8rem;
+                            box-shadow:0 8px 24px rgba(245,158,11,0.30);">🏆</div>
+                <h2 style="color:#0F172A; margin:0 0 0.3rem 0; font-weight:800;
+                           font-size:1.4rem; letter-spacing:-0.02em;">학습 완료!</h2>
+                <p style="color:#64748B; font-size:0.85rem; margin:0; font-weight:500;">
+                    오늘의 학습 결과를 확인해 보세요
+                </p>
             </div>
             """,
             unsafe_allow_html=True,
