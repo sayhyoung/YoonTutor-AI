@@ -1,9 +1,22 @@
 # 가상환경 폴더 무시 (가장 중요)
 venv/
 .venv/
+node_modules/
+web/node_modules/
+web/.next/
+web/out/
+web/.npm-cache/
+web/.firebase-config/
+web/chrome-*/
+web/dev-server.*.log
+web/prototype-*.png
+*.tsbuildinfo
 
 # 보안 파일 무시 (절대 올리면 안 됨)
 .env
+.env.*
+!.env.example
+!web/.env.local.example
 config/secrets.json
 secrets.toml
 .streamlit/secrets.toml

@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isTeacher() {
+      return signedIn() && request.auth.token.role == 'teacher';
+    }
+
+    function ownsStudent(studentId) {
+      return signedIn() && request.auth.token.studentId == studentId;
+    }
+
+    function ownsSession(sessionId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/quizSessions/$(sessionId)).data.uid == request.auth.uid;
+    }
+
+    function ownsSessionAfter(sessionId) {
+      return signedIn()
+        && getAfter(/databases/$(database)/documents/quizSessions/$(sessionId)).data.uid == request.auth.uid;
+    }
+
+    match /users/{uid} {
+      allow create: if signedIn() && request.auth.uid == uid;
+      allow read, update: if signedIn() && (request.auth.uid == uid || isTeacher());
+      allow delete: if false;
+    }
+
+    match /students/{studentId} {
+      // Pilot self-claim: a signed-in user may seed/own the student doc whose
+      // `uid` matches their auth uid (anonymous auth has no studentId claim).
+      // Tighten to ownsStudent()/isTeacher() once teacher custom claims ship.
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || ownsStudent(studentId) || isTeacher());
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn() && (resource.data.uid == request.auth.uid || isTeacher());
+      allow delete: if isTeacher();
+    }
+
+    match /teachers/{teacherId} {
+      allow read, write: if isTeacher();
+    }
+
+    match /learningItems/{itemId} {
+      allow read: if signedIn();
+      allow write: if isTeacher();
+    }
+
+    match /quizSessions/{sessionId} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow read, update: if signedIn() && (resource.data.uid == request.auth.uid || isTeacher());
+      allow delete: if isTeacher();
+
+      match /attempts/{attemptId} {
+        allow create: if signedIn()
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.sessionId == sessionId
+          && (ownsSession(sessionId) || ownsSessionAfter(sessionId));
+        allow read: if ownsSession(sessionId) || isTeacher();
+        allow update, delete: if isTeacher();
+      }
+    }
+
+    match /reports/{reportId} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isTeacher());
+      allow write: if isTeacher();
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "yoon-ai-tutor-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "firebase": "set XDG_CONFIG_HOME=.firebase-config&& firebase",
+    "firebase:login": "set XDG_CONFIG_HOME=.firebase-config&& firebase login",
+    "firebase:emulators": "set XDG_CONFIG_HOME=.firebase-config&& firebase emulators:start --only auth,firestore",
+    "firebase:deploy:firestore": "set XDG_CONFIG_HOME=.firebase-config&& firebase deploy --only firestore",
+    "firebase:deploy:hosting-config": "set XDG_CONFIG_HOME=.firebase-config&& firebase deploy --only firestore"
+  },
+  "dependencies": {
+    "firebase": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "firebase-tools": "latest",
+    "typescript": "latest"
+  }
+}

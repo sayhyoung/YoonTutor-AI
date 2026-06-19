@@ -1,0 +1,18 @@
+# Firebase App Hosting backend settings.
+# Use minInstances > 0 for pilot/production to reduce cold starts.
+runConfig:
+  minInstances: 1
+  maxInstances: 20
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 1024
+
+env:
+  - variable: OPENAI_MODEL
+    value: gpt-5.2
+  - variable: USE_MOCK_AI
+    value: "true"
+  - variable: OPENAI_API_KEY
+    secret: OPENAI_API_KEY
+  - variable: LEARNING_API_KEY
+    secret: LEARNING_API_KEY
