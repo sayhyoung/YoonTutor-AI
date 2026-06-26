@@ -12,6 +12,10 @@ env:
     value: gpt-5.2
   - variable: USE_MOCK_AI
     value: "true"
+  # study-api는 사내망 전용이라 클라우드 배포 환경에서는 호출 불가.
+  # API가 외부에 공개되기 전까지는 mock 유지(LEARNING_API_BASE_URL 비움).
+  - variable: NEXT_PUBLIC_LEARNING_SOURCE
+    value: mock
   - variable: OPENAI_API_KEY
     secret: OPENAI_API_KEY
   - variable: LEARNING_API_KEY

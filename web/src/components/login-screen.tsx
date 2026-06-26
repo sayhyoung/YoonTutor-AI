@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { demoStudent } from "@/lib/mock-data";
+import { getLearningSource } from "@/lib/learning/provider";
 import type { StudentLogin } from "@/lib/auth/use-app-user";
 
 type LoginScreenProps = {
@@ -12,10 +13,19 @@ type LoginScreenProps = {
 
 type Tab = "student" | "teacher";
 
-// Pilot only ships one demo student. Real member lookup arrives with the
-// external learning API (CLAUDE_NEXT_STEPS.md Priority 8).
-function resolvePilotStudent(memberId: string): StudentLogin | null {
-  if (memberId.trim() === demoStudent.memberId) {
+// 회원번호(=study-api customerNo)로 학생을 식별한다.
+// external 모드: 입력한 회원번호를 그대로 customerNo로 사용(로그인 API 미확정이라
+//   현재 학습조회 API는 인증 없이 회원번호만으로 조회 가능).
+// mock 모드: 데모 회원번호(1111)만 허용.
+function resolveStudent(memberId: string): StudentLogin | null {
+  const id = memberId.trim();
+  if (!id) return null;
+
+  if (getLearningSource() === "external-api") {
+    return { studentId: id, memberId: id, displayName: `회원 ${id}` };
+  }
+
+  if (id === demoStudent.memberId) {
     return {
       studentId: demoStudent.id,
       memberId: demoStudent.memberId,
@@ -34,9 +44,13 @@ export function LoginScreen({ onLoginStudent, onLoginTeacher }: LoginScreenProps
 
   async function submitStudent() {
     if (isSubmitting) return;
-    const student = resolvePilotStudent(memberId);
+    const student = resolveStudent(memberId);
     if (!student) {
-      setError(`회원번호를 확인해줘. (파일럿 데모 번호: ${demoStudent.memberId})`);
+      setError(
+        getLearningSource() === "external-api"
+          ? "회원번호를 입력해줘."
+          : `회원번호를 확인해줘. (파일럿 데모 번호: ${demoStudent.memberId})`,
+      );
       return;
     }
     setError("");
