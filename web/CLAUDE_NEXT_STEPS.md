@@ -26,7 +26,7 @@ This file is intended to be handed to Claude Code CLI as the next implementation
 - Do not delete the original Streamlit POC yet.
 - Keep Firebase Auth/Firestore initialization lazy and build-safe.
 - Keep local fallback behavior so the prototype remains usable if Firebase is unavailable.
-- Prefer small, verifiable steps. After each step run `npm.cmd run typecheck`, `npm.cmd run lint`, and where relevant `npm.cmd run build`.
+- Prefer small, verifiable steps. After each step run `npm run typecheck`, `npm run lint`, and where relevant `npm run build`.
 
 ## Priority 1 - Deploy And Verify Firestore Rules/Indexes
 
@@ -36,9 +36,9 @@ Tasks:
 
 1. Deploy Firestore rules and indexes.
 
-```powershell
-cd D:\AI_sandbox\YoonAI_Tutor\web
-npm.cmd run firebase:deploy:firestore
+```bash
+cd web
+npm run firebase:deploy:firestore
 ```
 
 2. Wait until the composite index is ready if Firebase reports index creation in progress.
@@ -356,7 +356,7 @@ Suggested tests:
 
 Acceptance criteria:
 
-- `npm.cmd run test` exists.
+- `npm run test` exists.
 - Core scoring edge cases are covered.
 - Smoke test can run locally against dev server.
 
@@ -364,16 +364,16 @@ Acceptance criteria:
 
 Start with Priority 1 and Priority 2:
 
-1. Run `npm.cmd run firebase:deploy:firestore`.
+1. Run `npm run firebase:deploy:firestore`.
 2. Verify Firestore session save/read manually or with a small local smoke script.
 3. Create the `web/src/lib/learning/` provider layer.
 4. Refactor `TutorPrototype` so it does not import `demoLearningItems` directly.
 5. Run:
 
-```powershell
-npm.cmd run typecheck
-npm.cmd run lint
-npm.cmd run build
+```bash
+npm run typecheck
+npm run lint
+npm run build
 ```
 
 Then report:

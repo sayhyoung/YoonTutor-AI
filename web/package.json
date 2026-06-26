@@ -8,11 +8,11 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "firebase": "set XDG_CONFIG_HOME=.firebase-config&& firebase",
-    "firebase:login": "set XDG_CONFIG_HOME=.firebase-config&& firebase login",
-    "firebase:emulators": "set XDG_CONFIG_HOME=.firebase-config&& firebase emulators:start --only auth,firestore",
-    "firebase:deploy:firestore": "set XDG_CONFIG_HOME=.firebase-config&& firebase deploy --only firestore",
-    "firebase:deploy:hosting-config": "set XDG_CONFIG_HOME=.firebase-config&& firebase deploy --only firestore"
+    "firebase": "cross-env XDG_CONFIG_HOME=.firebase-config firebase",
+    "firebase:login": "cross-env XDG_CONFIG_HOME=.firebase-config firebase login",
+    "firebase:emulators": "cross-env XDG_CONFIG_HOME=.firebase-config firebase emulators:start --only auth,firestore",
+    "firebase:deploy:firestore": "cross-env XDG_CONFIG_HOME=.firebase-config firebase deploy --only firestore",
+    "firebase:deploy:hosting-config": "cross-env XDG_CONFIG_HOME=.firebase-config firebase deploy --only firestore"
   },
   "dependencies": {
     "firebase": "latest",
@@ -28,6 +28,7 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "cross-env": "latest",
     "eslint": "latest",
     "eslint-config-next": "latest",
     "firebase-tools": "latest",

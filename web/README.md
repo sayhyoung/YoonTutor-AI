@@ -12,11 +12,11 @@ Firebase-centered Next.js prototype for the AI review coach.
 
 ## Local setup
 
-```powershell
-cd D:\AI_sandbox\YoonAI_Tutor\web
-Copy-Item .env.local.example .env.local
-npm.cmd install
-npm.cmd run dev
+```bash
+cd web
+cp .env.local.example .env.local
+npm install
+npm run dev
 ```
 
 The app runs with mock learning data and deterministic quiz feedback when `USE_MOCK_AI=true` or `OPENAI_API_KEY` is not set.
@@ -30,9 +30,9 @@ The app runs with mock learning data and deterministic quiz feedback when `USE_M
 5. Copy `.firebaserc.example` to `.firebaserc` and replace `your-firebase-project-id`.
 6. Deploy Firestore rules and indexes:
 
-```powershell
-npm.cmd run firebase:login
-npm.cmd run firebase:deploy:firestore
+```bash
+npm run firebase:login
+npm run firebase:deploy:firestore
 ```
 
 7. Create a Firebase App Hosting backend and connect this `web` folder.
