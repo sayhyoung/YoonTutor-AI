@@ -4,28 +4,20 @@ import { useState } from "react";
 
 import { demoStudent } from "@/lib/mock-data";
 import { getLearningSource } from "@/lib/learning/provider";
-import type { StudentLogin } from "@/lib/auth/use-app-user";
+import type { StudentLogin, StudyCredentials } from "@/lib/auth/use-app-user";
 
 type LoginScreenProps = {
   onLoginStudent: (login: StudentLogin) => Promise<void> | void;
+  onLoginStudentCredentials: (credentials: StudyCredentials) => Promise<void> | void;
   onLoginTeacher: (displayName: string) => Promise<void> | void;
 };
 
 type Tab = "student" | "teacher";
 
-// 회원번호(=study-api customerNo)로 학생을 식별한다.
-// external 모드: 입력한 회원번호를 그대로 customerNo로 사용(로그인 API 미확정이라
-//   현재 학습조회 API는 인증 없이 회원번호만으로 조회 가능).
-// mock 모드: 데모 회원번호(1111)만 허용.
-function resolveStudent(memberId: string): StudentLogin | null {
+// mock 모드 데모 회원번호(1111) → 데모 학생.
+function resolveDemoStudent(memberId: string): StudentLogin | null {
   const id = memberId.trim();
-  if (!id) return null;
-
-  if (getLearningSource() === "external-api") {
-    return { studentId: id, memberId: id, displayName: `회원 ${id}` };
-  }
-
-  if (id === demoStudent.memberId) {
+  if (id && id === demoStudent.memberId) {
     return {
       studentId: demoStudent.id,
       memberId: demoStudent.memberId,
@@ -35,22 +27,45 @@ function resolveStudent(memberId: string): StudentLogin | null {
   return null;
 }
 
-export function LoginScreen({ onLoginStudent, onLoginTeacher }: LoginScreenProps) {
+export function LoginScreen({
+  onLoginStudent,
+  onLoginStudentCredentials,
+  onLoginTeacher,
+}: LoginScreenProps) {
+  // external 모드(study-api 실연동): 아이디/비밀번호로 JWT 로그인.
+  // mock 모드(데모): 회원번호 1111만 허용.
+  const isExternal = getLearningSource() === "external-api";
   const [tab, setTab] = useState<Tab>("student");
   const [memberId, setMemberId] = useState("");
+  const [userId, setUserId] = useState("");
+  const [password, setPassword] = useState("");
   const [teacherName, setTeacherName] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function submitStudent() {
     if (isSubmitting) return;
-    const student = resolveStudent(memberId);
+
+    if (isExternal) {
+      if (!userId.trim() || !password) {
+        setError("아이디와 비밀번호를 입력해줘.");
+        return;
+      }
+      setError("");
+      setIsSubmitting(true);
+      try {
+        await onLoginStudentCredentials({ userId: userId.trim(), password });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "로그인에 실패했어.");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    const student = resolveDemoStudent(memberId);
     if (!student) {
-      setError(
-        getLearningSource() === "external-api"
-          ? "회원번호를 입력해줘."
-          : `회원번호를 확인해줘. (파일럿 데모 번호: ${demoStudent.memberId})`,
-      );
+      setError(`회원번호를 확인해줘. (파일럿 데모 번호: ${demoStudent.memberId})`);
       return;
     }
     setError("");
@@ -107,19 +122,48 @@ export function LoginScreen({ onLoginStudent, onLoginTeacher }: LoginScreenProps
 
         {tab === "student" ? (
           <div className="auth-body">
-            <label className="auth-field">
-              <span>회원번호</span>
-              <input
-                value={memberId}
-                onChange={(event) => setMemberId(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") submitStudent();
-                }}
-                placeholder="예: 1111"
-                inputMode="numeric"
-                autoFocus
-              />
-            </label>
+            {isExternal ? (
+              <>
+                <label className="auth-field">
+                  <span>아이디</span>
+                  <input
+                    value={userId}
+                    onChange={(event) => setUserId(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") submitStudent();
+                    }}
+                    placeholder="베플리 아이디"
+                    autoFocus
+                  />
+                </label>
+                <label className="auth-field">
+                  <span>비밀번호</span>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") submitStudent();
+                    }}
+                    placeholder="비밀번호"
+                  />
+                </label>
+              </>
+            ) : (
+              <label className="auth-field">
+                <span>회원번호</span>
+                <input
+                  value={memberId}
+                  onChange={(event) => setMemberId(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") submitStudent();
+                  }}
+                  placeholder="예: 1111"
+                  inputMode="numeric"
+                  autoFocus
+                />
+              </label>
+            )}
             <button
               className="button primary auth-submit"
               onClick={submitStudent}

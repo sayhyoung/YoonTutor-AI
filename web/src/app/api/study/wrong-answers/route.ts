@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { StudyApiError, isStudyApiConfigured, studyFetch } from "@/lib/study-api/client";
+import { StudyApiError, isStudyApiConfigured } from "@/lib/study-api/client";
 import { mapStudyResultsToLearningItems } from "@/lib/study-api/mapping";
+import { authedStudyFetch } from "@/lib/study-api/server-fetch";
 import type { StudyQueryData } from "@/lib/study-api/types";
 import type { LearningItem } from "@/lib/types";
 
@@ -35,16 +36,25 @@ export async function GET(request: Request) {
   }
 
   // 조회 기간 결정: 쿼리 > 환경변수 > 기본(최근 LOOKBACK일).
+  // 빈 문자열 env(예: STUDY_API_DEMO_DATE=)는 "없음"으로 취급한다(?? 통과 방지).
+  const firstNonEmpty = (...vals: (string | null | undefined)[]) =>
+    vals.find((v) => v != null && v.trim() !== "")?.trim();
   const lookbackDays = Number(process.env.STUDY_API_LOOKBACK_DAYS ?? "90") || 90;
   const today = toIsoDate(new Date());
   let endDate =
-    sp.get("to") ?? sp.get("studyEndDate") ?? process.env.STUDY_API_DEMO_END ?? process.env.STUDY_API_DEMO_DATE ?? today;
+    firstNonEmpty(
+      sp.get("to"),
+      sp.get("studyEndDate"),
+      process.env.STUDY_API_DEMO_END,
+      process.env.STUDY_API_DEMO_DATE,
+    ) ?? today;
   let startDate =
-    sp.get("from") ??
-    sp.get("studyStartDate") ??
-    process.env.STUDY_API_DEMO_START ??
-    process.env.STUDY_API_DEMO_DATE ??
-    shiftDays(endDate, -lookbackDays);
+    firstNonEmpty(
+      sp.get("from"),
+      sp.get("studyStartDate"),
+      process.env.STUDY_API_DEMO_START,
+      process.env.STUDY_API_DEMO_DATE,
+    ) ?? shiftDays(endDate, -lookbackDays);
 
   // 시작>종료면 교정, 1년 초과면 시작일을 당겨 클램프.
   if (startDate > endDate) [startDate, endDate] = [endDate, startDate];
@@ -52,25 +62,27 @@ export async function GET(request: Request) {
     startDate = shiftDays(endDate, -MAX_RANGE_DAYS);
   }
 
-  const accessToken = process.env.STUDY_API_ACCESS_TOKEN || undefined;
   const query = `studyStartDate=${encodeURIComponent(startDate)}&studyEndDate=${encodeURIComponent(
     endDate,
   )}&customerNo=${encodeURIComponent(customerNo)}`;
 
-  // smart-befly(단어/문장)와 4skill-befly(평가 등) 기간조회를 함께 호출하고 오답만 합친다.
-  const [sb, fourSkill] = await Promise.allSettled([
-    studyFetch<StudyQueryData>(`/api/study/results/smart-befly/range?${query}`, { accessToken }),
-    studyFetch<StudyQueryData>(`/api/study/results/4skill-befly/range?${query}`, { accessToken }),
-  ]);
+  // smart-befly(단어/문장)와 4skill-befly(평가 등) 기간조회를 호출하고 오답만 합친다.
+  // 인증 토큰은 쿠키에서 읽고, 401이면 refresh 후 재시도(authedStudyFetch).
+  // rotation 경합을 피하려 순차 호출(둘째 호출은 갱신된 토큰을 사용).
+  const endpoints = [
+    `/api/study/results/smart-befly/range?${query}`,
+    `/api/study/results/4skill-befly/range?${query}`,
+  ];
 
   const items: LearningItem[] = [];
   let lastError: unknown = null;
 
-  for (const result of [sb, fourSkill]) {
-    if (result.status === "fulfilled" && result.value) {
-      items.push(...mapStudyResultsToLearningItems(result.value, customerNo));
-    } else if (result.status === "rejected") {
-      lastError = result.reason;
+  for (const path of endpoints) {
+    try {
+      const data = await authedStudyFetch<StudyQueryData>(path);
+      if (data) items.push(...mapStudyResultsToLearningItems(data, customerNo));
+    } catch (error) {
+      lastError = error;
     }
   }
 
