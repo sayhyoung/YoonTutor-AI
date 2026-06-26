@@ -16,7 +16,10 @@ env:
   # API가 외부에 공개되기 전까지는 mock 유지(LEARNING_API_BASE_URL 비움).
   - variable: NEXT_PUBLIC_LEARNING_SOURCE
     value: mock
-  - variable: OPENAI_API_KEY
-    secret: OPENAI_API_KEY
-  - variable: LEARNING_API_KEY
-    secret: LEARNING_API_KEY
+  # mock 파일럿 배포에는 아래 Secret이 필요 없음(USE_MOCK_AI=true).
+  # OpenAI 실연동 시 Secret Manager에 생성 후 주석 해제:
+  #   firebase apphosting:secrets:set OPENAI_API_KEY
+  # - variable: OPENAI_API_KEY
+  #   secret: OPENAI_API_KEY
+  # - variable: LEARNING_API_KEY
+  #   secret: LEARNING_API_KEY
