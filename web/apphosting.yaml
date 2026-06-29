@@ -12,8 +12,10 @@ env:
     value: gpt-5.2
   - variable: USE_MOCK_AI
     value: "true"
-  # study-api는 사내망 전용이라 클라우드 배포 환경에서는 호출 불가.
-  # API가 외부에 공개되기 전까지는 mock 유지(LEARNING_API_BASE_URL 비움).
+  # study-api 외부 연동용 HTTPS 프록시(https://test-study-api.yoons.or.kr)가 열려
+  # 배포(클라우드) 환경에서도 호출 가능. 실데이터 검증 후 external 전환:
+  #   NEXT_PUBLIC_LEARNING_SOURCE=external-api
+  #   LEARNING_API_BASE_URL=https://test-study-api.yoons.or.kr
   - variable: NEXT_PUBLIC_LEARNING_SOURCE
     value: mock
   # mock 파일럿 배포에는 아래 Secret이 필요 없음(USE_MOCK_AI=true).
