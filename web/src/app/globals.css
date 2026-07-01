@@ -1033,3 +1033,110 @@ button {
   gap: 6px;
   padding: 48px 16px;
 }
+
+/* ===================== Phase 2: 모바일 폰 UI ===================== */
+@keyframes koko-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+
+.phone-shell {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #F3EEFB 0%, #EAF1FE 100%);
+  display: flex;
+  justify-content: center;
+}
+.phone {
+  width: 100%;
+  max-width: 448px;
+  min-height: 100vh;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+@media (min-width: 500px) {
+  .phone-shell { align-items: flex-start; padding: 28px 0; }
+  .phone { min-height: calc(100vh - 56px); border-radius: 34px; box-shadow: 0 30px 60px -22px rgba(90,60,160,.3); border: 1px solid rgba(0,0,0,.05); }
+}
+
+.phone-top { padding: 20px 20px 6px; }
+.phone-body { flex: 1; overflow-y: auto; padding: 8px 18px 20px; }
+.phone-body.home { padding: 20px 18px 22px; }
+
+/* 하단 탭 네비 */
+.bottom-nav {
+  flex: none;
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  padding: 9px 8px 22px;
+}
+.bottom-nav button {
+  flex: 1; border: none; background: none; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  font-size: 0.68rem; font-weight: 700; color: #B6AEB2;
+}
+.bottom-nav button.active { color: var(--primary); }
+.bottom-nav .nav-ico { font-size: 1.2rem; line-height: 1; }
+
+/* 채팅 헤더/진행 */
+.chat-head {
+  flex: none; display: flex; align-items: center; gap: 12px;
+  padding: 16px 16px 10px; background: var(--surface);
+  box-shadow: 0 2px 12px -8px rgba(90,60,160,.2); z-index: 2;
+}
+.chat-back {
+  flex: none; width: 36px; height: 36px; border-radius: 12px; border: none;
+  background: var(--surface-muted); color: #6a5b7a; font-size: 1.4rem; line-height: 1; cursor: pointer;
+}
+.chat-head-title { flex: 1; }
+.chat-head-name { font-family: var(--font-head); font-size: 1.05rem; font-weight: 700; }
+.chat-head-sub { font-size: 0.72rem; color: var(--ink-subtle); margin-top: 2px; }
+.chat-restart { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink-soft); border-radius: 999px; padding: 7px 13px; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.chat-progress { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px 12px; background: var(--surface); }
+.chat-progress .progress-track { flex: 1; }
+.chat-progress span { font-size: 0.78rem; font-weight: 800; color: var(--primary); }
+
+.chat-feed { background: #F7F4FB; }
+.msg-row { display: flex; gap: 8px; align-items: flex-end; max-width: 90%; }
+.msg-avatar {
+  flex: none; width: 38px; height: 38px; border-radius: 50%; background: #fff;
+  box-shadow: 0 3px 8px -4px rgba(90,60,160,.3); display: grid; place-items: center; padding: 4px;
+}
+
+/* 홈 */
+.home-greet { display: flex; justify-content: space-between; align-items: flex-start; }
+.home-date { font-size: 0.82rem; color: var(--ink-subtle); font-weight: 600; }
+.home-hello { font-family: var(--font-head); font-size: 1.55rem; font-weight: 800; letter-spacing: -0.02em; margin: 4px 0 0; }
+.home-avatar { flex: none; width: 46px; height: 46px; border-radius: 50%; background: #fff; border: 2px solid #DCD2FF; display: grid; place-items: center; font-weight: 700; color: var(--primary); box-shadow: 0 4px 10px -3px rgba(90,60,160,.25); font-size: 0.85rem; }
+.stat-row { display: flex; gap: 9px; margin-top: 16px; }
+.stat-card { flex: 1; display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 11px 13px; box-shadow: 0 4px 12px -8px rgba(90,60,160,.18); }
+.stat-ico { flex: none; width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; font-size: 1rem; }
+.stat-num { font-size: 1rem; font-weight: 800; line-height: 1; }
+.stat-cap { font-size: 0.68rem; color: var(--ink-subtle); margin-top: 2px; }
+.koko-stage { margin-top: 16px; background: linear-gradient(135deg, #EAE3FF 0%, #F4E9FB 100%); border-radius: 26px; padding: 18px; display: flex; align-items: center; gap: 14px; }
+.koko-bubble { display: inline-block; background: #fff; border-radius: 16px 16px 16px 4px; padding: 11px 14px; box-shadow: 0 4px 10px -5px rgba(90,60,160,.2); font-size: 0.9rem; font-weight: 600; color: #3a2a44; line-height: 1.45; }
+.koko-name { font-size: 0.72rem; font-weight: 800; color: var(--primary); margin-top: 8px; margin-left: 4px; }
+.today-card { margin-top: 16px; background: #fff; border: 1px solid var(--line); border-radius: 24px; padding: 18px; box-shadow: var(--shadow); }
+.today-badge { font-size: 0.72rem; font-weight: 700; color: #0054D1; background: #EAF2FE; border-radius: 999px; padding: 4px 10px; }
+.dot-warn { width: 8px; height: 8px; border-radius: 50%; background: #FFB020; }
+
+/* 영역별 배지 색 */
+.item-badge.cat-word { background: var(--cat-word-bg); color: var(--cat-word); }
+.item-badge.cat-sentence { background: var(--cat-sentence-bg); color: var(--cat-sentence); }
+.item-badge.cat-assessment { background: var(--cat-assess-bg); color: var(--cat-assess); }
+
+/* 완료 화면 */
+.completion { padding: 22px 18px; text-align: center; }
+.completion-head { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.completion-badge { font-size: 3rem; animation: pop-in 500ms ease both; }
+@keyframes pop-in { 0%{transform:scale(0) rotate(-18deg);opacity:0} 70%{transform:scale(1.16) rotate(8deg)} 100%{transform:scale(1) rotate(-4deg);opacity:1} }
+.completion .metric-grid { margin-top: 18px; }
+.completion-table { margin-top: 18px; text-align: left; }
+.coach-comment { margin-top: 16px; text-align: left; background: linear-gradient(135deg, #EAE3FF, #F4E9FB); border-radius: 16px 16px 16px 4px; padding: 16px; }
+.coach-comment-title { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 800; color: var(--primary); margin-bottom: 6px; }
+.coach-comment p { margin: 0; line-height: 1.55; color: #3a2a44; font-size: 0.92rem; }
+.completion-actions { display: flex; gap: 10px; margin-top: 18px; }
+.completion-actions .button { flex: 1; }
+
+/* 빈 축하 화면 */
+.empty-celebration { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 20px; }

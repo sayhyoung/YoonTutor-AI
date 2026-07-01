@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 
+import { Koko } from "@/components/koko";
 import { demoSessions, demoStudent } from "@/lib/mock-data";
 import { getLearningSource, getWrongAnswerItems } from "@/lib/learning/provider";
 import { calculateSessionScore, scoreStatus } from "@/lib/quiz-engine";
@@ -26,7 +27,7 @@ const nowIso = () => new Date().toISOString();
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const STATUS_ORDER: MasteryStatus[] = ["Perfect", "Good", "Not mastered"];
 
-type ActiveView = "coach" | "report" | "teacher";
+type ActiveView = "home" | "coach" | "report" | "teacher";
 type PersistenceMode = "idle" | "local" | "firestore" | "loading" | "error";
 
 type TutorPrototypeProps = {
@@ -38,7 +39,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const isTeacher = appUser.role === "teacher";
   const studentId = appUser.studentId ?? demoStudent.id;
 
-  const [activeView, setActiveView] = useState<ActiveView>(isTeacher ? "teacher" : "coach");
+  const [activeView, setActiveView] = useState<ActiveView>(isTeacher ? "teacher" : "home");
   const [learningItems, setLearningItems] = useState<LearningItem[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [answer, setAnswer] = useState("");
@@ -72,12 +73,11 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     let isMounted = true;
 
     void getWrongAnswerItems(studentId)
-      .then(async (items) => {
+      .then((items) => {
         if (!isMounted) return;
         setLearningItems(items);
         setItemsLoaded(true);
-        // POC와 동일: AI가 인사 + 1번 문제를 한국어 뜻과 함께 먼저 제시.
-        await startTutor(items);
+        // 홈에서 '학습 시작하기'를 누르면 코칭이 시작된다(startLearning).
       })
       .catch(() => {
         if (!isMounted) return;
@@ -204,6 +204,14 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       });
     }
     return out;
+  }
+
+  // 홈 → 코칭 진입: 코칭룸으로 이동하고, 대화가 비어 있으면 튜터를 시작한다.
+  function startLearning() {
+    setActiveView("coach");
+    if (messages.length === 0 && !tutorStarting && learningItems.length > 0) {
+      void startTutor(learningItems);
+    }
   }
 
   // 마이크 토글: 녹음 시작/정지. 정지 시 오디오를 /api/stt로 보내 영어로 변환해 입력창에 채움.
@@ -394,110 +402,75 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     void startTutor(learningItems);
   }
 
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div>
-          <div className="brand-mark">Y</div>
-          <h1 className="brand-title">윤선생 AI 코치</h1>
-          <p className="brand-subtitle">AI 복습 코치</p>
-        </div>
-
-        <div className="side-section">
-          <div className="side-label">현재 사용자</div>
-          <div className="connection">
-            <span>
-              {appUser.displayName}
-              {appUser.memberId ? ` · ${appUser.memberId}` : ""}
-            </span>
-            <span>{isTeacher ? "교사" : demoStudent.level}</span>
-          </div>
-        </div>
-
-        <div className="side-section">
-          <div className="side-label">보기</div>
-          <div className="role-switch">
-            {isTeacher ? (
-              <button
-                className={`side-button ${activeView === "teacher" ? "active" : ""}`}
-                onClick={() => setActiveView("teacher")}
-              >
-                교사용 대시보드
-              </button>
-            ) : (
-              <>
-                <button
-                  className={`side-button ${activeView === "coach" ? "active" : ""}`}
-                  onClick={() => setActiveView("coach")}
-                >
-                  학생 코칭룸
-                </button>
-                <button
-                  className={`side-button ${activeView === "report" ? "active" : ""}`}
-                  onClick={() => setActiveView("report")}
-                >
-                  내 학습 리포트
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="side-section">
-          <button className="side-button" onClick={onLogout}>
-            로그아웃
-          </button>
-        </div>
-      </aside>
-
-      <main className="main">
-        <header className="topbar">
+  // ===== 교사: 데스크톱 대시보드 =====
+  if (isTeacher) {
+    return (
+      <div className="app-shell">
+        <aside className="sidebar">
           <div>
-            <div className="eyebrow">AI REVIEW PILOT</div>
-            <h2 className="page-title">
-              {activeView === "coach"
-                ? "오늘의 오답 복습"
-                : activeView === "report"
-                  ? "나의 학습 리포트"
-                  : "학습 운영 대시보드"}
-            </h2>
-            <p className="page-copy">
-              {activeView === "coach"
-                ? "지난 학습에서 틀린 문항을 AI 코치와 하나씩 다시 풀어보자."
-                : activeView === "report"
-                  ? "세션별 점수 변화, 성취도 분포, 영역별 약점을 누적해서 확인합니다."
-                  : "학생별 세션, 점수, 미숙 문항을 한 화면에서 확인합니다."}
-            </p>
+            <div className="brand-mark">Y</div>
+            <h1 className="brand-title">윤선생 AI 코치</h1>
+            <p className="brand-subtitle">교사 대시보드</p>
           </div>
-          {activeView === "coach" ? (
-            <div className="toolbar">
-              <button className="button" onClick={restartSession}>
-                세션 초기화
+          <div className="side-section">
+            <div className="side-label">현재 사용자</div>
+            <div className="connection">
+              <span>
+                {appUser.displayName}
+                {appUser.memberId ? ` · ${appUser.memberId}` : ""}
+              </span>
+              <span>교사</span>
+            </div>
+          </div>
+          <div className="side-section">
+            <button className="side-button" onClick={onLogout}>
+              로그아웃
+            </button>
+          </div>
+        </aside>
+        <main className="main">
+          <header className="topbar">
+            <div>
+              <div className="eyebrow">YOON&apos;S · 교사</div>
+              <h2 className="page-title">학습 운영 대시보드</h2>
+              <p className="page-copy">담당 회원의 학습 현황과 세션 결과를 확인합니다.</p>
+            </div>
+          </header>
+          <TeacherDashboard sessions={reportSessions} />
+        </main>
+      </div>
+    );
+  }
+
+  // ===== 학생: 모바일 폰 UI =====
+  return (
+    <div className="phone-shell">
+      <div className="phone">
+        {activeView === "coach" ? (
+          <>
+            <div className="chat-head">
+              <button className="chat-back" onClick={() => setActiveView("home")} aria-label="뒤로">
+                ‹
+              </button>
+              <div className="chat-head-title">
+                <div className="chat-head-name">오답 복습</div>
+                <div className="chat-head-sub">코코와 함께하는 보충학습</div>
+              </div>
+              <button className="chat-restart" onClick={restartSession}>
+                다시
               </button>
             </div>
-          ) : null}
-        </header>
-
-        {activeView === "coach" ? (
-          <section className="workspace">
-            <div className="panel quiz-area">
-              <div className="panel-header">
-                <div>
-                  <h3 className="panel-title">AI 코칭 대화</h3>
-                  <p className="panel-note">한국어 뜻을 보고 영어로 답해봐. 모르면 힌트라고 적어도 돼.</p>
-                </div>
-                <div className="progress-wrap">
-                  <div className="progress-meta">
-                    <span>{results.length}/{learningItems.length} 완료</span>
-                    <span>{progress}%</span>
-                  </div>
-                  <div className="progress-track">
-                    <div className="progress-fill" style={{ width: `${progress}%` }} />
-                  </div>
-                </div>
+            <div className="chat-progress">
+              <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${progress}%` }} />
               </div>
+              <span>
+                {results.length}/{learningItems.length}
+              </span>
+            </div>
 
-              {isFinished ? (
+            {isFinished ? (
+              <div className="phone-body">
                 <SessionComplete
                   score={score}
                   perfectCount={perfectCount}
@@ -509,67 +482,229 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                   onRestart={restartSession}
                   onViewReport={() => setActiveView("report")}
                 />
-              ) : itemsLoaded && learningItems.length === 0 ? (
+              </div>
+            ) : itemsLoaded && learningItems.length === 0 ? (
+              <div className="phone-body">
                 <div className="empty-celebration">
-                  <div className="completion-badge">🎉</div>
-                  <h3 className="panel-title">오늘 복습할 오답이 없어!</h3>
-                  <p className="panel-note">
-                    지난 학습을 완벽하게 해냈다는 뜻이야. 다음 학습도 기대할게!
-                  </p>
+                  <Koko size={104} float />
+                  <h3 className="panel-title" style={{ marginTop: 14 }}>
+                    오늘 복습할 오답이 없어!
+                  </h3>
+                  <p className="panel-note">지난 학습을 완벽하게 해냈다는 뜻이야 🎉</p>
                 </div>
-              ) : (
-                <>
-                  <div className="chat-feed">
-                    {messages.map((message) => (
-                      <div key={message.id} className={`message ${message.role}`}>
-                        {message.content}
-                        {message.status ? (
-                          <span className="message-status">{message.status}</span>
-                        ) : null}
+              </div>
+            ) : (
+              <>
+                <div className="chat-feed">
+                  {messages.map((message) =>
+                    message.role === "assistant" ? (
+                      <div key={message.id} className="msg-row">
+                        <span className="msg-avatar">
+                          <Koko size={32} />
+                        </span>
+                        <div className="message assistant">
+                          {message.content}
+                          {message.status ? (
+                            <span className="message-status">{message.status}</span>
+                          ) : null}
+                        </div>
                       </div>
-                    ))}
-                    {isSending ? (
-                      <div className="message assistant typing">AI 코치가 생각 중…</div>
-                    ) : null}
-                  </div>
+                    ) : (
+                      <div key={message.id} className="message student">
+                        {message.content}
+                      </div>
+                    ),
+                  )}
+                  {isSending ? (
+                    <div className="msg-row">
+                      <span className="msg-avatar">
+                        <Koko size={32} />
+                      </span>
+                      <div className="message assistant typing">코코가 생각 중…</div>
+                    </div>
+                  ) : null}
+                </div>
 
-                  <div className="composer">
-                    <input
-                      value={answer}
-                      onChange={(event) => setAnswer(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") submitAnswer();
-                      }}
-                      placeholder="영어 답안을 입력하거나, 모르면 '힌트'라고 적어봐"
-                      disabled={isSending || isTranscribing}
-                    />
-                    <button
-                      className={`button mic-button ${isRecording ? "recording" : ""}`}
-                      onClick={toggleRecording}
-                      disabled={isSending || isTranscribing}
-                      title="음성으로 답하기"
-                      aria-label="음성으로 답하기"
-                    >
-                      {isRecording ? "● 녹음중" : isTranscribing ? "인식중…" : "🎤"}
-                    </button>
-                    <button
-                      className="button primary"
-                      onClick={submitAnswer}
-                      disabled={isSending || isTranscribing}
-                    >
-                      제출
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </section>
+                <div className="composer">
+                  <button
+                    className={`button mic-button ${isRecording ? "recording" : ""}`}
+                    onClick={toggleRecording}
+                    disabled={isSending || isTranscribing}
+                    title="음성으로 답하기"
+                    aria-label="음성으로 답하기"
+                  >
+                    {isRecording ? "●" : isTranscribing ? "…" : "🎤"}
+                  </button>
+                  <input
+                    value={answer}
+                    onChange={(event) => setAnswer(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") submitAnswer();
+                    }}
+                    placeholder="영어로 답하거나 마이크를 눌러봐"
+                    disabled={isSending || isTranscribing}
+                  />
+                  <button
+                    className="button primary"
+                    onClick={submitAnswer}
+                    disabled={isSending || isTranscribing}
+                  >
+                    제출
+                  </button>
+                </div>
+              </>
+            )}
+          </>
         ) : activeView === "report" ? (
-          <StudentReport sessions={reportSessions} />
+          <>
+            <div className="phone-top">
+              <h2 className="page-title">나의 학습 리포트</h2>
+              <p className="page-copy" style={{ marginTop: 4 }}>
+                세션별 학습 내역과 성취도를 확인해요.
+              </p>
+            </div>
+            <div className="phone-body">
+              <StudentReport sessions={reportSessions} />
+            </div>
+          </>
         ) : (
-          <TeacherDashboard sessions={reportSessions} />
+          <HomeView
+            name={appUser.displayName}
+            items={learningItems}
+            itemsLoaded={itemsLoaded}
+            onStart={startLearning}
+          />
         )}
-      </main>
+
+        <nav className="bottom-nav">
+          <button
+            className={activeView === "home" ? "active" : ""}
+            onClick={() => setActiveView("home")}
+          >
+            <span className="nav-ico">🏠</span>홈
+          </button>
+          <button className={activeView === "coach" ? "active" : ""} onClick={startLearning}>
+            <span className="nav-ico">📖</span>학습
+          </button>
+          <button
+            className={activeView === "report" ? "active" : ""}
+            onClick={() => setActiveView("report")}
+          >
+            <span className="nav-ico">📊</span>리포트
+          </button>
+          <button onClick={onLogout}>
+            <span className="nav-ico">🚪</span>로그아웃
+          </button>
+        </nav>
+      </div>
+    </div>
+  );
+}
+
+// 학생 홈 — 인사 + 통계(비주얼) + 코코 말풍선 + 오늘의 보충학습 목록 + 시작 버튼.
+function HomeView({
+  name,
+  items,
+  itemsLoaded,
+  onStart,
+}: {
+  name: string;
+  items: LearningItem[];
+  itemsLoaded: boolean;
+  onStart: () => void;
+}) {
+  const today = new Intl.DateTimeFormat("ko-KR", {
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  }).format(new Date());
+  const initial = name?.trim()?.slice(0, 2) || "나";
+
+  return (
+    <div className="phone-body home">
+      <div className="home-greet">
+        <div>
+          <div className="home-date">{today}</div>
+          <h2 className="home-hello">
+            {name}, 안녕! <span style={{ display: "inline-block" }}>👋</span>
+          </h2>
+        </div>
+        <div className="home-avatar">{initial}</div>
+      </div>
+
+      <div className="stat-row">
+        <div className="stat-card">
+          <span className="stat-ico" style={{ background: "#FEF0E0" }}>
+            🔥
+          </span>
+          <div>
+            <div className="stat-num">5일</div>
+            <div className="stat-cap">연속 학습</div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <span className="stat-ico" style={{ background: "#FFF4DE" }}>
+            ⭐
+          </span>
+          <div>
+            <div className="stat-num">{items.length ? items.length * 2 : 0}개</div>
+            <div className="stat-cap">모은 별</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="koko-stage">
+        <Koko size={80} float />
+        <div>
+          <div className="koko-bubble">
+            {items.length
+              ? `오늘은 ${items.length}문제만 복습하면 끝! 나랑 같이 해볼까? 😊`
+              : "오늘은 복습할 오답이 없어. 아주 잘하고 있어! 🎉"}
+          </div>
+          <div className="koko-name">🤖 AI 코치 코코</div>
+        </div>
+      </div>
+
+      <div className="today-card">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div className="panel-title">오늘의 보충학습</div>
+          <span className="today-badge">약 {Math.max(1, Math.ceil(items.length * 1.2))}분</span>
+        </div>
+        <p className="panel-note" style={{ marginTop: 3 }}>
+          지난 학습에서 틀린 문제들을 모았어요
+        </p>
+
+        <div className="item-list" style={{ marginTop: 14 }}>
+          {!itemsLoaded ? (
+            <div className="empty-state">불러오는 중…</div>
+          ) : items.length === 0 ? (
+            <div className="empty-state">복습할 오답이 없어요.</div>
+          ) : (
+            items.slice(0, 5).map((it) => (
+              <div className="item-row" key={it.id}>
+                <span className={`item-badge cat-${it.sourceType}`}>{it.sourceLabel}</span>
+                <div>
+                  <p className="item-title">
+                    {it.answerEn}
+                    {it.meaningKo ? ` · ${it.meaningKo}` : ""}
+                  </p>
+                  <p className="item-sub">{it.unitName}</p>
+                </div>
+                <span className="dot-warn" />
+              </div>
+            ))
+          )}
+        </div>
+
+        <button
+          className="button primary"
+          style={{ width: "100%", marginTop: 16, padding: 16, fontSize: "1.05rem" }}
+          onClick={onStart}
+          disabled={itemsLoaded && items.length === 0}
+        >
+          학습 시작하기 →
+        </button>
+      </div>
     </div>
   );
 }
@@ -598,6 +733,7 @@ function SessionComplete({
   return (
     <div className="completion">
       <div className="completion-head">
+        <Koko size={72} float />
         <div className="completion-badge">🏆</div>
         <h3 className="panel-title">학습 완료!</h3>
         <p className="panel-note">오늘의 복습 결과를 확인해봐</p>
