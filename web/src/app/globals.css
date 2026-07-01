@@ -1,19 +1,30 @@
 :root {
-  --bg: #f4f7fb;
+  --bg: #F4F2FA;
   --surface: #ffffff;
-  --surface-muted: #eef3f8;
-  --ink: #111827;
-  --ink-soft: #4b5563;
-  --ink-subtle: #6b7280;
-  --line: #dde5ef;
-  --primary: #2563eb;
-  --primary-strong: #1d4ed8;
-  --success: #059669;
-  --warning: #d97706;
-  --danger: #dc2626;
-  --nav: #111827;
-  --nav-soft: #1f2937;
-  --shadow: 0 20px 50px rgba(17, 24, 39, 0.08);
+  --surface-muted: #F1ECF8;
+  --ink: #171719;
+  --ink-soft: #43384f;
+  --ink-subtle: #8b8792;
+  --line: #E9E3F3;
+  --primary: #6E5BFF;
+  --primary-strong: #5B37ED;
+  --success: #00913a;
+  --warning: #C98800;
+  --danger: #E0455F;
+  --nav: #ffffff;
+  --nav-soft: #F7F4FB;
+  --shadow: 0 12px 30px -14px rgba(90, 60, 160, 0.28);
+  --radius: 24px;
+  --grad: linear-gradient(135deg, #9B7BFF 0%, #6E8BFF 100%);
+  --grad-strong: linear-gradient(135deg, #6E8BFF, #8A7CFF);
+  --cat-word: #0054D1;
+  --cat-word-bg: #EAF2FE;
+  --cat-sentence: #5B37ED;
+  --cat-sentence-bg: #F0ECFE;
+  --cat-assess: #D17600;
+  --cat-assess-bg: #FEF4E6;
+  --font-head: "Wanted Sans Variable", "Pretendard Variable", -apple-system, sans-serif;
+  --font-body: "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 * {
@@ -29,10 +40,16 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family:
-    Inter, "Noto Sans KR", ui-sans-serif, system-ui, -apple-system,
-    BlinkMacSystemFont, "Segoe UI", sans-serif;
-  letter-spacing: 0;
+  font-family: var(--font-body);
+  letter-spacing: -0.01em;
+}
+
+.brand-title,
+.page-title,
+.panel-title,
+.metric-value {
+  font-family: var(--font-head);
+  letter-spacing: -0.02em;
 }
 
 button,
@@ -57,7 +74,7 @@ button {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: linear-gradient(180deg, #eef3f8, var(--bg));
+  background: linear-gradient(180deg, #FFEFF7 0%, #FBF1FB 34%, #EFF4FF 70%, #E9F1FE 100%);
 }
 
 .auth-card {
@@ -65,9 +82,9 @@ button {
   max-width: 420px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-  padding: 28px;
+  border-radius: 28px;
+  box-shadow: 0 30px 60px -22px rgba(90, 60, 160, 0.3), 0 8px 20px -8px rgba(0, 0, 0, 0.08);
+  padding: 30px;
   animation: rise-in 420ms ease both;
 }
 
@@ -136,8 +153,12 @@ button {
   padding: 12px 13px;
 }
 
+.auth-field input {
+  border-radius: 13px;
+}
+
 .auth-field input:focus {
-  outline: 3px solid rgba(37, 99, 235, 0.12);
+  outline: 3px solid rgba(110, 90, 255, 0.15);
   border-color: var(--primary);
 }
 
@@ -154,8 +175,9 @@ button {
 }
 
 .sidebar {
-  background: linear-gradient(180deg, var(--nav), var(--nav-soft));
-  color: #f9fafb;
+  background: var(--nav-soft);
+  color: var(--ink);
+  border-right: 1px solid var(--line);
   padding: 28px 22px;
   display: flex;
   flex-direction: column;
@@ -165,12 +187,13 @@ button {
 .brand-mark {
   width: 44px;
   height: 44px;
-  border-radius: 14px;
-  background: #ffffff;
-  color: var(--primary);
+  border-radius: 16px;
+  background: var(--grad);
+  color: #ffffff;
   display: grid;
   place-items: center;
   font-weight: 900;
+  box-shadow: 0 8px 18px -8px rgba(110, 90, 255, 0.55);
   margin-bottom: 14px;
 }
 
@@ -182,17 +205,17 @@ button {
 
 .brand-subtitle {
   margin: 6px 0 0;
-  color: #aab4c3;
+  color: var(--ink-subtle);
   font-size: 0.88rem;
 }
 
 .side-section {
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--line);
   padding-top: 18px;
 }
 
 .side-label {
-  color: #aab4c3;
+  color: var(--ink-subtle);
   font-size: 0.75rem;
   font-weight: 750;
   margin-bottom: 8px;
@@ -204,24 +227,28 @@ button {
 }
 
 .side-button {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.06);
-  color: #e5e7eb;
-  border-radius: 10px;
-  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-soft);
+  border-radius: 12px;
+  padding: 11px 13px;
   text-align: left;
+  font-weight: 600;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
 .side-button.active {
-  background: #ffffff;
-  color: var(--nav);
+  background: var(--grad);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 8px 18px -10px rgba(110, 90, 255, 0.6);
 }
 
 .connection {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #d1d5db;
+  color: var(--ink-soft);
   font-size: 0.88rem;
 }
 
@@ -280,12 +307,13 @@ button {
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-weight: 750;
+  border-radius: 14px;
+  padding: 11px 16px;
+  font-weight: 700;
   transition:
     transform 160ms ease,
     border-color 160ms ease,
+    box-shadow 160ms ease,
     background 160ms ease;
 }
 
@@ -295,13 +323,14 @@ button {
 }
 
 .button.primary {
-  background: var(--primary);
+  background: var(--grad);
   color: #ffffff;
-  border-color: var(--primary);
+  border: none;
+  box-shadow: 0 10px 22px -10px rgba(110, 90, 255, 0.55);
 }
 
 .button.primary:hover {
-  background: var(--primary-strong);
+  filter: brightness(1.04);
 }
 
 .button:disabled {
@@ -356,7 +385,7 @@ button {
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
   animation: rise-in 480ms ease both;
 }
@@ -401,15 +430,15 @@ button {
 }
 
 .progress-track {
-  height: 8px;
+  height: 9px;
   border-radius: 999px;
-  background: var(--surface-muted);
+  background: #EBE4F2;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: var(--primary);
+  background: linear-gradient(90deg, #9B7BFF, #7C9BFF);
   border-radius: inherit;
   transition: width 260ms ease;
 }
@@ -425,54 +454,83 @@ button {
 
 .message {
   max-width: 82%;
-  padding: 13px 15px;
-  border-radius: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
   line-height: 1.55;
+  font-size: 0.95rem;
   white-space: pre-line;
   animation: message-in 220ms ease both;
 }
 
 .message.assistant {
-  background: #f8fafc;
+  background: #ffffff;
   border: 1px solid var(--line);
+  color: #2a2a2e;
   align-self: flex-start;
+  border-radius: 18px 18px 18px 5px;
+  box-shadow: 0 4px 12px -8px rgba(90, 60, 160, 0.18);
 }
 
 .message.student {
-  background: var(--primary);
+  background: var(--grad-strong);
   color: #ffffff;
   align-self: flex-end;
+  border-radius: 18px 18px 5px 18px;
+  font-weight: 600;
+  box-shadow: 0 5px 14px -8px rgba(110, 90, 255, 0.55);
+}
+
+.message.typing {
+  background: #ffffff;
+  border: 1px dashed var(--line);
+  color: var(--ink-subtle);
+  align-self: flex-start;
 }
 
 .message-status {
   display: inline-flex;
   margin-top: 8px;
-  padding: 3px 8px;
+  padding: 4px 9px;
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 800;
-  background: rgba(5, 150, 105, 0.12);
+  background: #E9FBEF;
   color: var(--success);
 }
 
 .composer {
-  padding: 16px 20px 20px;
+  padding: 14px 16px 18px;
   border-top: 1px solid var(--line);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--surface);
 }
 
 .composer input {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px 13px;
+  flex: 1;
+  border: 1px solid transparent;
+  background: var(--surface-muted);
+  border-radius: 999px;
+  padding: 13px 18px;
   min-width: 0;
 }
 
 .composer input:focus {
-  outline: 3px solid rgba(37, 99, 235, 0.12);
+  outline: none;
   border-color: var(--primary);
+  background: #fff;
+}
+
+.composer .button {
+  border-radius: 999px;
+  flex: none;
+}
+
+.composer .mic-button {
+  width: 46px;
+  padding: 0;
+  height: 46px;
 }
 
 .context-panel {
@@ -531,12 +589,13 @@ button {
 }
 
 .item-badge {
-  border-radius: 999px;
-  background: #dbeafe;
-  color: #1e40af;
+  border-radius: 8px;
+  background: var(--cat-sentence-bg);
+  color: var(--cat-sentence);
   padding: 4px 8px;
   font-size: 0.72rem;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .item-title {
