@@ -67,5 +67,18 @@ async function callOpenAiResponses(
   const data = (await res.json()) as OpenAiResponse;
   const text = extractOutputText(data);
   if (!text) throw new Error("OpenAI 응답에서 텍스트를 찾지 못했습니다.");
-  return text;
+  return sanitizeText(text);
+}
+
+// 응답은 마크다운을 렌더링하지 않는 채팅 화면에 그대로 표시된다.
+// 마크다운 강조 문법을 일반 텍스트로 정리한다(**볼드** → '볼드', 헤더/코드틱 제거).
+// 대괄호 태그([PERFECT] 등)는 건드리지 않는다.
+export function sanitizeText(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "'$1'")
+    .replace(/__(.+?)__/g, "'$1'")
+    .replace(/\*\*/g, "")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/`{1,3}/g, "")
+    .replace(/[ \t]{2,}/g, " ");
 }

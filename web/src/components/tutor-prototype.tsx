@@ -836,6 +836,18 @@ function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
       <div className="panel">
         <div className="panel-header">
           <div>
+            <h3 className="panel-title">세션별 학습 상세</h3>
+            <p className="panel-note">각 세션에서 학습한 단어·문장 전체 내역</p>
+          </div>
+        </div>
+        <div className="section-body">
+          <SessionDetails sessions={sessions} />
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div>
             <h3 className="panel-title">재복습 필요 문항</h3>
             <p className="panel-note">Not mastered 결과만 모아 교사가 확인</p>
           </div>
@@ -858,6 +870,55 @@ function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
         </div>
       </div>
     </section>
+  );
+}
+
+// 교사용: 세션별로 학습한 단어·문장 전체 내역(문제/정답/결과/시도).
+function SessionDetails({ sessions }: { sessions: QuizSession[] }) {
+  const completed = sessions.filter((session) => session.results.length > 0);
+  if (completed.length === 0) {
+    return <div className="empty-state">표시할 세션이 없습니다.</div>;
+  }
+  return (
+    <div className="session-details">
+      {completed.map((session) => (
+        <div className="session-detail-block" key={session.id}>
+          <div className="session-detail-head">
+            <strong>{session.studentName}</strong>
+            <span>{formatDate(session.completedAt ?? session.createdAt)}</span>
+            <span>
+              {session.score}점 · {session.completedItems}/{session.totalItems}
+            </span>
+          </div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>영역</th>
+                <th>문제(뜻)</th>
+                <th>정답</th>
+                <th>결과</th>
+                <th>시도</th>
+              </tr>
+            </thead>
+            <tbody>
+              {session.results.map((r, i) => (
+                <tr key={`${session.id}-${r.itemId}-${i}`}>
+                  <td>{r.sourceLabel}</td>
+                  <td>{r.question}</td>
+                  <td>{r.answer}</td>
+                  <td>
+                    <span className={`result-status ${statusClass(r.status)}`}>
+                      {statusLabel(r.status)}
+                    </span>
+                  </td>
+                  <td>{r.attempts}회</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
   );
 }
 

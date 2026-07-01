@@ -317,6 +317,32 @@ button {
   align-items: start;
 }
 
+.session-details {
+  display: grid;
+  gap: 18px;
+}
+
+.session-detail-block {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.session-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: baseline;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.03);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+
+.session-detail-head span {
+  color: var(--ink-subtle);
+}
+
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);
