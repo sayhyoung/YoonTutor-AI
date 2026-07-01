@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { demoSessions, demoStudent } from "@/lib/mock-data";
 import { getLearningSource, getWrongAnswerItems } from "@/lib/learning/provider";
@@ -51,8 +51,9 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const [itemsLoaded, setItemsLoaded] = useState(false);
   const [coachComment, setCoachComment] = useState("");
   const [reportLoading, setReportLoading] = useState(false);
-  const [saveMode, setSaveMode] = useState<PersistenceMode>("idle");
-  const [persistenceMode, setPersistenceMode] = useState<PersistenceMode>(
+  // 저장/연결 상태는 학습자 화면에 표시하지 않지만, 내부 저장 흐름을 위해 setter는 유지.
+  const [, setSaveMode] = useState<PersistenceMode>("idle");
+  const [, setPersistenceMode] = useState<PersistenceMode>(
     isFirebaseConfigured() ? "loading" : "local",
   );
   const [storedSessions, setStoredSessions] = useState<QuizSession[]>(() => readLocalSessions());
@@ -399,7 +400,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
         <div>
           <div className="brand-mark">Y</div>
           <h1 className="brand-title">윤선생 AI 코치</h1>
-          <p className="brand-subtitle">Firebase pilot workspace</p>
+          <p className="brand-subtitle">AI 복습 코치</p>
         </div>
 
         <div className="side-section">
@@ -443,14 +444,6 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
         </div>
 
         <div className="side-section">
-          <div className="side-label">Firebase</div>
-          <div className="connection">
-            <span>{persistenceLabel(persistenceMode)}</span>
-            <span className={`status-dot ${persistenceMode === "firestore" ? "live" : ""}`} />
-          </div>
-        </div>
-
-        <div className="side-section">
           <button className="side-button" onClick={onLogout}>
             로그아웃
           </button>
@@ -470,7 +463,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
             </h2>
             <p className="page-copy">
               {activeView === "coach"
-                ? "학습 API에서 받은 오답 항목을 표준 문항으로 바꾸고, 세션 결과를 Firestore에 남기는 구조입니다."
+                ? "지난 학습에서 틀린 문항을 AI 코치와 하나씩 다시 풀어보자."
                 : activeView === "report"
                   ? "세션별 점수 변화, 성취도 분포, 영역별 약점을 누적해서 확인합니다."
                   : "학생별 세션, 점수, 미숙 문항을 한 화면에서 확인합니다."}
@@ -480,9 +473,6 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
             <div className="toolbar">
               <button className="button" onClick={restartSession}>
                 세션 초기화
-              </button>
-              <button className="button primary" disabled={!isFinished}>
-                {saveLabel(saveMode)}
               </button>
             </div>
           ) : null}
@@ -494,7 +484,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
               <div className="panel-header">
                 <div>
                   <h3 className="panel-title">AI 코칭 대화</h3>
-                  <p className="panel-note">정답/힌트/재시도 상태를 서버 route에서 판정합니다.</p>
+                  <p className="panel-note">한국어 뜻을 보고 영어로 답해봐. 모르면 힌트라고 적어도 돼.</p>
                 </div>
                 <div className="progress-wrap">
                   <div className="progress-meta">
@@ -1259,6 +1249,8 @@ function SessionScoreBars({ sessions }: { sessions: QuizSession[] }) {
 }
 
 function SessionTable({ sessions }: { sessions: QuizSession[] }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+
   if (sessions.length === 0) {
     return <div className="empty-state">아직 완료된 세션이 없습니다.</div>;
   }
@@ -1273,20 +1265,71 @@ function SessionTable({ sessions }: { sessions: QuizSession[] }) {
           <th>Perfect</th>
           <th>Good</th>
           <th>재복습</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         {sessions.map((session) => {
           const counts = getStatusCounts([session]);
+          const isOpen = expanded === session.id;
           return (
-            <tr key={session.id}>
-              <td>{formatDate(session.completedAt ?? session.createdAt)}</td>
-              <td>{session.completedItems}/{session.totalItems}</td>
-              <td>{session.score}점</td>
-              <td>{counts.Perfect}</td>
-              <td>{counts.Good}</td>
-              <td>{counts["Not mastered"]}</td>
-            </tr>
+            <Fragment key={session.id}>
+              <tr>
+                <td>{formatDate(session.completedAt ?? session.createdAt)}</td>
+                <td>{session.completedItems}/{session.totalItems}</td>
+                <td>{session.score}점</td>
+                <td>{counts.Perfect}</td>
+                <td>{counts.Good}</td>
+                <td>{counts["Not mastered"]}</td>
+                <td style={{ textAlign: "right" }}>
+                  <button
+                    className="button"
+                    onClick={() => setExpanded(isOpen ? null : session.id)}
+                  >
+                    {isOpen ? "닫기" : "상세 내역 보기"}
+                  </button>
+                </td>
+              </tr>
+              {isOpen ? (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="session-detail-inner">
+                      {session.results.length === 0 ? (
+                        <div className="empty-state">학습 내역이 없습니다.</div>
+                      ) : (
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>영역</th>
+                              <th>학습 내용</th>
+                              <th>결과</th>
+                              <th>시도</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {session.results.map((r, i) => (
+                              <tr key={`${session.id}-${r.itemId}-${i}`}>
+                                <td>{r.sourceLabel}</td>
+                                <td>
+                                  {r.answer}
+                                  {r.question ? ` : ${r.question}` : ""}
+                                </td>
+                                <td>
+                                  <span className={`result-status ${statusClass(r.status)}`}>
+                                    {statusLabel(r.status)}
+                                  </span>
+                                </td>
+                                <td>{r.attempts}회</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
+            </Fragment>
           );
         })}
       </tbody>
@@ -1337,21 +1380,6 @@ function statusClass(status: MasteryStatus) {
 
 function statusLabel(status: MasteryStatus) {
   return status === "Not mastered" ? "재복습" : status;
-}
-
-function persistenceLabel(mode: PersistenceMode) {
-  if (mode === "firestore") return "Firestore 연결";
-  if (mode === "loading") return "연결 확인 중";
-  if (mode === "error") return "연결 오류";
-  return "Mock 저장소";
-}
-
-function saveLabel(mode: PersistenceMode) {
-  if (mode === "firestore") return "Firestore 저장됨";
-  if (mode === "local") return "Local 저장됨";
-  if (mode === "error") return "저장 오류";
-  if (mode === "loading") return "저장 중";
-  return "저장 대기";
 }
 
 function formatShortDate(value: string) {

@@ -323,6 +323,10 @@ button {
   font-weight: 700;
 }
 
+.session-detail-inner {
+  padding: 8px 4px;
+}
+
 .session-details {
   display: grid;
   gap: 18px;
