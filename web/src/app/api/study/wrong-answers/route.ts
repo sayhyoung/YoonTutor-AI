@@ -4,7 +4,34 @@ import { StudyApiError, isStudyApiConfigured } from "@/lib/study-api/client";
 import { mapStudyResultsToLearningItems } from "@/lib/study-api/mapping";
 import { authedStudyFetch } from "@/lib/study-api/server-fetch";
 import type { StudyQueryData } from "@/lib/study-api/types";
+import { callOpenAiText, isOpenAiEnabled } from "@/lib/openai";
 import type { LearningItem } from "@/lib/types";
+
+// 한글 뜻이 없는 항목(문장/평가)은 정답 영어를 한국어로 번역해 meaningKo를 채운다.
+// 완료 결과표·튜터 출제에서 '영어 : 우리말'로 함께 보여주기 위함. 실패해도 조용히 통과.
+async function fillKoreanMeanings(items: LearningItem[]): Promise<void> {
+  if (!isOpenAiEnabled()) return;
+  const need = items.filter((it) => !it.meaningKo && it.answerEn.trim().length > 0);
+  if (need.length === 0) return;
+  try {
+    const prompt = [
+      "다음 영어 단어/문장 각각을 자연스러운 한국어로 번역해줘.",
+      "설명 없이, 입력 순서 그대로 한국어 번역만 JSON 문자열 배열로 답해.",
+      JSON.stringify(need.map((it) => it.answerEn)),
+    ].join("\n");
+    const raw = await callOpenAiText(prompt, 700);
+    const s = raw.indexOf("[");
+    const e = raw.lastIndexOf("]");
+    if (s >= 0 && e > s) {
+      const arr = JSON.parse(raw.slice(s, e + 1)) as string[];
+      need.forEach((it, idx) => {
+        if (arr[idx]) it.meaningKo = String(arr[idx]).trim();
+      });
+    }
+  } catch {
+    // 번역 실패 시 meaningKo 없이 진행.
+  }
+}
 
 export const runtime = "nodejs";
 
@@ -94,6 +121,9 @@ export async function GET(request: Request) {
       { status },
     );
   }
+
+  // 문장/평가 등 한글 뜻이 없는 항목은 번역해 meaningKo를 채운다.
+  await fillKoreanMeanings(items);
 
   // POC 출제 순서: 단어 → 문장 → 평가 (영역 내 순서는 유지, JS sort는 안정 정렬).
   const order: Record<string, number> = { word: 0, sentence: 1, assessment: 2 };

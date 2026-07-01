@@ -574,7 +574,10 @@ function SessionComplete({
             {results.map((result) => (
               <tr key={result.itemId}>
                 <td>{result.sourceLabel}</td>
-                <td>{result.question}</td>
+                <td>
+                  {result.answer}
+                  {result.question ? ` : ${result.question}` : ""}
+                </td>
                 <td>
                   <StatusText status={result.status} />
                 </td>
