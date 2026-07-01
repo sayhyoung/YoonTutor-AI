@@ -1,5 +1,4 @@
-# Firebase App Hosting backend settings.
-# Use minInstances > 0 for pilot/production to reduce cold starts.
+# Firebase App Hosting backend settings (운영 실연동).
 runConfig:
   minInstances: 1
   maxInstances: 20
@@ -8,20 +7,54 @@ runConfig:
   memoryMiB: 1024
 
 env:
+  # --- 런타임(서버 라우트) ---
   - variable: OPENAI_MODEL
     value: gpt-5.2
   - variable: USE_MOCK_AI
-    value: "true"
-  # study-api 외부 연동용 HTTPS 프록시(https://test-study-api.yoons.or.kr)가 열려
-  # 배포(클라우드) 환경에서도 호출 가능. 실데이터 검증 후 external 전환:
-  #   NEXT_PUBLIC_LEARNING_SOURCE=external-api
-  #   LEARNING_API_BASE_URL=https://test-study-api.yoons.or.kr
+    value: "false"
+  # study-api 외부 연동 URL(개발 DB — 운영 API 준비되면 이 값만 교체)
+  - variable: LEARNING_API_BASE_URL
+    value: https://test-study-api.yoons.or.kr
+  - variable: OPENAI_API_KEY
+    secret: OPENAI_API_KEY
+  # --- 빌드+런타임(클라이언트 인라인) ---
   - variable: NEXT_PUBLIC_LEARNING_SOURCE
-    value: mock
-  # mock 파일럿 배포에는 아래 Secret이 필요 없음(USE_MOCK_AI=true).
-  # OpenAI 실연동 시 Secret Manager에 생성 후 주석 해제:
-  #   firebase apphosting:secrets:set OPENAI_API_KEY
-  # - variable: OPENAI_API_KEY
-  #   secret: OPENAI_API_KEY
-  # - variable: LEARNING_API_KEY
-  #   secret: LEARNING_API_KEY
+    value: external-api
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyBcRa6ZfcISNNGmgHpeFeOXGubTSzV_Gmo
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: eduai-tutor-62825.firebaseapp.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: eduai-tutor-62825
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: eduai-tutor-62825.firebasestorage.app
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: 435688058049
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:435688058049:web:064bbc7b273bead80df840
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_MODE
+    value: anonymous
+    availability:
+      - BUILD
+      - RUNTIME
