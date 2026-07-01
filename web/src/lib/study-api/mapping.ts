@@ -19,6 +19,18 @@ function isWrong(isCorrect?: boolean): boolean {
   return isCorrect === false;
 }
 
+// 평가 정답이 보기번호("3")·기호("X")처럼 substance만으로 문제를 복원할 수 없는 형태인지.
+// 이런 항목은 출제가 불가능하므로 skip한다. (문장/단어형 정답은 출제 가능)
+function isBareChoiceAnswer(answer: string): boolean {
+  const a = answer.trim();
+  return /^[0-9]+$/.test(a) || a.length <= 1;
+}
+
+// dedup용 정규화 키.
+function normKey(sourceType: string, answer: string): string {
+  return `${sourceType}::${answer.toLowerCase().replace(/[.?!,]/g, "").replace(/\s+/g, " ").trim()}`;
+}
+
 export function mapStudyResultsToLearningItems(
   data: StudyQueryData,
   customerNoArg?: string,
@@ -71,6 +83,8 @@ export function mapStudyResultsToLearningItems(
     for (const [group, arr] of assessmentGroups) {
       (arr ?? []).forEach((a, i) => {
         if (!isWrong(a.isCorrect)) return;
+        // substance만으로 문제 복원이 안 되는 보기번호형 정답은 skip.
+        if (isBareChoiceAnswer(a.correctAnswer ?? "")) return;
         items.push({
           id: `assessment-${group}-${key}-${a.order ?? i}`,
           studentId: customerNo,
@@ -89,6 +103,15 @@ export function mapStudyResultsToLearningItems(
     // 오답 판정 근거가 없어 현재 매핑에서 제외. 스키마 확정 시 보강.
   }
 
-  // 정답 텍스트가 비어있는 항목은 채점이 불가능하므로 제외.
-  return items.filter((item) => item.answerEn.trim().length > 0);
+  // 정답 텍스트가 비어있는 항목 제외 + 같은 오답(영역+정답) 중복 제거(첫 항목 유지).
+  const seen = new Set<string>();
+  const deduped: LearningItem[] = [];
+  for (const item of items) {
+    if (item.answerEn.trim().length === 0) continue;
+    const k = normKey(item.sourceType, item.answerEn);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    deduped.push(item);
+  }
+  return deduped;
 }

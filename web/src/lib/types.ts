@@ -67,6 +67,7 @@ export type QuizSession = {
   completedItems: number;
   score: number;
   results: SessionResult[];
+  coachComment?: string; // 세션 종료 시 AI 코치가 생성한 총평(3~4문장).
   createdAt: string;
   completedAt?: string;
 };

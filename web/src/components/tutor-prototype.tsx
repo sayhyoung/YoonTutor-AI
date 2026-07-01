@@ -53,6 +53,9 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const [results, setResults] = useState<SessionResult[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
+  const [itemsLoaded, setItemsLoaded] = useState(false);
+  const [coachComment, setCoachComment] = useState("");
+  const [reportLoading, setReportLoading] = useState(false);
   const [saveMode, setSaveMode] = useState<PersistenceMode>("idle");
   const [persistenceMode, setPersistenceMode] = useState<PersistenceMode>(
     isFirebaseConfigured() ? "loading" : "local",
@@ -68,6 +71,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       .then((items) => {
         if (!isMounted) return;
         setLearningItems(items);
+        setItemsLoaded(true);
         setMessages([
           {
             id: "welcome",
@@ -81,6 +85,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       })
       .catch(() => {
         if (!isMounted) return;
+        setItemsLoaded(true);
         setMessages([
           {
             id: "welcome",
@@ -144,6 +149,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       : 0;
   const score = calculateSessionScore(results);
   const perfectCount = results.filter((item) => item.status === "Perfect").length;
+  const goodCount = results.filter((item) => item.status === "Good").length;
   const needsReviewCount = results.filter((item) => item.status === "Not mastered").length;
 
   async function submitAnswer() {
@@ -252,6 +258,25 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
 
   async function finishSession(nextResults: SessionResult[], nextAttempts: Attempt[]) {
     const completedAt = nowIso();
+
+    // POC generate_final_report 대응: 종료 시 AI 코치 총평을 받아 화면 표시 + 세션에 저장.
+    setReportLoading(true);
+    let comment = "";
+    try {
+      const res = await fetch("/api/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentName: appUser.displayName, results: nextResults }),
+      });
+      if (res.ok) {
+        comment = ((await res.json()) as { comment?: string }).comment ?? "";
+      }
+    } catch {
+      // 총평 실패는 치명적이지 않음 — 코멘트 없이 진행.
+    }
+    setCoachComment(comment);
+    setReportLoading(false);
+
     const session: QuizSession = {
       id: makeId("session"),
       uid: appUser.uid,
@@ -263,6 +288,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       completedItems: nextResults.length,
       score: calculateSessionScore(nextResults),
       results: nextResults,
+      coachComment: comment || undefined,
       createdAt: messages[0]?.createdAt ?? completedAt,
       completedAt,
     };
@@ -293,6 +319,8 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     setAttempts([]);
     setResults([]);
     setIsFinished(false);
+    setCoachComment("");
+    setReportLoading(false);
     setSaveMode("idle");
   }
 
@@ -410,40 +438,62 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                 </div>
               </div>
 
-              <div className="chat-feed">
-                {messages.map((message) => (
-                  <div key={message.id} className={`message ${message.role}`}>
-                    {message.content}
-                    {message.status ? (
-                      <span className="message-status">{message.status}</span>
+              {isFinished ? (
+                <SessionComplete
+                  score={score}
+                  perfectCount={perfectCount}
+                  goodCount={goodCount}
+                  needsReviewCount={needsReviewCount}
+                  results={results}
+                  coachComment={coachComment}
+                  reportLoading={reportLoading}
+                  onRestart={restartSession}
+                  onViewReport={() => setActiveView("report")}
+                />
+              ) : itemsLoaded && learningItems.length === 0 ? (
+                <div className="empty-celebration">
+                  <div className="completion-badge">🎉</div>
+                  <h3 className="panel-title">오늘 복습할 오답이 없어!</h3>
+                  <p className="panel-note">
+                    지난 학습을 완벽하게 해냈다는 뜻이야. 다음 학습도 기대할게!
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="chat-feed">
+                    {messages.map((message) => (
+                      <div key={message.id} className={`message ${message.role}`}>
+                        {message.content}
+                        {message.status ? (
+                          <span className="message-status">{message.status}</span>
+                        ) : null}
+                      </div>
+                    ))}
+                    {isSending ? (
+                      <div className="message assistant typing">AI 코치가 생각 중…</div>
                     ) : null}
                   </div>
-                ))}
-                {isFinished ? (
-                  <div className="message assistant">
-                    오늘 세션이 끝났어. 점수와 미숙 문항을 오른쪽에서 확인해.
-                  </div>
-                ) : null}
-              </div>
 
-              <div className="composer">
-                <input
-                  value={answer}
-                  onChange={(event) => setAnswer(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") submitAnswer();
-                  }}
-                  placeholder="영어 답안을 입력"
-                  disabled={isSending || isFinished}
-                />
-                <button
-                  className="button primary"
-                  onClick={submitAnswer}
-                  disabled={isSending || isFinished}
-                >
-                  제출
-                </button>
-              </div>
+                  <div className="composer">
+                    <input
+                      value={answer}
+                      onChange={(event) => setAnswer(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") submitAnswer();
+                      }}
+                      placeholder="영어 답안을 입력하거나, 모르면 '힌트'라고 적어봐"
+                      disabled={isSending}
+                    />
+                    <button
+                      className="button primary"
+                      onClick={submitAnswer}
+                      disabled={isSending}
+                    >
+                      제출
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
 
             <aside className="context-panel">
@@ -498,6 +548,86 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   );
 }
 
+function SessionComplete({
+  score,
+  perfectCount,
+  goodCount,
+  needsReviewCount,
+  results,
+  coachComment,
+  reportLoading,
+  onRestart,
+  onViewReport,
+}: {
+  score: number;
+  perfectCount: number;
+  goodCount: number;
+  needsReviewCount: number;
+  results: SessionResult[];
+  coachComment: string;
+  reportLoading: boolean;
+  onRestart: () => void;
+  onViewReport: () => void;
+}) {
+  return (
+    <div className="completion">
+      <div className="completion-head">
+        <div className="completion-badge">🏆</div>
+        <h3 className="panel-title">학습 완료!</h3>
+        <p className="panel-note">오늘의 복습 결과를 확인해봐</p>
+      </div>
+
+      <div className="metric-grid four">
+        <Metric label="최종 점수" value={`${score}점`} />
+        <Metric label="Perfect" value={`${perfectCount}`} />
+        <Metric label="Good" value={`${goodCount}`} />
+        <Metric label="재복습" value={`${needsReviewCount}`} />
+      </div>
+
+      <div className="completion-table">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>영역</th>
+              <th>학습 내용</th>
+              <th>결과</th>
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((result) => (
+              <tr key={result.itemId}>
+                <td>{result.sourceLabel}</td>
+                <td>{result.question}</td>
+                <td>
+                  <StatusText status={result.status} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="coach-comment">
+        <div className="coach-comment-title">🦉 AI 코치 피드백</div>
+        <p>
+          {reportLoading
+            ? "AI 코치가 분석 중…"
+            : coachComment || "이번엔 코치 피드백을 불러오지 못했어. 결과표를 참고해줘."}
+        </p>
+      </div>
+
+      <div className="completion-actions">
+        <button className="button" onClick={onRestart}>
+          다시 복습
+        </button>
+        <button className="button primary" onClick={onViewReport}>
+          내 학습 리포트 보기
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function StudentReport({ sessions }: { sessions: QuizSession[] }) {
   const completedSessions = sessions.filter((session) => session.results.length > 0);
   const average =
@@ -509,6 +639,7 @@ function StudentReport({ sessions }: { sessions: QuizSession[] }) {
   const reviewItems = completedSessions.flatMap((session) =>
     session.results.filter((result) => result.status === "Not mastered"),
   );
+  const latestComment = sessions.find((session) => session.coachComment)?.coachComment ?? "";
 
   return (
     <section className="report-view">
@@ -522,6 +653,15 @@ function StudentReport({ sessions }: { sessions: QuizSession[] }) {
           </div>
         </div>
       </div>
+
+      {latestComment ? (
+        <div className="panel">
+          <div className="coach-comment">
+            <div className="coach-comment-title">🦉 최근 AI 코치 피드백</div>
+            <p>{latestComment}</p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="dashboard-grid">
         <div className="panel">
