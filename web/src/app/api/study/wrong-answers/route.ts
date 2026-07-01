@@ -95,5 +95,9 @@ export async function GET(request: Request) {
     );
   }
 
+  // POC 출제 순서: 단어 → 문장 → 평가 (영역 내 순서는 유지, JS sort는 안정 정렬).
+  const order: Record<string, number> = { word: 0, sentence: 1, assessment: 2 };
+  items.sort((a, b) => (order[a.sourceType] ?? 9) - (order[b.sourceType] ?? 9));
+
   return NextResponse.json({ items, source: "study-api", studyStartDate: startDate, studyEndDate: endDate });
 }

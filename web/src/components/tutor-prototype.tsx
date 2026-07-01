@@ -1021,7 +1021,6 @@ function SessionDetails({ sessions }: { sessions: QuizSession[] }) {
             <thead>
               <tr>
                 <th>영역</th>
-                <th>문제(뜻)</th>
                 <th>정답</th>
                 <th>결과</th>
                 <th>시도</th>
@@ -1031,7 +1030,6 @@ function SessionDetails({ sessions }: { sessions: QuizSession[] }) {
               {session.results.map((r, i) => (
                 <tr key={`${session.id}-${r.itemId}-${i}`}>
                   <td>{r.sourceLabel}</td>
-                  <td>{r.question}</td>
                   <td>{r.answer}</td>
                   <td>
                     <span className={`result-status ${statusClass(r.status)}`}>
