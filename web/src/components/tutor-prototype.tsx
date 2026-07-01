@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { demoSessions, demoStudent } from "@/lib/mock-data";
 import { getLearningSource, getWrongAnswerItems } from "@/lib/learning/provider";
@@ -59,6 +59,11 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   // AI 튜터 대화 히스토리(서버 전달용). 화면 messages와 별개로 role/content만 보관.
   const [apiMessages, setApiMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [tutorStarting, setTutorStarting] = useState(false);
+  // 음성 입력(STT): 마이크 녹음 → /api/stt(Whisper) → 답 입력창 채움.
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     if (isTeacher) return;
@@ -198,6 +203,51 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       });
     }
     return out;
+  }
+
+  // 마이크 토글: 녹음 시작/정지. 정지 시 오디오를 /api/stt로 보내 영어로 변환해 입력창에 채움.
+  async function toggleRecording() {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      alert("이 브라우저에선 마이크 입력을 지원하지 않아.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setIsRecording(false);
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        if (blob.size === 0) return;
+        setIsTranscribing(true);
+        try {
+          const fd = new FormData();
+          fd.append("audio", blob, "recording.webm");
+          const res = await fetch("/api/stt", { method: "POST", body: fd });
+          const data = (await res.json()) as { text?: string; error?: string };
+          if (data.text) {
+            setAnswer((prev) => (prev.trim() ? `${prev.trim()} ${data.text}` : data.text!));
+          }
+        } catch {
+          // 변환 실패는 조용히 무시(사용자가 다시 시도 가능)
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+    } catch {
+      alert("마이크를 사용할 수 없어. 브라우저 마이크 권한을 확인해줘.");
+    }
   }
 
   async function submitAnswer() {
@@ -501,12 +551,21 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                         if (event.key === "Enter") submitAnswer();
                       }}
                       placeholder="영어 답안을 입력하거나, 모르면 '힌트'라고 적어봐"
-                      disabled={isSending}
+                      disabled={isSending || isTranscribing}
                     />
+                    <button
+                      className={`button mic-button ${isRecording ? "recording" : ""}`}
+                      onClick={toggleRecording}
+                      disabled={isSending || isTranscribing}
+                      title="음성으로 답하기"
+                      aria-label="음성으로 답하기"
+                    >
+                      {isRecording ? "● 녹음중" : isTranscribing ? "인식중…" : "🎤"}
+                    </button>
                     <button
                       className="button primary"
                       onClick={submitAnswer}
-                      disabled={isSending}
+                      disabled={isSending || isTranscribing}
                     >
                       제출
                     </button>
