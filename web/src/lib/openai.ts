@@ -29,6 +29,23 @@ function extractOutputText(data: OpenAiResponse): string {
 // 단일 프롬프트로 텍스트 응답을 받는다. 실패 시 throw → 호출 측에서 결정론적 fallback 사용.
 // temperature는 보내지 않는다(gpt-5 계열은 비기본 temperature를 거부할 수 있음).
 export async function callOpenAiText(input: string, maxOutputTokens = 240): Promise<string> {
+  return callOpenAiResponses(input, maxOutputTokens);
+}
+
+// 멀티턴(대화) 호출. input에 role/content 메시지 배열을 그대로 전달한다.
+// (소크라테스식 튜터처럼 developer 지시 + user/assistant 히스토리를 유지할 때 사용)
+export type OpenAiInputMessage = { role: "developer" | "user" | "assistant"; content: string };
+export async function callOpenAiMessages(
+  input: OpenAiInputMessage[],
+  maxOutputTokens = 700,
+): Promise<string> {
+  return callOpenAiResponses(input, maxOutputTokens);
+}
+
+async function callOpenAiResponses(
+  input: string | OpenAiInputMessage[],
+  maxOutputTokens: number,
+): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {

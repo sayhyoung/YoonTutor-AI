@@ -4,11 +4,7 @@ import { useEffect, useState } from "react";
 
 import { demoSessions, demoStudent } from "@/lib/mock-data";
 import { getLearningSource, getWrongAnswerItems } from "@/lib/learning/provider";
-import {
-  calculateSessionScore,
-  getQuestionPrompt,
-  scoreStatus,
-} from "@/lib/quiz-engine";
+import { calculateSessionScore, scoreStatus } from "@/lib/quiz-engine";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
 import {
   loadAllSessions,
@@ -24,7 +20,6 @@ import type {
   MasteryStatus,
   QuizSession,
   SessionResult,
-  TutorResponse,
 } from "@/lib/types";
 
 const nowIso = () => new Date().toISOString();
@@ -61,6 +56,9 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     isFirebaseConfigured() ? "loading" : "local",
   );
   const [storedSessions, setStoredSessions] = useState<QuizSession[]>(() => readLocalSessions());
+  // AI 튜터 대화 히스토리(서버 전달용). 화면 messages와 별개로 role/content만 보관.
+  const [apiMessages, setApiMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [tutorStarting, setTutorStarting] = useState(false);
 
   useEffect(() => {
     if (isTeacher) return;
@@ -68,20 +66,12 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     let isMounted = true;
 
     void getWrongAnswerItems(studentId)
-      .then((items) => {
+      .then(async (items) => {
         if (!isMounted) return;
         setLearningItems(items);
         setItemsLoaded(true);
-        setMessages([
-          {
-            id: "welcome",
-            role: "assistant",
-            content: items.length
-              ? getQuestionPrompt(items[0], 0, items.length)
-              : "오늘 복습할 오답 문항이 없어. 잠시 후 다시 확인해줘.",
-            createdAt: nowIso(),
-          },
-        ]);
+        // POC와 동일: AI가 인사 + 1번 문제를 한국어 뜻과 함께 먼저 제시.
+        await startTutor(items);
       })
       .catch(() => {
         if (!isMounted) return;
@@ -142,7 +132,6 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
         }
       : null;
   const reportSessions = currentPreviewSession ? [currentPreviewSession, ...sessions] : sessions;
-  const currentItem = learningItems[currentIndex];
   const progress =
     learningItems.length > 0
       ? Math.round((results.length / learningItems.length) * 100)
@@ -152,108 +141,144 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const goodCount = results.filter((item) => item.status === "Good").length;
   const needsReviewCount = results.filter((item) => item.status === "Not mastered").length;
 
+  type TutorTurn = { reply: string; raw?: string; status?: MasteryStatus; done?: boolean };
+
+  // POC와 동일한 AI 주도 흐름: AI가 출제·힌트·채점·진행을 대화로 수행한다.
+  async function callTutor(
+    items: LearningItem[],
+    msgs: { role: "user" | "assistant"; content: string }[],
+  ): Promise<TutorTurn> {
+    const res = await fetch("/api/tutor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentName: appUser.displayName, items, messages: msgs }),
+    });
+    return (await res.json()) as TutorTurn;
+  }
+
+  // 세션 시작: AI 인사 + 1번 문제(한국어 뜻 포함)를 받아 첫 메시지로 표시.
+  async function startTutor(items: LearningItem[]) {
+    if (!items.length) {
+      setMessages([
+        {
+          id: "welcome",
+          role: "assistant",
+          content: "오늘 복습할 오답 문항이 없어. 잠시 후 다시 확인해줘.",
+          createdAt: nowIso(),
+        },
+      ]);
+      return;
+    }
+    setTutorStarting(true);
+    try {
+      const data = await callTutor(items, []);
+      const raw = data.raw || data.reply;
+      setApiMessages([{ role: "assistant", content: raw }]);
+      setMessages([
+        { id: "welcome", role: "assistant", content: data.reply, createdAt: nowIso() },
+      ]);
+    } finally {
+      setTutorStarting(false);
+    }
+  }
+
+  // [DONE]이 아직 안 푼 문항보다 먼저 오면 남은 문항을 Not mastered로 채움(POC _pad_missing_results).
+  function padResults(base: SessionResult[]): SessionResult[] {
+    const out = [...base];
+    for (let i = base.length; i < learningItems.length; i++) {
+      const it = learningItems[i];
+      out.push({
+        itemId: it.id,
+        sourceType: it.sourceType,
+        sourceLabel: it.sourceLabel,
+        question: it.meaningKo || it.promptKo,
+        answer: it.answerEn,
+        status: "Not mastered",
+        attempts: 3,
+      });
+    }
+    return out;
+  }
+
   async function submitAnswer() {
     const trimmed = answer.trim();
-    if (!trimmed || !currentItem || isSending || isFinished) return;
+    if (!trimmed || isSending || isFinished || tutorStarting || learningItems.length === 0) return;
 
-    const attemptNumber = attemptCount + 1;
-    const studentMessage: ChatMessage = {
-      id: makeId("student"),
-      role: "student",
-      content: trimmed,
-      createdAt: nowIso(),
-    };
-
-    setMessages((prev) => [...prev, studentMessage]);
+    setMessages((prev) => [
+      ...prev,
+      { id: makeId("student"), role: "student", content: trimmed, createdAt: nowIso() },
+    ]);
     setAnswer("");
     setIsSending(true);
 
+    const nextApi = [...apiMessages, { role: "user" as const, content: trimmed }];
     try {
-      const response = await fetch("/api/quiz", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          item: currentItem,
-          answer: trimmed,
-          attemptNumber,
-          studentName: appUser.displayName,
-        }),
-      });
-
-      const feedback = (await response.json()) as TutorResponse;
-      applyTutorResponse(trimmed, attemptNumber, feedback);
+      const data = await callTutor(learningItems, nextApi);
+      const raw = data.raw || data.reply;
+      setApiMessages([...nextApi, { role: "assistant", content: raw }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("assistant"),
+          role: "assistant",
+          content: data.reply,
+          status: data.status,
+          createdAt: nowIso(),
+        },
+      ]);
+      handleTurn(data, trimmed);
     } finally {
       setIsSending(false);
     }
   }
 
-  function applyTutorResponse(
-    submittedAnswer: string,
-    attemptNumber: number,
-    feedback: TutorResponse,
-  ) {
-    const attempt: Attempt = {
-      id: makeId("attempt"),
-      itemId: currentItem.id,
-      answer: submittedAnswer,
-      feedback: feedback.reply,
-      status: feedback.status,
-      attemptNumber,
-      createdAt: nowIso(),
-    };
+  // AI 태그로 현재 문항 결과 확정 + 다음 문항으로 진행(다음 문제 제시는 AI가 함).
+  function handleTurn(data: TutorTurn, submittedAnswer: string) {
+    const item = learningItems[currentIndex];
+    const attemptNumber = attemptCount + 1;
 
-    const nextMessages: ChatMessage[] = [
+    const nextAttempts: Attempt[] = [
+      ...attempts,
       {
-        id: makeId("assistant"),
-        role: "assistant",
-        content: feedback.reply,
-        status: feedback.status,
+        id: makeId("attempt"),
+        itemId: item?.id ?? "",
+        answer: submittedAnswer,
+        feedback: data.reply,
+        status: data.status,
+        attemptNumber,
         createdAt: nowIso(),
       },
     ];
+    setAttempts(nextAttempts);
 
-    let nextResults = results;
-    let nextAttempts = attempts;
-    let nextIndex = currentIndex;
-    let nextAttemptCount = feedback.countsAsAttempt ? attemptNumber : attemptCount;
-
-    if (feedback.countsAsAttempt) {
-      nextAttempts = [...attempts, attempt];
-      setAttempts(nextAttempts);
-    }
-
-    if (feedback.status) {
-      const result: SessionResult = {
-        itemId: currentItem.id,
-        sourceType: currentItem.sourceType,
-        sourceLabel: currentItem.sourceLabel,
-        question: currentItem.promptKo,
-        answer: currentItem.answerEn,
-        status: feedback.status,
-        attempts: attemptNumber,
-      };
-
-      nextResults = [...results, result];
-      nextIndex = currentIndex + 1;
-      nextAttemptCount = 0;
+    if (data.status && item) {
+      const nextResults: SessionResult[] = [
+        ...results,
+        {
+          itemId: item.id,
+          sourceType: item.sourceType,
+          sourceLabel: item.sourceLabel,
+          question: item.meaningKo || item.promptKo,
+          answer: item.answerEn,
+          status: data.status,
+          attempts: attemptNumber,
+        },
+      ];
+      const nextIndex = currentIndex + 1;
       setResults(nextResults);
       setCurrentIndex(nextIndex);
-
-      const nextItem = learningItems[nextIndex];
-      if (nextItem) {
-        nextMessages.push({
-          id: makeId("assistant"),
-          role: "assistant",
-          content: getQuestionPrompt(nextItem, nextIndex, learningItems.length),
-          createdAt: nowIso(),
-        });
-      } else {
-        finishSession(nextResults, nextAttempts);
+      setAttemptCount(0);
+      if (data.done || nextIndex >= learningItems.length) {
+        void finishSession(padResults(nextResults), nextAttempts);
       }
+      return;
     }
 
-    setAttemptCount(nextAttemptCount);
-    setMessages((prev) => [...prev, ...nextMessages]);
+    // 결과 태그 없음(힌트/재시도 중) → 같은 문항 유지, 시도 횟수만 증가.
+    setAttemptCount(attemptNumber);
+    if (data.done) {
+      void finishSession(padResults(results), nextAttempts);
+    }
   }
 
   async function finishSession(nextResults: SessionResult[], nextAttempts: Attempt[]) {
@@ -303,25 +328,19 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   }
 
   function restartSession() {
-    setMessages([
-      {
-        id: "welcome",
-        role: "assistant",
-        content: learningItems.length
-          ? getQuestionPrompt(learningItems[0], 0, learningItems.length)
-          : "오늘 복습할 오답 문항이 없어. 잠시 후 다시 확인해줘.",
-        createdAt: nowIso(),
-      },
-    ]);
     setAnswer("");
     setCurrentIndex(0);
     setAttemptCount(0);
     setAttempts([]);
     setResults([]);
+    setApiMessages([]);
+    setMessages([]);
     setIsFinished(false);
     setCoachComment("");
     setReportLoading(false);
     setSaveMode("idle");
+    // POC처럼 AI 인사 + 1번 문제부터 다시 시작.
+    void startTutor(learningItems);
   }
 
   return (
@@ -495,48 +514,6 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                 </>
               )}
             </div>
-
-            <aside className="context-panel">
-              <div className="panel">
-                <div className="panel-header">
-                  <div>
-                    <h3 className="panel-title">세션 요약</h3>
-                    <p className="panel-note">현재 진행 중인 복습 세션</p>
-                  </div>
-                </div>
-                <div className="section-body">
-                  <div className="metric-grid">
-                    <Metric label="점수" value={`${score}점`} />
-                    <Metric label="Perfect" value={`${perfectCount}`} />
-                    <Metric label="재복습" value={`${needsReviewCount}`} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="panel">
-                <div className="panel-header">
-                  <div>
-                    <h3 className="panel-title">오늘 문항</h3>
-                    <p className="panel-note">학습 API 응답 정규화 예시</p>
-                  </div>
-                </div>
-                <div className="section-body item-list">
-                  {learningItems.map((item, index) => {
-                    const result = results.find((entry) => entry.itemId === item.id);
-                    return (
-                      <div className="item-row" key={item.id}>
-                        <span className="item-badge">{item.sourceLabel}</span>
-                        <div>
-                          <p className="item-title">{index + 1}. {item.unitName}</p>
-                          <p className="item-sub">{item.meaningKo ?? item.originalQuestion}</p>
-                        </div>
-                        <StatusText status={result?.status} />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </aside>
           </section>
         ) : activeView === "report" ? (
           <StudentReport sessions={reportSessions} />
