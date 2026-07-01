@@ -10,6 +10,7 @@ type LoginScreenProps = {
   onLoginStudent: (login: StudentLogin) => Promise<void> | void;
   onLoginStudentCredentials: (credentials: StudyCredentials) => Promise<void> | void;
   onLoginTeacher: (displayName: string) => Promise<void> | void;
+  onLoginTeacherCredentials: (credentials: StudyCredentials) => Promise<void> | void;
 };
 
 type Tab = "student" | "teacher";
@@ -31,6 +32,7 @@ export function LoginScreen({
   onLoginStudent,
   onLoginStudentCredentials,
   onLoginTeacher,
+  onLoginTeacherCredentials,
 }: LoginScreenProps) {
   // external 모드(study-api 실연동): 아이디/비밀번호로 JWT 로그인.
   // mock 모드(데모): 회원번호 1111만 허용.
@@ -79,6 +81,24 @@ export function LoginScreen({
 
   async function submitTeacher() {
     if (isSubmitting) return;
+
+    if (isExternal) {
+      if (!userId.trim() || !password) {
+        setError("아이디와 비밀번호를 입력해줘.");
+        return;
+      }
+      setError("");
+      setIsSubmitting(true);
+      try {
+        await onLoginTeacherCredentials({ userId: userId.trim(), password });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "로그인에 실패했어.");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
     setError("");
     setIsSubmitting(true);
     try {
@@ -174,18 +194,47 @@ export function LoginScreen({
           </div>
         ) : (
           <div className="auth-body">
-            <label className="auth-field">
-              <span>이름 (선택)</span>
-              <input
-                value={teacherName}
-                onChange={(event) => setTeacherName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") submitTeacher();
-                }}
-                placeholder="예: 김선생"
-                autoFocus
-              />
-            </label>
+            {isExternal ? (
+              <>
+                <label className="auth-field">
+                  <span>교사 아이디</span>
+                  <input
+                    value={userId}
+                    onChange={(event) => setUserId(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") submitTeacher();
+                    }}
+                    placeholder="교사 아이디"
+                    autoFocus
+                  />
+                </label>
+                <label className="auth-field">
+                  <span>비밀번호</span>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") submitTeacher();
+                    }}
+                    placeholder="비밀번호"
+                  />
+                </label>
+              </>
+            ) : (
+              <label className="auth-field">
+                <span>이름 (선택)</span>
+                <input
+                  value={teacherName}
+                  onChange={(event) => setTeacherName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") submitTeacher();
+                  }}
+                  placeholder="예: 김선생"
+                  autoFocus
+                />
+              </label>
+            )}
             <button
               className="button primary auth-submit"
               onClick={submitTeacher}

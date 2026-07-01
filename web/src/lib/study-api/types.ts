@@ -124,6 +124,15 @@ export type StudyQueryData = {
   studyResults?: StudyResultEntry[];
 };
 
+// GET /api/teacher/customers — 교사가 담당하는 회원 목록 항목
+export type TeacherCustomer = {
+  teacherNo?: number;
+  agencyNo?: number;
+  customerNo: number | string;
+  customerName?: string;
+  schoolYear?: number;
+};
+
 export function extractProfile(data: StudyLoginData): StudyProfile {
   const str = (v: unknown) => (v === undefined || v === null ? undefined : String(v));
   return {

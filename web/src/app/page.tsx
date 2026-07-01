@@ -5,7 +5,14 @@ import { TutorPrototype } from "@/components/tutor-prototype";
 import { useAppUser } from "@/lib/auth/use-app-user";
 
 export default function Home() {
-  const { appUser, loginAsStudent, loginWithStudyApi, loginAsTeacher, logout } = useAppUser();
+  const {
+    appUser,
+    loginAsStudent,
+    loginWithStudyApi,
+    loginAsTeacher,
+    loginAsTeacherApi,
+    logout,
+  } = useAppUser();
 
   if (!appUser) {
     return (
@@ -13,6 +20,7 @@ export default function Home() {
         onLoginStudent={loginAsStudent}
         onLoginStudentCredentials={loginWithStudyApi}
         onLoginTeacher={loginAsTeacher}
+        onLoginTeacherCredentials={loginAsTeacherApi}
       />
     );
   }

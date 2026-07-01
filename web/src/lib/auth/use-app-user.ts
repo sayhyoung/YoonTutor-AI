@@ -24,6 +24,8 @@ type StudyLoginProfile = {
   userId?: string;
   customerNo?: string;
   customerName?: string;
+  teacherNo?: string;
+  teacherName?: string;
 };
 
 // Anonymous Firebase Auth still backs the pilot so Firestore writes get a real
@@ -83,6 +85,29 @@ export function useAppUser() {
     void upsertUserProfile(appUser);
   }, []);
 
+  // external 모드: study-api 교사 JWT 로그인(BFF). 토큰 쿠키로 담당 회원 조회 권한 확보.
+  const loginAsTeacherApi = useCallback(async ({ userId, password }: StudyCredentials) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, password, role: "teacher" }),
+    });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(err.error || "로그인에 실패했어.");
+    }
+    const { profile } = (await res.json()) as { profile: StudyLoginProfile };
+    const uid = await resolveUid(`teacher-${profile.teacherNo ?? userId}`);
+    const appUser: AppUser = {
+      uid,
+      role: "teacher",
+      memberId: profile.teacherNo ? String(profile.teacherNo) : undefined,
+      displayName: profile.teacherName || `교사 ${profile.teacherNo ?? ""}`.trim(),
+    };
+    writeStoredAppUser(appUser);
+    void upsertUserProfile(appUser);
+  }, []);
+
   const logout = useCallback(async () => {
     // study-api 세션 쿠키 정리(없으면 무해). 그 후 로컬 앱 세션 제거.
     try {
@@ -93,5 +118,5 @@ export function useAppUser() {
     writeStoredAppUser(null);
   }, []);
 
-  return { appUser, loginAsStudent, loginWithStudyApi, loginAsTeacher, logout };
+  return { appUser, loginAsStudent, loginWithStudyApi, loginAsTeacher, loginAsTeacherApi, logout };
 }

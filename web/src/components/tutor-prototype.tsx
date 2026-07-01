@@ -742,7 +742,132 @@ function StatusText({ status }: { status?: MasteryStatus }) {
   return <span className={className}>{status}</span>;
 }
 
+type TeacherCustomerRow = { customerNo: string; customerName: string; schoolYear: number };
+
+// 교사 실연동: /api/teacher/customers로 담당 회원을 불러오고,
+// 회원 선택 시 그 회원의 오답 현황(/api/study/wrong-answers)을 조회해 보여준다.
+function TeacherMembers() {
+  const [customers, setCustomers] = useState<TeacherCustomerRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [memberItems, setMemberItems] = useState<LearningItem[]>([]);
+  const [memberLoading, setMemberLoading] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/teacher/customers")
+      .then((r) => r.json())
+      .then((d: { customers?: TeacherCustomerRow[]; error?: string }) => {
+        if (!mounted) return;
+        setCustomers(d.customers ?? []);
+        if (d.error) setError("담당 회원을 불러오지 못했어. (교사 계정으로 로그인했는지 확인)");
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setError("담당 회원을 불러오지 못했어.");
+        setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function selectMember(no: string, name: string) {
+    setSelected(no);
+    setMemberLoading(true);
+    setMemberItems([]);
+    try {
+      const items = await getWrongAnswerItems(no);
+      setMemberItems(items);
+    } catch {
+      setMemberItems([]);
+    } finally {
+      setMemberLoading(false);
+    }
+    void name;
+  }
+
+  const selectedName = customers.find((c) => c.customerNo === selected)?.customerName ?? selected;
+  const countBy = (t: string) => memberItems.filter((i) => i.sourceType === t).length;
+
+  return (
+    <div className="dashboard-grid">
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <h3 className="panel-title">담당 회원 {customers.length ? `(${customers.length}명)` : ""}</h3>
+            <p className="panel-note">study-api 교사 계정에 소속된 회원</p>
+          </div>
+        </div>
+        <div className="section-body item-list">
+          {loading ? (
+            <div className="empty-state">불러오는 중…</div>
+          ) : error ? (
+            <div className="empty-state">{error}</div>
+          ) : customers.length === 0 ? (
+            <div className="empty-state">담당 회원이 없어.</div>
+          ) : (
+            customers.map((c) => (
+              <button
+                key={c.customerNo}
+                className={`side-button ${selected === c.customerNo ? "active" : ""}`}
+                onClick={() => selectMember(c.customerNo, c.customerName)}
+              >
+                {c.customerName || c.customerNo}
+                <span style={{ color: "var(--ink-subtle)" }}> · {c.customerNo}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <h3 className="panel-title">회원 오답 현황</h3>
+            <p className="panel-note">
+              {selected ? `${selectedName} 님의 최근 복습 대상 오답` : "왼쪽에서 회원을 선택해줘"}
+            </p>
+          </div>
+        </div>
+        <div className="section-body">
+          {!selected ? (
+            <div className="empty-state">회원을 선택하면 오답 현황이 표시돼.</div>
+          ) : memberLoading ? (
+            <div className="empty-state">불러오는 중…</div>
+          ) : memberItems.length === 0 ? (
+            <div className="empty-state">최근 조회 기간에 오답이 없어.</div>
+          ) : (
+            <>
+              <div className="metric-grid">
+                <Metric label="오답" value={`${memberItems.length}`} />
+                <Metric label="단어" value={`${countBy("word")}`} />
+                <Metric label="문장" value={`${countBy("sentence")}`} />
+                <Metric label="평가" value={`${countBy("assessment")}`} />
+              </div>
+              <div className="item-list" style={{ marginTop: 12 }}>
+                {memberItems.map((it) => (
+                  <div className="item-row" key={it.id}>
+                    <span className="item-badge">{it.sourceLabel}</span>
+                    <div>
+                      <p className="item-title">{it.answerEn}</p>
+                      <p className="item-sub">{it.meaningKo ?? it.originalQuestion ?? it.unitName}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
+  const isExternal = getLearningSource() === "external-api";
   const average =
     sessions.length > 0
       ? Math.round(sessions.reduce((sum, session) => sum + session.score, 0) / sessions.length)
@@ -754,6 +879,8 @@ function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
 
   return (
     <section className="teacher-view">
+      {isExternal ? <TeacherMembers /> : null}
+
       <div className="panel">
         <div className="section-body">
           <div className="metric-grid">
