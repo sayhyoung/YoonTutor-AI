@@ -67,7 +67,7 @@ export function LoginScreen({
 
     const student = resolveDemoStudent(memberId);
     if (!student) {
-      setError(`회원번호를 확인해줘. (파일럿 데모 번호: ${demoStudent.memberId})`);
+      setError(`회원번호를 확인해줘. (데모 번호: ${demoStudent.memberId})`);
       return;
     }
     setError("");
@@ -115,7 +115,7 @@ export function LoginScreen({
           <div className="brand-mark">Y</div>
           <div>
             <h1 className="brand-title">윤선생 AI 코치</h1>
-            <p className="auth-subtitle">AI 복습 코칭 파일럿에 로그인</p>
+            <p className="auth-subtitle">AI 코치 코코와 함께 영어 복습</p>
           </div>
         </div>
 

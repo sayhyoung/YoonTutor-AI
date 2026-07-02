@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "윤선생 AI 코치",
-  description: "Firebase 기반 AI 복습 코칭 프로토타입",
+  description: "AI 코치 코코와 함께하는 영어 보충학습",
 };
 
 export default function RootLayout({
