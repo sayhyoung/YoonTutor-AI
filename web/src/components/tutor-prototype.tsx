@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Koko } from "@/components/koko";
 import { demoSessions, demoStudent } from "@/lib/mock-data";
@@ -1392,84 +1392,54 @@ function SessionTable({ sessions }: { sessions: QuizSession[] }) {
   }
 
   return (
-    <table className="table">
-      <thead>
-        <tr>
-          <th>학습일</th>
-          <th>문항</th>
-          <th>점수</th>
-          <th>Perfect</th>
-          <th>Good</th>
-          <th>재복습</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {sessions.map((session) => {
-          const counts = getStatusCounts([session]);
-          const isOpen = expanded === session.id;
-          return (
-            <Fragment key={session.id}>
-              <tr>
-                <td>{formatDate(session.completedAt ?? session.createdAt)}</td>
-                <td>{session.completedItems}/{session.totalItems}</td>
-                <td>{session.score}점</td>
-                <td>{counts.Perfect}</td>
-                <td>{counts.Good}</td>
-                <td>{counts["Not mastered"]}</td>
-                <td style={{ textAlign: "right" }}>
-                  <button
-                    className="button"
-                    onClick={() => setExpanded(isOpen ? null : session.id)}
-                  >
-                    {isOpen ? "닫기" : "상세 내역 보기"}
-                  </button>
-                </td>
-              </tr>
-              {isOpen ? (
-                <tr>
-                  <td colSpan={7}>
-                    <div className="session-detail-inner">
-                      {session.results.length === 0 ? (
-                        <div className="empty-state">학습 내역이 없습니다.</div>
-                      ) : (
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th>영역</th>
-                              <th>학습 내용</th>
-                              <th>결과</th>
-                              <th>시도</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {session.results.map((r, i) => (
-                              <tr key={`${session.id}-${r.itemId}-${i}`}>
-                                <td>{r.sourceLabel}</td>
-                                <td>
-                                  {r.answer}
-                                  {r.question ? ` : ${r.question}` : ""}
-                                </td>
-                                <td>
-                                  <span className={`result-status ${statusClass(r.status)}`}>
-                                    {statusLabel(r.status)}
-                                  </span>
-                                </td>
-                                <td>{r.attempts}회</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
+    <div>
+      {sessions.map((session) => {
+        const counts = getStatusCounts([session]);
+        const isOpen = expanded === session.id;
+        return (
+          <div className="rep-session" key={session.id}>
+            <div className="rep-session-head">
+              <span className="rep-session-date">
+                {formatDate(session.completedAt ?? session.createdAt)} · {session.completedItems}/
+                {session.totalItems}문항
+              </span>
+              <span className="rep-session-score">{session.score}점</span>
+            </div>
+            <div className="rep-chips">
+              <span className="rep-chip perfect">Perfect {counts.Perfect}</span>
+              <span className="rep-chip good">Good {counts.Good}</span>
+              <span className="rep-chip not">재복습 {counts["Not mastered"]}</span>
+            </div>
+            <button className="rep-more" onClick={() => setExpanded(isOpen ? null : session.id)}>
+              {isOpen ? "닫기" : "상세 내역 보기"}
+            </button>
+            {isOpen ? (
+              <div className="rep-detail">
+                {session.results.length === 0 ? (
+                  <div className="empty-state">학습 내역이 없습니다.</div>
+                ) : (
+                  session.results.map((r, i) => (
+                    <div className="rep-item" key={`${session.id}-${r.itemId}-${i}`}>
+                      <span className={`item-badge cat-${r.sourceType}`}>{r.sourceLabel}</span>
+                      <div>
+                        <div className="rep-item-main">
+                          {r.answer}
+                          {r.question ? ` : ${r.question}` : ""}
+                        </div>
+                        <div className="rep-item-sub">{r.attempts}회 시도</div>
+                      </div>
+                      <span className={`result-status ${statusClass(r.status)}`}>
+                        {statusLabel(r.status)}
+                      </span>
                     </div>
-                  </td>
-                </tr>
-              ) : null}
-            </Fragment>
-          );
-        })}
-      </tbody>
-    </table>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

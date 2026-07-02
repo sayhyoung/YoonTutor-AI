@@ -1140,3 +1140,32 @@ button {
 
 /* 빈 축하 화면 */
 .empty-celebration { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 20px; }
+
+/* ===== Phase 2b: 폰 컨테이너 내부는 항상 모바일 단일단(뷰포트와 무관) ===== */
+.phone .dashboard-grid { grid-template-columns: 1fr; }
+.phone .metric-grid { grid-template-columns: repeat(2, 1fr); }
+.phone .metric-grid.four { grid-template-columns: repeat(2, 1fr); }
+.phone .donut-layout { grid-template-columns: 1fr; justify-items: center; gap: 14px; min-height: 0; }
+.phone .session-bar-row { grid-template-columns: 1fr; gap: 4px; }
+.phone .panel-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+.phone .section-body { padding: 14px 14px; }
+.phone .chart-shell,
+.phone .donut-layout { min-height: 0; }
+
+/* 리포트 세션 카드(모바일 표 대체) */
+.rep-session { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: #fff; box-shadow: 0 6px 16px -12px rgba(90,60,160,.25); }
+.rep-session + .rep-session { margin-top: 12px; }
+.rep-session-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rep-session-date { font-size: 0.82rem; color: var(--ink-subtle); font-weight: 600; }
+.rep-session-score { font-family: var(--font-head); font-size: 1.15rem; font-weight: 800; color: var(--primary); }
+.rep-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.rep-chip { font-size: 0.72rem; font-weight: 700; border-radius: 999px; padding: 4px 10px; background: var(--surface-muted); color: var(--ink-soft); }
+.rep-chip.perfect { background: #E9FBEF; color: var(--success); }
+.rep-chip.good { background: #EAF2FE; color: #0054D1; }
+.rep-chip.not { background: #FFEFF1; color: var(--danger); }
+.rep-more { margin-top: 12px; width: 100%; border: 1px dashed var(--line); background: var(--surface); color: var(--primary); border-radius: 12px; padding: 9px; font-weight: 700; font-size: 0.82rem; cursor: pointer; }
+.rep-detail { margin-top: 12px; display: grid; gap: 8px; }
+.rep-item { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.rep-item .item-badge { align-self: start; }
+.rep-item-main { font-size: 0.86rem; font-weight: 600; }
+.rep-item-sub { font-size: 0.74rem; color: var(--ink-subtle); }
