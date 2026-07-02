@@ -934,11 +934,16 @@ type TeacherCustomerRow = { customerNo: string; customerName: string; schoolYear
 
 // 교사 실연동: /api/teacher/customers로 담당 회원을 불러오고,
 // 회원 선택 시 그 회원의 오답 현황(/api/study/wrong-answers)을 조회해 보여준다.
-function TeacherMembers() {
+function TeacherMembers({
+  selected,
+  onSelect,
+}: {
+  selected: string | null;
+  onSelect: (no: string, name: string) => void;
+}) {
   const [customers, setCustomers] = useState<TeacherCustomerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
   const [memberItems, setMemberItems] = useState<LearningItem[]>([]);
   const [memberLoading, setMemberLoading] = useState(false);
 
@@ -962,19 +967,14 @@ function TeacherMembers() {
     };
   }, []);
 
-  async function selectMember(no: string, name: string) {
-    setSelected(no);
+  function handleSelect(no: string, name: string) {
+    onSelect(no, name);
     setMemberLoading(true);
     setMemberItems([]);
-    try {
-      const items = await getWrongAnswerItems(no);
-      setMemberItems(items);
-    } catch {
-      setMemberItems([]);
-    } finally {
-      setMemberLoading(false);
-    }
-    void name;
+    getWrongAnswerItems(no)
+      .then((items) => setMemberItems(items))
+      .catch(() => setMemberItems([]))
+      .finally(() => setMemberLoading(false));
   }
 
   const selectedName = customers.find((c) => c.customerNo === selected)?.customerName ?? selected;
@@ -986,7 +986,7 @@ function TeacherMembers() {
         <div className="panel-header">
           <div>
             <h3 className="panel-title">담당 회원 {customers.length ? `(${customers.length}명)` : ""}</h3>
-            <p className="panel-note">study-api 교사 계정에 소속된 회원</p>
+            <p className="panel-note">회원을 선택하면 아래에 해당 회원 기록만 표시돼</p>
           </div>
         </div>
         <div className="section-body item-list">
@@ -1001,7 +1001,7 @@ function TeacherMembers() {
               <button
                 key={c.customerNo}
                 className={`side-button ${selected === c.customerNo ? "active" : ""}`}
-                onClick={() => selectMember(c.customerNo, c.customerName)}
+                onClick={() => handleSelect(c.customerNo, c.customerName)}
               >
                 {c.customerName || c.customerNo}
                 <span style={{ color: "var(--ink-subtle)" }}> · {c.customerNo}</span>
@@ -1056,23 +1056,39 @@ function TeacherMembers() {
 
 function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
   const isExternal = getLearningSource() === "external-api";
+  const [selected, setSelected] = useState<string | null>(null);
+  const [selectedName, setSelectedName] = useState<string>("");
+
   const average =
     sessions.length > 0
       ? Math.round(sessions.reduce((sum, session) => sum + session.score, 0) / sessions.length)
       : 0;
-  const reviewItems = sessions.flatMap((session) =>
-    session.results.filter((result) => result.status === "Not mastered"),
-  );
   const completedItems = sessions.reduce((sum, session) => sum + session.completedItems, 0);
+
+  // 실교사(external)는 선택한 회원의 세션만, 데모(mock)는 전체를 표시.
+  const memberSessions = selected
+    ? sessions.filter((s) => String(s.studentId) === selected || String(s.memberId) === selected)
+    : [];
+  const scope = isExternal ? memberSessions : sessions;
+  const label = isExternal && selectedName ? `${selectedName} 님의 ` : "";
+  const scopeReview = scope.flatMap((s) => s.results.filter((r) => r.status === "Not mastered"));
 
   return (
     <section className="teacher-view">
-      {isExternal ? <TeacherMembers /> : null}
+      {isExternal ? (
+        <TeacherMembers
+          selected={selected}
+          onSelect={(no, name) => {
+            setSelected(no);
+            setSelectedName(name);
+          }}
+        />
+      ) : null}
 
       <div className="panel">
         <div className="section-body">
           <div className="metric-grid">
-            <Metric label="세션" value={`${sessions.length}`} />
+            <Metric label="전체 세션" value={`${sessions.length}`} />
             <Metric label="평균 점수" value={`${average}점`} />
             <Metric label="완료 문항" value={`${completedItems}`} />
           </div>
@@ -1084,7 +1100,7 @@ function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
           <div className="panel-header">
             <div>
               <h3 className="panel-title">반별 성취도 추이</h3>
-              <p className="panel-note">최근 세션 점수 기준</p>
+              <p className="panel-note">전체 세션 점수 추이</p>
             </div>
           </div>
           <div className="section-body">
@@ -1105,85 +1121,101 @@ function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
         </div>
       </div>
 
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <h3 className="panel-title">최근 세션 점수</h3>
-            <p className="panel-note">운영자가 빠르게 스캔하는 세션별 막대 차트</p>
+      {isExternal && !selected ? (
+        <div className="panel">
+          <div className="section-body">
+            <div className="empty-state">
+              위 목록에서 회원을 선택하면 해당 회원의 세션·학습 상세만 표시됩니다.
+            </div>
           </div>
         </div>
-        <div className="section-body">
-          <SessionScoreBars sessions={sessions} />
-        </div>
-      </div>
-
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <h3 className="panel-title">최근 학습 세션</h3>
-            <p className="panel-note">Firestore quizSessions 컬렉션 표시 예시</p>
-          </div>
-        </div>
-        <div className="section-body">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>학생</th>
-                <th>완료</th>
-                <th>점수</th>
-                <th>학습일</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.map((session) => (
-                <tr key={session.id}>
-                  <td>{session.studentName}</td>
-                  <td>{session.completedItems}/{session.totalItems}</td>
-                  <td>{session.score}점</td>
-                  <td>{formatDate(session.completedAt ?? session.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <h3 className="panel-title">세션별 학습 상세</h3>
-            <p className="panel-note">각 세션에서 학습한 단어·문장 전체 내역</p>
-          </div>
-        </div>
-        <div className="section-body">
-          <SessionDetails sessions={sessions} />
-        </div>
-      </div>
-
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <h3 className="panel-title">재복습 필요 문항</h3>
-            <p className="panel-note">Not mastered 결과만 모아 교사가 확인</p>
-          </div>
-        </div>
-        <div className="section-body item-list">
-          {reviewItems.length === 0 ? (
-            <div className="empty-state">재복습 필요 문항이 없습니다.</div>
-          ) : (
-            reviewItems.map((item) => (
-              <div className="item-row" key={`${item.itemId}-${item.answer}`}>
-                <span className="item-badge">{item.sourceLabel}</span>
-                <div>
-                  <p className="item-title">{item.answer}</p>
-                  <p className="item-sub">{item.question}</p>
-                </div>
-                <span className="result-status not">{scoreStatus(item.status)}점</span>
+      ) : (
+        <>
+          <div className="panel">
+            <div className="panel-header">
+              <div>
+                <h3 className="panel-title">{label}세션 점수</h3>
+                <p className="panel-note">세션별 점수</p>
               </div>
-            ))
-          )}
-        </div>
-      </div>
+            </div>
+            <div className="section-body">
+              <SessionScoreBars sessions={scope} />
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-header">
+              <div>
+                <h3 className="panel-title">{label}최근 학습 세션</h3>
+                <p className="panel-note">완료한 복습 세션</p>
+              </div>
+            </div>
+            <div className="section-body">
+              {scope.length === 0 ? (
+                <div className="empty-state">완료된 세션이 없습니다.</div>
+              ) : (
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>학생</th>
+                      <th>완료</th>
+                      <th>점수</th>
+                      <th>학습일</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scope.map((session) => (
+                      <tr key={session.id}>
+                        <td>{session.studentName}</td>
+                        <td>{session.completedItems}/{session.totalItems}</td>
+                        <td>{session.score}점</td>
+                        <td>{formatDate(session.completedAt ?? session.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-header">
+              <div>
+                <h3 className="panel-title">{label}세션별 학습 상세</h3>
+                <p className="panel-note">각 세션에서 학습한 단어·문장 전체 내역</p>
+              </div>
+            </div>
+            <div className="section-body">
+              <SessionDetails sessions={scope} />
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-header">
+              <div>
+                <h3 className="panel-title">{label}재복습 필요 문항</h3>
+                <p className="panel-note">Not mastered 결과만 모아 확인</p>
+              </div>
+            </div>
+            <div className="section-body item-list">
+              {scopeReview.length === 0 ? (
+                <div className="empty-state">재복습 필요 문항이 없습니다.</div>
+              ) : (
+                scopeReview.map((item, i) => (
+                  <div className="item-row" key={`${item.itemId}-${item.answer}-${i}`}>
+                    <span className={`item-badge cat-${item.sourceType}`}>{item.sourceLabel}</span>
+                    <div>
+                      <p className="item-title">{item.answer}</p>
+                      <p className="item-sub">{item.question}</p>
+                    </div>
+                    <span className="result-status not">{scoreStatus(item.status)}점</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </section>
   );
 }
