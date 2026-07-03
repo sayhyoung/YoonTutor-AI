@@ -1169,3 +1169,8 @@ button {
 .rep-item .item-badge { align-self: start; }
 .rep-item-main { font-size: 0.86rem; font-weight: 600; }
 .rep-item-sub { font-size: 0.74rem; color: var(--ink-subtle); }
+
+/* ===== Step 3: 세션 내 즉각 보상(별/콤보) ===== */
+.reward-row { display: flex; align-items: center; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+.star-earned { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; font-weight: 800; color: #C98800; background: #FFF4DE; border-radius: 999px; padding: 4px 11px; }
+.combo-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 0.76rem; font-weight: 800; color: #E0455F; background: #FFEFF1; border-radius: 999px; padding: 4px 10px; }

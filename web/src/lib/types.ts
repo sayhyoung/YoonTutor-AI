@@ -40,6 +40,9 @@ export type ChatMessage = {
   content: string;
   createdAt: string;
   status?: MasteryStatus;
+  // 표시 계층용(게이미피케이션): 이 문항에서 획득한 별 수 / 현재 콤보.
+  earnedStars?: number;
+  combo?: number;
 };
 
 export type Attempt = {

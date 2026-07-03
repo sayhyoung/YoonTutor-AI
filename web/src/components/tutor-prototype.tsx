@@ -14,7 +14,7 @@ import {
   readLocalSessions,
   saveQuizSession,
 } from "@/lib/firebase/firestore";
-import type { GamificationState } from "@/lib/gamification";
+import { starsForStatus, type GamificationState } from "@/lib/gamification";
 import type {
   AppUser,
   Attempt,
@@ -70,6 +70,8 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const audioChunksRef = useRef<Blob[]>([]);
   // 게이미피케이션(별/스트릭) 상태.
   const [gamification, setGamification] = useState<GamificationState | null>(null);
+  // 콤보(Perfect/Good 연속). 저장하지 않고 세션 내 로컬 표시용.
+  const [combo, setCombo] = useState(0);
 
   useEffect(() => {
     if (isTeacher) return;
@@ -179,6 +181,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
 
   // 세션 시작: AI 인사 + 1번 문제(한국어 뜻 포함)를 받아 첫 메시지로 표시.
   async function startTutor(items: LearningItem[]) {
+    setCombo(0);
     if (!items.length) {
       setMessages([
         {
@@ -290,6 +293,17 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       const data = await callTutor(learningItems, nextApi);
       const raw = data.raw || data.reply;
       setApiMessages([...nextApi, { role: "assistant", content: raw }]);
+
+      // 문항 확정 시 획득 별 + 콤보(표시용). Perfect/Good 연속이면 콤보 증가, 재복습이면 리셋.
+      let earnedStars: number | undefined;
+      let comboAtMsg: number | undefined;
+      if (data.status) {
+        earnedStars = starsForStatus(data.status);
+        const nextCombo = data.status === "Perfect" || data.status === "Good" ? combo + 1 : 0;
+        comboAtMsg = nextCombo;
+        setCombo(nextCombo);
+      }
+
       setMessages((prev) => [
         ...prev,
         {
@@ -297,6 +311,8 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
           role: "assistant",
           content: data.reply,
           status: data.status,
+          earnedStars,
+          combo: comboAtMsg,
           createdAt: nowIso(),
         },
       ]);
@@ -520,7 +536,15 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                         <div className="message assistant">
                           {message.content}
                           {message.status ? (
-                            <span className="message-status">{message.status}</span>
+                            <div className="reward-row">
+                              <span className="star-earned">
+                                ⭐×{message.earnedStars ?? starsForStatus(message.status)}{" "}
+                                {rewardLabel(message.status)}
+                              </span>
+                              {message.combo && message.combo >= 2 ? (
+                                <span className="combo-badge">🔥 {message.combo}연속!</span>
+                              ) : null}
+                            </div>
                           ) : null}
                         </div>
                       </div>
@@ -1538,6 +1562,13 @@ function statusClass(status: MasteryStatus) {
 
 function statusLabel(status: MasteryStatus) {
   return status === "Not mastered" ? "재복습" : status;
+}
+
+// 세션 내 즉각 보상 문구(초등 톤 — 실패 단어 금지).
+function rewardLabel(status: MasteryStatus): string {
+  if (status === "Perfect") return "Perfect!";
+  if (status === "Good") return "좋아!";
+  return "다시 도전!";
 }
 
 function formatShortDate(value: string) {
