@@ -9,10 +9,12 @@ import { calculateSessionScore, scoreStatus } from "@/lib/quiz-engine";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
 import {
   loadAllSessions,
+  loadGamification,
   loadQuizSessions,
   readLocalSessions,
   saveQuizSession,
 } from "@/lib/firebase/firestore";
+import type { GamificationState } from "@/lib/gamification";
 import type {
   AppUser,
   Attempt,
@@ -66,6 +68,19 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  // 게이미피케이션(별/스트릭) 상태.
+  const [gamification, setGamification] = useState<GamificationState | null>(null);
+
+  useEffect(() => {
+    if (isTeacher) return;
+    let mounted = true;
+    void loadGamification(studentId).then((g) => {
+      if (mounted && g) setGamification(g);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [isTeacher, studentId]);
 
   useEffect(() => {
     if (isTeacher) return;
@@ -572,6 +587,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
             name={appUser.displayName}
             items={learningItems}
             itemsLoaded={itemsLoaded}
+            gamification={gamification}
             onStart={startLearning}
           />
         )}
@@ -606,13 +622,17 @@ function HomeView({
   name,
   items,
   itemsLoaded,
+  gamification,
   onStart,
 }: {
   name: string;
   items: LearningItem[];
   itemsLoaded: boolean;
+  gamification: GamificationState | null;
   onStart: () => void;
 }) {
+  const streakDays = gamification?.streak.current ?? 0;
+  const starCount = gamification?.stars ?? 0;
   const today = new Intl.DateTimeFormat("ko-KR", {
     month: "long",
     day: "numeric",
@@ -638,8 +658,8 @@ function HomeView({
             🔥
           </span>
           <div>
-            <div className="stat-num">5일</div>
-            <div className="stat-cap">연속 학습</div>
+            <div className="stat-num">{streakDays}일</div>
+            <div className="stat-cap">{streakDays > 0 ? "연속 학습" : "오늘부터 시작!"}</div>
           </div>
         </div>
         <div className="stat-card">
@@ -647,7 +667,7 @@ function HomeView({
             ⭐
           </span>
           <div>
-            <div className="stat-num">{items.length ? items.length * 2 : 0}개</div>
+            <div className="stat-num">{starCount}개</div>
             <div className="stat-cap">모은 별</div>
           </div>
         </div>
