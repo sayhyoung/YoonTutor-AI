@@ -8,13 +8,14 @@ import { getLearningSource, getWrongAnswerItems } from "@/lib/learning/provider"
 import { calculateSessionScore, scoreStatus } from "@/lib/quiz-engine";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
 import {
+  applySessionToGamification,
   loadAllSessions,
   loadGamification,
   loadQuizSessions,
   readLocalSessions,
   saveQuizSession,
 } from "@/lib/firebase/firestore";
-import { starsForStatus, type GamificationState } from "@/lib/gamification";
+import { starsForSession, starsForStatus, type GamificationState } from "@/lib/gamification";
 import type {
   AppUser,
   Attempt,
@@ -72,6 +73,12 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const [gamification, setGamification] = useState<GamificationState | null>(null);
   // 콤보(Perfect/Good 연속). 저장하지 않고 세션 내 로컬 표시용.
   const [combo, setCombo] = useState(0);
+  // 완료 화면 연출용: 이번 세션 획득 별 / 새 스트릭 / 최고기록 갱신 여부.
+  const [sessionReward, setSessionReward] = useState<{
+    earnedStars: number;
+    streakCurrent: number;
+    isBestStreak: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (isTeacher) return;
@@ -374,6 +381,27 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   async function finishSession(nextResults: SessionResult[], nextAttempts: Attempt[]) {
     const completedAt = nowIso();
 
+    // 게이미피케이션 반영(별/스트릭). 실패해도 완료 화면은 정상 렌더.
+    const prevBest = gamification?.streak.best ?? 0;
+    const earnedStars = starsForSession(nextResults);
+    let reward = {
+      earnedStars,
+      streakCurrent: gamification?.streak.current ?? 0,
+      isBestStreak: false,
+    };
+    try {
+      const newState = await applySessionToGamification(studentId, nextResults);
+      setGamification(newState);
+      reward = {
+        earnedStars,
+        streakCurrent: newState.streak.current,
+        isBestStreak: newState.streak.best > prevBest,
+      };
+    } catch {
+      // 게이미피케이션 실패는 완료 화면을 막지 않는다.
+    }
+    setSessionReward(reward);
+
     // POC generate_final_report 대응: 종료 시 AI 코치 총평을 받아 화면 표시 + 세션에 저장.
     setReportLoading(true);
     let comment = "";
@@ -429,6 +457,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     setCoachComment("");
     setReportLoading(false);
     setSaveMode("idle");
+    setSessionReward(null);
     // POC처럼 AI 인사 + 1번 문제부터 다시 시작.
     void startTutor(learningItems);
   }
@@ -510,6 +539,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                   results={results}
                   coachComment={coachComment}
                   reportLoading={reportLoading}
+                  reward={sessionReward}
                   onRestart={restartSession}
                   onViewReport={() => setActiveView("report")}
                 />
@@ -761,6 +791,7 @@ function SessionComplete({
   results,
   coachComment,
   reportLoading,
+  reward,
   onRestart,
   onViewReport,
 }: {
@@ -771,9 +802,41 @@ function SessionComplete({
   results: SessionResult[];
   coachComment: string;
   reportLoading: boolean;
+  reward: { earnedStars: number; streakCurrent: number; isBestStreak: boolean } | null;
   onRestart: () => void;
   onViewReport: () => void;
 }) {
+  const earned = reward?.earnedStars ?? 0;
+  const [shownStars, setShownStars] = useState(0);
+
+  // 별 카운트업 0 → earned (~600ms).
+  useEffect(() => {
+    if (earned <= 0) return; // 초기값이 0이라 별도 설정 불필요
+    let raf = 0;
+    const start = performance.now();
+    const dur = 600;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / dur);
+      setShownStars(Math.round(p * earned));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [earned]);
+
+  // 완료 화면 진입 시 컨페티 1회(클라이언트에서만 로드, SSR 안전).
+  useEffect(() => {
+    let cancelled = false;
+    import("canvas-confetti")
+      .then((m) => {
+        if (!cancelled) m.default({ particleCount: 90, spread: 70, origin: { y: 0.7 } });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="completion">
       <div className="completion-head">
@@ -782,6 +845,16 @@ function SessionComplete({
         <h3 className="panel-title">학습 완료!</h3>
         <p className="panel-note">오늘의 복습 결과를 확인해봐</p>
       </div>
+
+      {reward ? (
+        <div className="completion-reward">
+          <div className="reward-stars">⭐ +{shownStars}</div>
+          <div className="reward-streak">
+            🔥 {reward.streakCurrent}일 연속이야!
+            {reward.isBestStreak ? <span className="reward-best"> 최고 기록 경신!</span> : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className="metric-grid four">
         <Metric label="최종 점수" value={`${score}점`} />

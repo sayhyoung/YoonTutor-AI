@@ -1174,3 +1174,9 @@ button {
 .reward-row { display: flex; align-items: center; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
 .star-earned { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; font-weight: 800; color: #C98800; background: #FFF4DE; border-radius: 999px; padding: 4px 11px; }
 .combo-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 0.76rem; font-weight: 800; color: #E0455F; background: #FFEFF1; border-radius: 999px; padding: 4px 10px; }
+
+/* ===== Step 4: 완료 화면 보상 연출 ===== */
+.completion-reward { margin-top: 14px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.reward-stars { font-family: var(--font-head); font-size: 1.9rem; font-weight: 800; color: #C98800; }
+.reward-streak { font-size: 0.95rem; font-weight: 700; color: #E0455F; }
+.reward-best { color: var(--primary); }
