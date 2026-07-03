@@ -1,9 +1,16 @@
 "use client";
 
-import type { AppUser, Attempt, QuizSession, StudentProfile } from "../types";
+import type { AppUser, Attempt, QuizSession, SessionResult, StudentProfile } from "../types";
+import {
+  applySessionToState,
+  emptyGamification,
+  todayKst,
+  type GamificationState,
+} from "../gamification";
 import { ensureFirebaseUser, getFirebaseDb, isFirebaseConfigured } from "./client";
 
 const LOCAL_SESSION_KEY = "yoon-ai-tutor:sessions";
+const LOCAL_GAMIFICATION_KEY = "yoon-ai-tutor:gamification";
 
 export async function saveQuizSession(session: QuizSession, attempts: Attempt[]) {
   if (!isFirebaseConfigured()) {
@@ -171,6 +178,96 @@ export async function loadAllSessions(max = 50) {
       error,
     );
     return { mode: "error" as const, sessions: readLocalSessions() };
+  }
+}
+
+// ===== 게이미피케이션 (students/{studentId}/meta/gamification) =====
+
+function readLocalGamification(studentId: string): GamificationState {
+  if (typeof window === "undefined") return emptyGamification();
+  try {
+    const raw = window.localStorage.getItem(`${LOCAL_GAMIFICATION_KEY}:${studentId}`);
+    return raw ? (JSON.parse(raw) as GamificationState) : emptyGamification();
+  } catch {
+    return emptyGamification();
+  }
+}
+
+function writeLocalGamification(studentId: string, state: GamificationState) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(`${LOCAL_GAMIFICATION_KEY}:${studentId}`, JSON.stringify(state));
+}
+
+export async function loadGamification(studentId: string): Promise<GamificationState | null> {
+  if (!isFirebaseConfigured()) {
+    const local = readLocalGamification(studentId);
+    return local.updatedAt ? local : null;
+  }
+  try {
+    const [db, user] = await Promise.all([getFirebaseDb(), ensureFirebaseUser()]);
+    if (!db || !user) {
+      const local = readLocalGamification(studentId);
+      return local.updatedAt ? local : null;
+    }
+    const { doc, getDoc } = await import("firebase/firestore");
+    const ref = doc(db, "students", studentId, "meta", "gamification");
+    const snap = await getDoc(ref);
+    return snap.exists() ? (snap.data() as GamificationState) : null;
+  } catch (error) {
+    console.warn("Gamification read failed, falling back to localStorage", error);
+    const local = readLocalGamification(studentId);
+    return local.updatedAt ? local : null;
+  }
+}
+
+export async function applySessionToGamification(
+  studentId: string,
+  results: SessionResult[],
+): Promise<GamificationState> {
+  const today = todayKst();
+  const now = new Date().toISOString();
+
+  if (!isFirebaseConfigured()) {
+    const next = applySessionToState(readLocalGamification(studentId), results, today, now);
+    writeLocalGamification(studentId, next);
+    return next;
+  }
+
+  try {
+    const [db, user] = await Promise.all([getFirebaseDb(), ensureFirebaseUser()]);
+    if (!db || !user) {
+      const next = applySessionToState(readLocalGamification(studentId), results, today, now);
+      writeLocalGamification(studentId, next);
+      return next;
+    }
+
+    const { collection, doc, runTransaction, setDoc } = await import("firebase/firestore");
+    // 메타 쓰기 규칙(students/{id}.uid == auth.uid)을 위해 학생 문서 self-claim 보장.
+    try {
+      await setDoc(
+        doc(collection(db, "students"), studentId),
+        { id: studentId, uid: user.uid, updatedAt: now },
+        { merge: true },
+      );
+    } catch {
+      // 다른 uid 소유 등으로 실패하면 아래 트랜잭션에서 걸러져 로컬로 폴백된다.
+    }
+
+    const ref = doc(db, "students", studentId, "meta", "gamification");
+    const next = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      const prev = snap.exists() ? (snap.data() as GamificationState) : emptyGamification();
+      const computed = applySessionToState(prev, results, today, now);
+      tx.set(ref, computed);
+      return computed;
+    });
+    writeLocalGamification(studentId, next);
+    return next;
+  } catch (error) {
+    console.warn("Gamification update failed, falling back to localStorage", error);
+    const next = applySessionToState(readLocalGamification(studentId), results, today, now);
+    writeLocalGamification(studentId, next);
+    return next;
   }
 }
 

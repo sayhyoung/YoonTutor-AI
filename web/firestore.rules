@@ -40,6 +40,13 @@ service cloud.firestore {
       allow delete: if isTeacher();
     }
 
+    match /students/{studentId}/meta/{docId} {
+      allow read: if signedIn() && (ownsStudent(studentId) || isTeacher()
+        || get(/databases/$(database)/documents/students/$(studentId)).data.uid == request.auth.uid);
+      allow write: if signedIn()
+        && get(/databases/$(database)/documents/students/$(studentId)).data.uid == request.auth.uid;
+    }
+
     match /teachers/{teacherId} {
       allow read, write: if isTeacher();
     }
