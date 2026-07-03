@@ -409,7 +409,11 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       const res = await fetch("/api/report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentName: appUser.displayName, results: nextResults }),
+        body: JSON.stringify({
+          studentName: appUser.displayName,
+          results: nextResults,
+          gamification: reward,
+        }),
       });
       if (res.ok) {
         comment = ((await res.json()) as { comment?: string }).comment ?? "";
