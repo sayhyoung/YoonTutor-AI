@@ -561,7 +561,16 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                     message.role === "assistant" ? (
                       <div key={message.id} className="msg-row">
                         <span className="msg-avatar">
-                          <Koko size={32} />
+                          <Koko
+                            size={32}
+                            mood={
+                              message.status === "Not mastered"
+                                ? "cheer"
+                                : message.status
+                                  ? "happy"
+                                  : "default"
+                            }
+                          />
                         </span>
                         <div className="message assistant">
                           {message.content}
@@ -840,7 +849,7 @@ function SessionComplete({
   return (
     <div className="completion">
       <div className="completion-head">
-        <Koko size={72} float />
+        <Koko size={72} float mood="celebrate" />
         <div className="completion-badge">🏆</div>
         <h3 className="panel-title">학습 완료!</h3>
         <p className="panel-note">오늘의 복습 결과를 확인해봐</p>
