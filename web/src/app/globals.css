@@ -1113,6 +1113,11 @@ button {
 .stat-ico { flex: none; width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; font-size: 1rem; }
 .stat-num { font-size: 1rem; font-weight: 800; line-height: 1; }
 .stat-cap { font-size: 0.68rem; color: var(--ink-subtle); margin-top: 2px; }
+.level-card { margin-top: 10px; background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; box-shadow: 0 4px 12px -8px rgba(90,60,160,.18); }
+.level-head { display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; font-weight: 800; color: var(--primary); }
+.level-track { position: relative; height: 9px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: #EAE3FF; }
+.level-fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7B5CE6, #B75EE8); transition: width 450ms ease; }
+.level-meta { margin-top: 5px; text-align: right; font-size: 0.68rem; color: var(--ink-subtle); }
 .koko-stage { margin-top: 16px; background: linear-gradient(135deg, #EAE3FF 0%, #F4E9FB 100%); border-radius: 26px; padding: 18px; display: flex; align-items: center; gap: 14px; }
 .koko-bubble { display: inline-block; background: #fff; border-radius: 16px 16px 16px 4px; padding: 11px 14px; box-shadow: 0 4px 10px -5px rgba(90,60,160,.2); font-size: 0.9rem; font-weight: 600; color: #3a2a44; line-height: 1.45; }
 .koko-name { font-size: 0.72rem; font-weight: 800; color: var(--primary); margin-top: 8px; margin-left: 4px; }
@@ -1178,5 +1183,6 @@ button {
 /* ===== Step 4: 완료 화면 보상 연출 ===== */
 .completion-reward { margin-top: 14px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .reward-stars { font-family: var(--font-head); font-size: 1.9rem; font-weight: 800; color: #C98800; }
+.reward-level { font-family: var(--font-head); font-size: 1.05rem; font-weight: 800; color: var(--primary); }
 .reward-streak { font-size: 0.95rem; font-weight: 700; color: #E0455F; }
 .reward-best { color: var(--primary); }

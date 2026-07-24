@@ -1,66 +1,224 @@
 "use client";
 
-import type { AppUser, Attempt, QuizSession, SessionResult, StudentProfile } from "../types";
+import type { AppUser, Attempt, QuizSession, StudentProfile } from "../types";
 import {
   applySessionToState,
   emptyGamification,
+  normalizeGamification,
+  starsForSession,
   todayKst,
+  xpForSession,
   type GamificationState,
 } from "../gamification";
 import { ensureFirebaseUser, getFirebaseDb, isFirebaseConfigured } from "./client";
 
 const LOCAL_SESSION_KEY = "yoon-ai-tutor:sessions";
 const LOCAL_GAMIFICATION_KEY = "yoon-ai-tutor:gamification";
+const LOCAL_REWARD_STATE_KEY = "yoon-ai-tutor:reward-state";
 
-export async function saveQuizSession(session: QuizSession, attempts: Attempt[]) {
+type LocalRewardLedgerEntry = {
+  id: string;
+  sourceType: "session";
+  sourceId: string;
+  starsDelta: number;
+  xpDelta: number;
+  createdAt: string;
+};
+
+type LocalRewardState = {
+  gamification: GamificationState;
+  ledger: Record<string, LocalRewardLedgerEntry>;
+};
+
+export type FinalizeQuizSessionResult = {
+  granted: boolean;
+  mode: "firestore" | "local" | "error";
+  gamification: GamificationState;
+  earnedStars: number;
+  earnedXp: number;
+  previousLevel: number;
+  newLevel: number;
+};
+
+// 세션 저장과 완료 보상을 하나의 멱등 처리로 확정한다.
+// eventId는 안정적인 session.id에서 파생되므로 같은 완료 요청은 한 번만 지급된다.
+export async function finalizeQuizSession(
+  session: QuizSession,
+  attempts: Attempt[],
+): Promise<FinalizeQuizSessionResult> {
+  const eventId = `session:${session.id}`;
+  const earnedStars = starsForSession(session.results);
+  const earnedXp = xpForSession(session.results);
+
   if (!isFirebaseConfigured()) {
-    saveLocalSession(session, attempts);
-    return { mode: "local" as const };
+    return finalizeLocalSession(
+      session,
+      attempts,
+      eventId,
+      earnedStars,
+      earnedXp,
+      "local",
+    );
   }
 
   try {
-    const [db, user] = await Promise.all([getFirebaseDb(), ensureFirebaseUser()]);
+    const [db, user] = await Promise.all([
+      getFirebaseDb(),
+      ensureFirebaseUser(),
+    ]);
     if (!db || !user) {
-      saveLocalSession(session, attempts);
-      return { mode: "local" as const };
+      return finalizeLocalSession(
+        session,
+        attempts,
+        eventId,
+        earnedStars,
+        earnedXp,
+        "local",
+      );
     }
 
-    const { collection, doc, writeBatch } = await import("firebase/firestore");
-    const persistedSession: QuizSession = {
-      ...session,
-      uid: user.uid,
-    };
-    const batch = writeBatch(db);
-    const sessionRef = doc(collection(db, "quizSessions"), persistedSession.id);
+    const { collection, doc, runTransaction, setDoc } = await import(
+      "firebase/firestore"
+    );
+    const now = new Date().toISOString();
+    const today = todayKst();
 
-    batch.set(sessionRef, persistedSession);
-    batch.set(
-      doc(collection(db, "users"), user.uid),
+    // rewardLedger/meta 쓰기 규칙이 참조하는 학생 소유 문서를 먼저 보장한다.
+    await setDoc(
+      doc(collection(db, "students"), session.studentId),
       {
+        id: session.studentId,
         uid: user.uid,
-        role: "student",
-        studentId: persistedSession.studentId,
-        memberId: persistedSession.memberId ?? null,
-        displayName: persistedSession.studentName,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       },
       { merge: true },
     );
-    attempts.forEach((attempt) => {
-      const attemptRef = doc(collection(sessionRef, "attempts"), attempt.id);
-      batch.set(attemptRef, {
-        ...attempt,
+
+    const sessionRef = doc(
+      collection(db, "quizSessions"),
+      session.id,
+    );
+    const userRef = doc(collection(db, "users"), user.uid);
+    const gamificationRef = doc(
+      db,
+      "students",
+      session.studentId,
+      "meta",
+      "gamification",
+    );
+    const ledgerRef = doc(
+      db,
+      "students",
+      session.studentId,
+      "rewardLedger",
+      eventId,
+    );
+
+    const transactionResult = await runTransaction(db, async (tx) => {
+      const [ledgerSnap, gamificationSnap] = await Promise.all([
+        tx.get(ledgerRef),
+        tx.get(gamificationRef),
+      ]);
+      const previous = gamificationSnap.exists()
+        ? normalizeGamification(gamificationSnap.data())
+        : emptyGamification();
+
+      if (ledgerSnap.exists()) {
+        return {
+          granted: false,
+          gamification: previous,
+          previousLevel: previous.level,
+          newLevel: previous.level,
+        };
+      }
+
+      const next = applySessionToState(
+        previous,
+        session.results,
+        today,
+        now,
+        earnedXp,
+      );
+      const persistedSession = withoutUndefined({
+        ...session,
         uid: user.uid,
-        sessionId: persistedSession.id,
       });
+
+      tx.set(sessionRef, persistedSession);
+      tx.set(
+        userRef,
+        {
+          uid: user.uid,
+          role: "student",
+          studentId: session.studentId,
+          memberId: session.memberId ?? null,
+          displayName: session.studentName,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      attempts.forEach((attempt) => {
+        const attemptRef = doc(
+          collection(sessionRef, "attempts"),
+          attempt.id,
+        );
+        tx.set(
+          attemptRef,
+          withoutUndefined({
+            ...attempt,
+            uid: user.uid,
+            sessionId: session.id,
+          }),
+        );
+      });
+      tx.set(gamificationRef, next);
+      tx.set(ledgerRef, {
+        id: eventId,
+        uid: user.uid,
+        studentId: session.studentId,
+        sourceType: "session",
+        sourceId: session.id,
+        starsDelta: earnedStars,
+        xpDelta: earnedXp,
+        createdAt: now,
+      });
+
+      return {
+        granted: true,
+        gamification: next,
+        previousLevel: previous.level,
+        newLevel: next.level,
+      };
     });
 
-    await batch.commit();
-    return { mode: "firestore" as const };
+    cacheLocalRewardResult(
+      session.studentId,
+      eventId,
+      transactionResult.gamification,
+      earnedStars,
+      earnedXp,
+      now,
+    );
+
+    return {
+      ...transactionResult,
+      mode: "firestore",
+      earnedStars: transactionResult.granted ? earnedStars : 0,
+      earnedXp: transactionResult.granted ? earnedXp : 0,
+    };
   } catch (error) {
-    console.warn("Firestore save failed, falling back to localStorage", error);
-    saveLocalSession(session, attempts);
-    return { mode: "error" as const };
+    console.warn(
+      "Firestore finalize failed, falling back to localStorage",
+      error,
+    );
+    return finalizeLocalSession(
+      session,
+      attempts,
+      eventId,
+      earnedStars,
+      earnedXp,
+      "error",
+    );
   }
 }
 
@@ -183,19 +341,161 @@ export async function loadAllSessions(max = 50) {
 
 // ===== 게이미피케이션 (students/{studentId}/meta/gamification) =====
 
-function readLocalGamification(studentId: string): GamificationState {
-  if (typeof window === "undefined") return emptyGamification();
+function withoutUndefined<T extends Record<string, unknown>>(
+  value: T,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined),
+  );
+}
+
+function localRewardStateKey(studentId: string): string {
+  return `${LOCAL_REWARD_STATE_KEY}:${studentId}`;
+}
+
+function readLocalRewardState(studentId: string): LocalRewardState {
+  if (typeof window === "undefined") {
+    return { gamification: emptyGamification(), ledger: {} };
+  }
+
   try {
-    const raw = window.localStorage.getItem(`${LOCAL_GAMIFICATION_KEY}:${studentId}`);
-    return raw ? (JSON.parse(raw) as GamificationState) : emptyGamification();
+    const raw = window.localStorage.getItem(
+      localRewardStateKey(studentId),
+    );
+    if (raw) {
+      const parsed = JSON.parse(raw) as {
+        gamification?: unknown;
+        ledger?: unknown;
+      };
+      return {
+        gamification: normalizeGamification(parsed.gamification),
+        ledger:
+          parsed.ledger &&
+          typeof parsed.ledger === "object" &&
+          !Array.isArray(parsed.ledger)
+            ? (parsed.ledger as Record<
+                string,
+                LocalRewardLedgerEntry
+              >)
+            : {},
+      };
+    }
+
+    // 기존 버전의 단일 gamification 키를 최초 읽기 시 새 구조로 흡수한다.
+    const legacy = window.localStorage.getItem(
+      `${LOCAL_GAMIFICATION_KEY}:${studentId}`,
+    );
+    return {
+      gamification: legacy
+        ? normalizeGamification(JSON.parse(legacy))
+        : emptyGamification(),
+      ledger: {},
+    };
   } catch {
-    return emptyGamification();
+    return { gamification: emptyGamification(), ledger: {} };
   }
 }
 
-function writeLocalGamification(studentId: string, state: GamificationState) {
+function writeLocalRewardState(
+  studentId: string,
+  state: LocalRewardState,
+) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(`${LOCAL_GAMIFICATION_KEY}:${studentId}`, JSON.stringify(state));
+  window.localStorage.setItem(
+    localRewardStateKey(studentId),
+    JSON.stringify(state),
+  );
+}
+
+function readLocalGamification(studentId: string): GamificationState {
+  return readLocalRewardState(studentId).gamification;
+}
+
+function cacheLocalRewardResult(
+  studentId: string,
+  eventId: string,
+  gamification: GamificationState,
+  starsDelta: number,
+  xpDelta: number,
+  createdAt: string,
+) {
+  const local = readLocalRewardState(studentId);
+  writeLocalRewardState(studentId, {
+    gamification: normalizeGamification(gamification),
+    ledger: {
+      ...local.ledger,
+      [eventId]: {
+        id: eventId,
+        sourceType: "session",
+        sourceId: eventId.replace(/^session:/, ""),
+        starsDelta,
+        xpDelta,
+        createdAt,
+      },
+    },
+  });
+}
+
+function finalizeLocalSession(
+  session: QuizSession,
+  attempts: Attempt[],
+  eventId: string,
+  earnedStars: number,
+  earnedXp: number,
+  mode: "local" | "error",
+): FinalizeQuizSessionResult {
+  const now = new Date().toISOString();
+  const local = readLocalRewardState(session.studentId);
+  const existing = local.ledger[eventId];
+
+  // 세션 저장도 ID 기준 upsert라서 재시도 시 중복 목록이 생기지 않는다.
+  saveLocalSession(session, attempts);
+
+  if (existing) {
+    const current = normalizeGamification(local.gamification);
+    return {
+      granted: false,
+      mode,
+      gamification: current,
+      earnedStars: 0,
+      earnedXp: 0,
+      previousLevel: current.level,
+      newLevel: current.level,
+    };
+  }
+
+  const previous = normalizeGamification(local.gamification);
+  const next = applySessionToState(
+    previous,
+    session.results,
+    todayKst(),
+    now,
+    earnedXp,
+  );
+  writeLocalRewardState(session.studentId, {
+    gamification: next,
+    ledger: {
+      ...local.ledger,
+      [eventId]: {
+        id: eventId,
+        sourceType: "session",
+        sourceId: session.id,
+        starsDelta: earnedStars,
+        xpDelta: earnedXp,
+        createdAt: now,
+      },
+    },
+  });
+
+  return {
+    granted: true,
+    mode,
+    gamification: next,
+    earnedStars,
+    earnedXp,
+    previousLevel: previous.level,
+    newLevel: next.level,
+  };
 }
 
 export async function loadGamification(studentId: string): Promise<GamificationState | null> {
@@ -212,62 +512,11 @@ export async function loadGamification(studentId: string): Promise<GamificationS
     const { doc, getDoc } = await import("firebase/firestore");
     const ref = doc(db, "students", studentId, "meta", "gamification");
     const snap = await getDoc(ref);
-    return snap.exists() ? (snap.data() as GamificationState) : null;
+    return snap.exists() ? normalizeGamification(snap.data()) : null;
   } catch (error) {
     console.warn("Gamification read failed, falling back to localStorage", error);
     const local = readLocalGamification(studentId);
     return local.updatedAt ? local : null;
-  }
-}
-
-export async function applySessionToGamification(
-  studentId: string,
-  results: SessionResult[],
-): Promise<GamificationState> {
-  const today = todayKst();
-  const now = new Date().toISOString();
-
-  if (!isFirebaseConfigured()) {
-    const next = applySessionToState(readLocalGamification(studentId), results, today, now);
-    writeLocalGamification(studentId, next);
-    return next;
-  }
-
-  try {
-    const [db, user] = await Promise.all([getFirebaseDb(), ensureFirebaseUser()]);
-    if (!db || !user) {
-      const next = applySessionToState(readLocalGamification(studentId), results, today, now);
-      writeLocalGamification(studentId, next);
-      return next;
-    }
-
-    const { collection, doc, runTransaction, setDoc } = await import("firebase/firestore");
-    // 메타 쓰기 규칙(students/{id}.uid == auth.uid)을 위해 학생 문서 self-claim 보장.
-    try {
-      await setDoc(
-        doc(collection(db, "students"), studentId),
-        { id: studentId, uid: user.uid, updatedAt: now },
-        { merge: true },
-      );
-    } catch {
-      // 다른 uid 소유 등으로 실패하면 아래 트랜잭션에서 걸러져 로컬로 폴백된다.
-    }
-
-    const ref = doc(db, "students", studentId, "meta", "gamification");
-    const next = await runTransaction(db, async (tx) => {
-      const snap = await tx.get(ref);
-      const prev = snap.exists() ? (snap.data() as GamificationState) : emptyGamification();
-      const computed = applySessionToState(prev, results, today, now);
-      tx.set(ref, computed);
-      return computed;
-    });
-    writeLocalGamification(studentId, next);
-    return next;
-  } catch (error) {
-    console.warn("Gamification update failed, falling back to localStorage", error);
-    const next = applySessionToState(readLocalGamification(studentId), results, today, now);
-    writeLocalGamification(studentId, next);
-    return next;
   }
 }
 
@@ -285,7 +534,9 @@ export function readLocalSessions(): QuizSession[] {
 function saveLocalSession(session: QuizSession, attempts: Attempt[]) {
   if (typeof window === "undefined") return;
 
-  const existing = readLocalSessions();
+  const existing = readLocalSessions().filter(
+    (item) => item.id !== session.id,
+  );
   const withAttempts = {
     ...session,
     localAttemptCount: attempts.length,

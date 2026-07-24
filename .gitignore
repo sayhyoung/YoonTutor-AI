@@ -9,6 +9,7 @@ web/.npm-cache/
 web/.firebase-config/
 web/chrome-*/
 web/dev-server.*.log
+web/*-debug.log
 web/prototype-*.png
 *.tsbuildinfo
 

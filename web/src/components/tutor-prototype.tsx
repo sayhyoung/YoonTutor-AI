@@ -6,16 +6,26 @@ import { Koko } from "@/components/koko";
 import { demoSessions, demoStudent } from "@/lib/mock-data";
 import { getLearningSource, getWrongAnswerItems } from "@/lib/learning/provider";
 import { calculateSessionScore, scoreStatus } from "@/lib/quiz-engine";
+import { buildVisibleSessions } from "@/lib/session-utils";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
 import {
-  applySessionToGamification,
+  finalizeQuizSession,
   loadAllSessions,
   loadGamification,
   loadQuizSessions,
   readLocalSessions,
-  saveQuizSession,
 } from "@/lib/firebase/firestore";
-import { starsForSession, starsForStatus, type GamificationState } from "@/lib/gamification";
+import {
+  emptyGamification,
+  levelFromXp,
+  levelProgress,
+  nextStreak,
+  starsForSession,
+  starsForStatus,
+  todayKst,
+  xpForSession,
+  type GamificationState,
+} from "@/lib/gamification";
 import type {
   AppUser,
   Attempt,
@@ -51,6 +61,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [results, setResults] = useState<SessionResult[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [itemsLoaded, setItemsLoaded] = useState(false);
   const [coachComment, setCoachComment] = useState("");
@@ -69,6 +80,9 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  // 세션 ID는 학습 시작 시 한 번 만들고 완료/재시도 동안 고정한다.
+  const sessionIdRef = useRef<string | null>(null);
+  const isFinishingRef = useRef(false);
   // 게이미피케이션(별/스트릭) 상태.
   const [gamification, setGamification] = useState<GamificationState | null>(null);
   // 콤보(Perfect/Good 연속). 저장하지 않고 세션 내 로컬 표시용.
@@ -76,6 +90,9 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   // 완료 화면 연출용: 이번 세션 획득 별 / 새 스트릭 / 최고기록 갱신 여부.
   const [sessionReward, setSessionReward] = useState<{
     earnedStars: number;
+    earnedXp: number;
+    previousLevel: number;
+    newLevel: number;
     streakCurrent: number;
     isBestStreak: boolean;
   } | null>(null);
@@ -144,7 +161,12 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     };
   }, [isTeacher, studentId]);
 
-  const sessions = [...storedSessions, ...demoSessions].slice(0, 8);
+  const learningSource = getLearningSource();
+  const sessions = buildVisibleSessions(
+    storedSessions,
+    demoSessions,
+    learningSource,
+  );
   const currentPreviewSession: QuizSession | null =
     results.length > 0
       ? {
@@ -153,7 +175,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
           studentId,
           memberId: appUser.memberId,
           studentName: appUser.displayName,
-          source: getLearningSource(),
+          source: learningSource,
           totalItems: learningItems.length,
           completedItems: results.length,
           score: calculateSessionScore(results),
@@ -171,17 +193,38 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const goodCount = results.filter((item) => item.status === "Good").length;
   const needsReviewCount = results.filter((item) => item.status === "Not mastered").length;
 
-  type TutorTurn = { reply: string; raw?: string; status?: MasteryStatus; done?: boolean };
+  type TutorTurn = {
+    reply: string;
+    raw?: string;
+    status?: MasteryStatus;
+    countsAsAttempt: boolean;
+    attemptNumber?: number;
+    nextAttemptCount?: number;
+    currentItemIndex: number;
+    nextItemIndex: number;
+    done: boolean;
+  };
 
-  // POC와 동일한 AI 주도 흐름: AI가 출제·힌트·채점·진행을 대화로 수행한다.
+  // 서버가 결정론적으로 채점·시도 횟수·다음 문항을 확정하고,
+  // AI는 그 판정에 맞는 자연스러운 피드백과 문제 문장만 생성한다.
   async function callTutor(
     items: LearningItem[],
     msgs: { role: "user" | "assistant"; content: string }[],
+    turn?: {
+      currentItemIndex: number;
+      previousAttemptCount: number;
+      answer: string;
+    },
   ): Promise<TutorTurn> {
     const res = await fetch("/api/tutor", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ studentName: appUser.displayName, items, messages: msgs }),
+      body: JSON.stringify({
+        studentName: appUser.displayName,
+        items,
+        messages: msgs,
+        ...turn,
+      }),
     });
     return (await res.json()) as TutorTurn;
   }
@@ -231,10 +274,18 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     return out;
   }
 
+  function ensureSessionId(): string {
+    if (!sessionIdRef.current) {
+      sessionIdRef.current = makeId("session");
+    }
+    return sessionIdRef.current;
+  }
+
   // 홈 → 코칭 진입: 코칭룸으로 이동하고, 대화가 비어 있으면 튜터를 시작한다.
   function startLearning() {
     setActiveView("coach");
     if (messages.length === 0 && !tutorStarting && learningItems.length > 0) {
+      ensureSessionId();
       void startTutor(learningItems);
     }
   }
@@ -286,7 +337,16 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
 
   async function submitAnswer() {
     const trimmed = answer.trim();
-    if (!trimmed || isSending || isFinished || tutorStarting || learningItems.length === 0) return;
+    if (
+      !trimmed ||
+      isSending ||
+      isFinishing ||
+      isFinished ||
+      tutorStarting ||
+      learningItems.length === 0
+    ) {
+      return;
+    }
 
     setMessages((prev) => [
       ...prev,
@@ -297,7 +357,11 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
 
     const nextApi = [...apiMessages, { role: "user" as const, content: trimmed }];
     try {
-      const data = await callTutor(learningItems, nextApi);
+      const data = await callTutor(learningItems, nextApi, {
+        currentItemIndex: currentIndex,
+        previousAttemptCount: attemptCount,
+        answer: trimmed,
+      });
       const raw = data.raw || data.reply;
       setApiMessages([...nextApi, { role: "assistant", content: raw }]);
 
@@ -329,19 +393,24 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     }
   }
 
-  // AI 태그로 현재 문항 결과 확정 + 다음 문항으로 진행(다음 문제 제시는 AI가 함).
+  // 서버의 결정론 판정으로 현재 문항 결과와 다음 문항을 확정한다.
   function handleTurn(data: TutorTurn, submittedAnswer: string) {
     const item = learningItems[currentIndex];
-    const attemptNumber = attemptCount + 1;
+    const attemptNumber =
+      data.attemptNumber ??
+      (data.countsAsAttempt ? attemptCount + 1 : attemptCount);
 
     const nextAttempts: Attempt[] = [
       ...attempts,
       {
         id: makeId("attempt"),
+        uid: appUser.uid,
+        sessionId: ensureSessionId(),
         itemId: item?.id ?? "",
         answer: submittedAnswer,
         feedback: data.reply,
         status: data.status,
+        countsAsAttempt: data.countsAsAttempt,
         attemptNumber,
         createdAt: nowIso(),
       },
@@ -361,7 +430,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
           attempts: attemptNumber,
         },
       ];
-      const nextIndex = currentIndex + 1;
+      const nextIndex = data.nextItemIndex;
       setResults(nextResults);
       setCurrentIndex(nextIndex);
       setAttemptCount(0);
@@ -371,36 +440,37 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       return;
     }
 
-    // 결과 태그 없음(힌트/재시도 중) → 같은 문항 유지, 시도 횟수만 증가.
-    setAttemptCount(attemptNumber);
+    // 힌트는 횟수를 늘리지 않고, 실제 오답 제출만 시도 횟수에 반영한다.
+    setCurrentIndex(data.nextItemIndex);
+    setAttemptCount(data.nextAttemptCount ?? attemptNumber);
     if (data.done) {
       void finishSession(padResults(results), nextAttempts);
     }
   }
 
   async function finishSession(nextResults: SessionResult[], nextAttempts: Attempt[]) {
-    const completedAt = nowIso();
+    if (isFinishingRef.current) return;
+    isFinishingRef.current = true;
+    setIsFinishing(true);
 
-    // 게이미피케이션 반영(별/스트릭). 실패해도 완료 화면은 정상 렌더.
+    const sessionId = ensureSessionId();
+    const completedAt = nowIso();
     const prevBest = gamification?.streak.best ?? 0;
+    const previousLevel = gamification?.level ?? 1;
     const earnedStars = starsForSession(nextResults);
-    let reward = {
+    const earnedXp = xpForSession(nextResults);
+    const projectedStreak = nextStreak(
+      (gamification ?? emptyGamification()).streak,
+      todayKst(),
+    );
+    const projectedReward = {
       earnedStars,
-      streakCurrent: gamification?.streak.current ?? 0,
-      isBestStreak: false,
+      earnedXp,
+      previousLevel,
+      newLevel: levelFromXp((gamification?.xp ?? 0) + earnedXp),
+      streakCurrent: projectedStreak.current,
+      isBestStreak: projectedStreak.best > prevBest,
     };
-    try {
-      const newState = await applySessionToGamification(studentId, nextResults);
-      setGamification(newState);
-      reward = {
-        earnedStars,
-        streakCurrent: newState.streak.current,
-        isBestStreak: newState.streak.best > prevBest,
-      };
-    } catch {
-      // 게이미피케이션 실패는 완료 화면을 막지 않는다.
-    }
-    setSessionReward(reward);
 
     // POC generate_final_report 대응: 종료 시 AI 코치 총평을 받아 화면 표시 + 세션에 저장.
     setReportLoading(true);
@@ -412,7 +482,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
         body: JSON.stringify({
           studentName: appUser.displayName,
           results: nextResults,
-          gamification: reward,
+          gamification: projectedReward,
         }),
       });
       if (res.ok) {
@@ -425,12 +495,12 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     setReportLoading(false);
 
     const session: QuizSession = {
-      id: makeId("session"),
+      id: sessionId,
       uid: appUser.uid,
       studentId,
       memberId: appUser.memberId,
       studentName: appUser.displayName,
-      source: getLearningSource(),
+      source: learningSource,
       totalItems: learningItems.length,
       completedItems: nextResults.length,
       score: calculateSessionScore(nextResults),
@@ -440,13 +510,34 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       completedAt,
     };
 
-    const saved = await saveQuizSession(session, nextAttempts);
-    setSaveMode(saved.mode);
-    setPersistenceMode(saved.mode);
-    const refreshed = await loadQuizSessions(studentId);
-    setStoredSessions(refreshed.sessions);
-    setPersistenceMode(refreshed.mode);
-    setIsFinished(true);
+    // 세션·보상 원장·게이미피케이션을 안정적인 sessionId로 한 번만 확정한다.
+    try {
+      const finalized = await finalizeQuizSession(session, nextAttempts);
+      setGamification(finalized.gamification);
+      setSessionReward({
+        earnedStars: finalized.earnedStars,
+        earnedXp: finalized.earnedXp,
+        previousLevel: finalized.previousLevel,
+        newLevel: finalized.newLevel,
+        streakCurrent: finalized.gamification.streak.current,
+        isBestStreak: finalized.gamification.streak.best > prevBest,
+      });
+      setSaveMode(finalized.mode);
+      setPersistenceMode(finalized.mode);
+      const refreshed = await loadQuizSessions(studentId);
+      setStoredSessions(refreshed.sessions);
+      setPersistenceMode(refreshed.mode);
+      setIsFinished(true);
+    } catch {
+      // 저장소 용량 등 로컬 fallback 자체가 실패해도 완료 화면은 유지한다.
+      setSessionReward(projectedReward);
+      setSaveMode("error");
+      setPersistenceMode("error");
+      setIsFinished(true);
+    } finally {
+      setIsFinishing(false);
+      isFinishingRef.current = false;
+    }
   }
 
   function restartSession() {
@@ -457,7 +548,10 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     setResults([]);
     setApiMessages([]);
     setMessages([]);
+    setIsFinishing(false);
     setIsFinished(false);
+    sessionIdRef.current = makeId("session");
+    isFinishingRef.current = false;
     setCoachComment("");
     setReportLoading(false);
     setSaveMode("idle");
@@ -597,12 +691,16 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                       </div>
                     ),
                   )}
-                  {isSending ? (
+                  {isSending || isFinishing ? (
                     <div className="msg-row">
                       <span className="msg-avatar">
                         <Koko size={32} />
                       </span>
-                      <div className="message assistant typing">코코가 생각 중…</div>
+                      <div className="message assistant typing">
+                        {isFinishing
+                          ? "오늘 결과를 정리하는 중…"
+                          : "코코가 생각 중…"}
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -611,7 +709,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                   <button
                     className={`button mic-button ${isRecording ? "recording" : ""}`}
                     onClick={toggleRecording}
-                    disabled={isSending || isTranscribing}
+                    disabled={isSending || isTranscribing || isFinishing}
                     title="음성으로 답하기"
                     aria-label="음성으로 답하기"
                   >
@@ -624,12 +722,12 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                       if (event.key === "Enter") submitAnswer();
                     }}
                     placeholder="영어로 답하거나 마이크를 눌러봐"
-                    disabled={isSending || isTranscribing}
+                    disabled={isSending || isTranscribing || isFinishing}
                   />
                   <button
                     className="button primary"
                     onClick={submitAnswer}
-                    disabled={isSending || isTranscribing}
+                    disabled={isSending || isTranscribing || isFinishing}
                   >
                     제출
                   </button>
@@ -700,6 +798,7 @@ function HomeView({
 }) {
   const streakDays = gamification?.streak.current ?? 0;
   const starCount = gamification?.stars ?? 0;
+  const progress = levelProgress(gamification?.xp ?? 0);
   const today = new Intl.DateTimeFormat("ko-KR", {
     month: "long",
     day: "numeric",
@@ -737,6 +836,31 @@ function HomeView({
             <div className="stat-num">{starCount}개</div>
             <div className="stat-cap">모은 별</div>
           </div>
+        </div>
+      </div>
+
+      <div className="level-card">
+        <div className="level-head">
+          <span>레벨 {progress.level}</span>
+          <span>{progress.xp} XP</span>
+        </div>
+        <div
+          className="level-track"
+          role="progressbar"
+          aria-label={`레벨 ${progress.level} 진행률`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress.percent}
+        >
+          <span
+            className="level-fill"
+            style={{ width: `${progress.percent}%` }}
+          />
+        </div>
+        <div className="level-meta">
+          {progress.nextThreshold === null
+            ? "최고 레벨 달성!"
+            : `다음 레벨까지 ${progress.xpNeeded - progress.xpIntoLevel} XP`}
         </div>
       </div>
 
@@ -815,7 +939,14 @@ function SessionComplete({
   results: SessionResult[];
   coachComment: string;
   reportLoading: boolean;
-  reward: { earnedStars: number; streakCurrent: number; isBestStreak: boolean } | null;
+  reward: {
+    earnedStars: number;
+    earnedXp: number;
+    previousLevel: number;
+    newLevel: number;
+    streakCurrent: number;
+    isBestStreak: boolean;
+  } | null;
   onRestart: () => void;
   onViewReport: () => void;
 }) {
@@ -861,7 +992,10 @@ function SessionComplete({
 
       {reward ? (
         <div className="completion-reward">
-          <div className="reward-stars">⭐ +{shownStars}</div>
+          <div className="reward-stars">⭐ +{shownStars} · +{reward.earnedXp} XP</div>
+          {reward.newLevel > reward.previousLevel ? (
+            <div className="reward-level">🎉 레벨 {reward.newLevel} 달성!</div>
+          ) : null}
           <div className="reward-streak">
             🔥 {reward.streakCurrent}일 연속이야!
             {reward.isBestStreak ? <span className="reward-best"> 최고 기록 경신!</span> : null}

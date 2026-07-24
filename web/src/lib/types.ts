@@ -53,6 +53,7 @@ export type Attempt = {
   answer: string;
   feedback: string;
   status?: MasteryStatus;
+  countsAsAttempt?: boolean;
   attemptNumber: number;
   createdAt: string;
 };

@@ -1,5 +1,15 @@
 import type { LearningItem, MasteryStatus, SessionResult, TutorResponse } from "./types";
 
+export const MAX_ATTEMPTS = 3;
+
+export type AttemptSituation = "correct" | "retry" | "reveal" | "help";
+
+export type AttemptDecision = TutorResponse & {
+  situation: AttemptSituation;
+  attemptNumber: number;
+  nextAttemptCount: number;
+};
+
 const HELP_PATTERNS = [
   "힌트",
   "모르",
@@ -59,11 +69,33 @@ export function evaluateAttempt(
   answer: string,
   attemptNumber: number,
 ): TutorResponse {
+  const decision = decideAttempt(item, answer, Math.max(0, attemptNumber - 1));
+  return {
+    countsAsAttempt: decision.countsAsAttempt,
+    reply: decision.reply,
+    status: decision.status,
+  };
+}
+
+// `previousAttemptCount`는 현재 답변을 제출하기 전까지 실제로 카운트된 오답/정답
+// 시도 수다. 힌트 요청은 횟수를 늘리지 않고, 정답 판정과 3진아웃은 항상 이
+// 순수 함수가 결정한다. AI는 이 결과를 변경하지 않고 표현만 담당한다.
+export function decideAttempt(
+  item: LearningItem,
+  answer: string,
+  previousAttemptCount: number,
+): AttemptDecision {
+  const safePreviousCount = Math.max(0, previousAttemptCount);
+  const attemptNumber = safePreviousCount + 1;
+
   if (isHelpRequest(answer)) {
     return {
+      situation: "help",
       countsAsAttempt: false,
+      attemptNumber,
+      nextAttemptCount: safePreviousCount,
       reply:
-        attemptNumber <= 1
+        safePreviousCount < 1
           ? `한국어 뜻을 영어로 바꾸면 돼. 핵심 뜻은 "${item.meaningKo ?? item.promptKo}" 쪽이야.`
           : `정답 모양은 ${maskAnswer(item.answerEn)} 이야. 정확한 철자와 어순을 떠올려봐.`,
     };
@@ -72,7 +104,10 @@ export function evaluateAttempt(
   if (isCorrectAnswer(item, answer)) {
     const status: MasteryStatus = attemptNumber === 1 ? "Perfect" : "Good";
     return {
+      situation: "correct",
       countsAsAttempt: true,
+      attemptNumber,
+      nextAttemptCount: attemptNumber,
       status,
       reply:
         status === "Perfect"
@@ -81,16 +116,22 @@ export function evaluateAttempt(
     };
   }
 
-  if (attemptNumber >= 3) {
+  if (attemptNumber >= MAX_ATTEMPTS) {
     return {
+      situation: "reveal",
       countsAsAttempt: true,
+      attemptNumber,
+      nextAttemptCount: attemptNumber,
       status: "Not mastered",
       reply: `이번 문항은 여기서 정리할게. 정답은 "${item.answerEn}" 이야. 다음 학습에서 다시 확인하자.`,
     };
   }
 
   return {
+    situation: "retry",
     countsAsAttempt: true,
+    attemptNumber,
+    nextAttemptCount: attemptNumber,
     reply:
       attemptNumber === 1
         ? `아직 달라. 뜻은 맞게 보고 있으니 철자나 어순을 다시 확인해봐.`

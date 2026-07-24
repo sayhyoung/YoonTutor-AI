@@ -47,6 +47,17 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/students/$(studentId)).data.uid == request.auth.uid;
     }
 
+    match /students/{studentId}/rewardLedger/{eventId} {
+      allow read: if signedIn() && (isTeacher()
+        || get(/databases/$(database)/documents/students/$(studentId)).data.uid == request.auth.uid);
+      allow create: if signedIn()
+        && get(/databases/$(database)/documents/students/$(studentId)).data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.studentId == studentId
+        && request.resource.data.id == eventId;
+      allow update, delete: if false;
+    }
+
     match /teachers/{teacherId} {
       allow read, write: if isTeacher();
     }

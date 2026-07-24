@@ -6,6 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "vitest run",
+    "test:rules": "vitest run src/lib/firebase/*.rules.test.ts",
+    "test:emulator": "cross-env XDG_CONFIG_HOME=.firebase-config firebase emulators:exec --only firestore \"npm run test:rules\"",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "firebase": "cross-env XDG_CONFIG_HOME=.firebase-config firebase",
@@ -27,6 +30,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "latest",
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
@@ -34,6 +38,7 @@
     "eslint": "latest",
     "eslint-config-next": "latest",
     "firebase-tools": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "vitest": "^4.1.10"
   }
 }
