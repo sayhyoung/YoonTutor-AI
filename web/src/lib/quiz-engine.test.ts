@@ -53,6 +53,17 @@ describe("decideAttempt", () => {
     expect(result.status).toBeUndefined();
     expect(result.situation).toBe("retry");
     expect(result.nextAttemptCount).toBe(1);
+    expect(result.reply).toContain("좋은 시도야");
+    expect(result.reply).not.toContain("뜻은 맞");
+    expect(result.reply).not.toContain("habit");
+  });
+
+  it("두 번째 오답에는 정답 전체 대신 마스킹 힌트를 준다", () => {
+    const result = decideAttempt(item, "happy", 1);
+
+    expect(result.situation).toBe("retry");
+    expect(result.reply).toContain("h___t");
+    expect(result.reply).not.toContain('"habit"');
   });
 
   it("세 번째 오답을 Not mastered로 확정한다", () => {

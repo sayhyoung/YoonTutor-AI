@@ -96,8 +96,8 @@ export function decideAttempt(
       nextAttemptCount: safePreviousCount,
       reply:
         safePreviousCount < 1
-          ? `한국어 뜻을 영어로 바꾸면 돼. 핵심 뜻은 "${item.meaningKo ?? item.promptKo}" 쪽이야.`
-          : `정답 모양은 ${maskAnswer(item.answerEn)} 이야. 정확한 철자와 어순을 떠올려봐.`,
+          ? `"${item.meaningKo ?? item.promptKo}"라는 뜻을 영어로 어떻게 표현할지 떠올려봐. 단어의 의미부터 천천히 생각해도 좋아.`
+          : `조금 더 구체적으로 볼까? 정답은 ${maskAnswer(item.answerEn)} 모양이야. 빈칸에 들어갈 철자와 단어 순서를 살펴봐.`,
     };
   }
 
@@ -111,8 +111,8 @@ export function decideAttempt(
       status,
       reply:
         status === "Perfect"
-          ? `정확해. 첫 시도에 바로 맞췄어.`
-          : `맞았어. 이번엔 복습이 됐으니 같은 표현을 한 번 더 자주 써보면 좋아.`,
+          ? `정확해! 뜻과 표현을 제대로 기억하고 있네.`
+          : `맞았어! 다시 생각해서 스스로 찾아낸 게 정말 좋아.`,
     };
   }
 
@@ -123,7 +123,7 @@ export function decideAttempt(
       attemptNumber,
       nextAttemptCount: attemptNumber,
       status: "Not mastered",
-      reply: `이번 문항은 여기서 정리할게. 정답은 "${item.answerEn}" 이야. 다음 학습에서 다시 확인하자.`,
+      reply: `조금 어려웠지? 이 문항의 정답은 "${item.answerEn}"이야. 다음에 다시 만나면 훨씬 익숙하게 느껴질 거야.`,
     };
   }
 
@@ -134,7 +134,7 @@ export function decideAttempt(
     nextAttemptCount: attemptNumber,
     reply:
       attemptNumber === 1
-        ? `아직 달라. 뜻은 맞게 보고 있으니 철자나 어순을 다시 확인해봐.`
-        : `거의 왔어. 정답은 ${maskAnswer(item.answerEn)} 형태야.`,
+        ? `좋은 시도야. 지금 답과 정답 사이에 조금 차이가 있어. 문제의 뜻과 단어 형태를 한 번 더 차근차근 살펴봐.`
+        : `한 끗만 더 다듬어보자. 정답은 ${maskAnswer(item.answerEn)} 모양이야. 빠진 철자나 단어 순서를 확인해봐.`,
   };
 }
