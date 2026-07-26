@@ -1,0 +1,954 @@
+.preview {
+  --preview-accent: #4255ff;
+  --preview-ink: #282e3e;
+  --preview-deep: #2e3856;
+  --preview-muted: #586380;
+  --preview-fog: #939bb4;
+  --preview-canvas: #f6f7fb;
+  --preview-paper: #ffffff;
+  --preview-lilac: #edefff;
+  --preview-border: #d9dde8;
+  --preview-shadow: rgba(40, 46, 62, 0.1) 0 4px 16px;
+  min-height: 100vh;
+  background: var(--preview-canvas);
+  color: var(--preview-ink);
+  font-family: "Wanted Sans Variable", "Pretendard Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+.preview button,
+.preview input {
+  font: inherit;
+}
+
+.previewBar {
+  min-height: 46px;
+  padding: 8px max(24px, calc((100vw - 1200px) / 2));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  background: var(--preview-deep);
+  color: #fff;
+}
+
+.previewBar > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.previewBar span {
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.previewBar p {
+  margin: 0;
+  color: #c8cde0;
+  font-size: 12px;
+}
+
+.previewTabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 200px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.previewTabs button {
+  border: 0;
+  border-radius: 200px;
+  padding: 6px 13px;
+  background: transparent;
+  color: #dfe2ee;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.previewTabs .previewTabActive {
+  background: #fff;
+  color: var(--preview-deep);
+}
+
+.topNav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: 64px;
+  background: var(--preview-paper);
+  box-shadow: var(--preview-shadow);
+}
+
+.navInner {
+  width: min(1200px, calc(100% - 48px));
+  height: 100%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.logo {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--preview-ink);
+}
+
+.logo span {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--preview-accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.logo strong {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.desktopNav {
+  display: flex;
+  gap: 20px;
+}
+
+.desktopNav button {
+  border: 0;
+  padding: 8px 0;
+  background: transparent;
+  color: var(--preview-deep);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.desktopNav button:first-child {
+  color: var(--preview-accent);
+  font-weight: 600;
+}
+
+.search {
+  min-width: 180px;
+  max-width: 360px;
+  flex: 1;
+  height: 40px;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 15px;
+  border-radius: 200px;
+  background: var(--preview-canvas);
+}
+
+.search svg {
+  width: 18px;
+  fill: none;
+  stroke: var(--preview-muted);
+  stroke-width: 1.8;
+}
+
+.search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--preview-ink);
+  font-size: 14px;
+}
+
+.search input::placeholder {
+  color: var(--preview-fog);
+}
+
+.navActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.streak {
+  color: var(--preview-muted);
+  font-size: 13px;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--preview-lilac);
+  color: var(--preview-accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.page {
+  width: min(1200px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 64px 0 88px;
+}
+
+.hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 40px;
+  margin-bottom: 40px;
+}
+
+.eyebrow,
+.cardKicker {
+  margin: 0 0 8px;
+  color: var(--preview-accent);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hero h1,
+.chatHeader h1,
+.completeHero h1 {
+  margin: 0;
+  color: var(--preview-ink);
+  font-size: clamp(32px, 4vw, 44px);
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.heroCopy {
+  max-width: 620px;
+  margin: 14px 0 0;
+  color: var(--preview-muted);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.primaryButton,
+.ghostButton {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 200px;
+  padding: 10px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.primaryButton {
+  border: 1px solid var(--preview-accent);
+  background: var(--preview-accent);
+  color: #fff;
+  box-shadow: rgba(40, 46, 62, 0.1) 0 2px 4px;
+}
+
+.primaryButton svg,
+.studyMeta button svg {
+  width: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.overviewGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+  gap: 24px;
+}
+
+.progressCard,
+.studyCard,
+.chatPanel,
+.contextPanel,
+.resultSummary,
+.nextLevelCard {
+  background: var(--preview-paper);
+  border: 1px solid var(--preview-border);
+  border-radius: 8px;
+  box-shadow: var(--preview-shadow);
+}
+
+.progressCard {
+  padding: 24px;
+}
+
+.cardHeading,
+.sectionHeading,
+.chatHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.cardHeading h2,
+.sectionHeading h2,
+.coachContent h2,
+.contextPanel h2,
+.resultSummary h2,
+.nextLevelCard h2 {
+  margin: 0;
+  color: var(--preview-ink);
+  font-size: 24px;
+  line-height: 1.33;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.weekBadge,
+.typeBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 200px;
+  background: var(--preview-lilac);
+  color: var(--preview-accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.weekBadge {
+  padding: 7px 12px;
+}
+
+.weekDays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-top: 28px;
+}
+
+.day {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+}
+
+.day > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--preview-border);
+  border-radius: 50%;
+  background: var(--preview-paper);
+}
+
+.day > span svg {
+  width: 17px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.4;
+}
+
+.day > .dayDone {
+  border-color: var(--preview-accent);
+  background: var(--preview-accent);
+}
+
+.day small {
+  color: var(--preview-muted);
+  font-size: 12px;
+}
+
+.levelBlock {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--preview-border);
+}
+
+.levelLabel {
+  display: flex;
+  justify-content: space-between;
+  color: var(--preview-deep);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.progressTrack,
+.chatProgress {
+  overflow: hidden;
+  background: var(--preview-lilac);
+}
+
+.progressTrack {
+  height: 8px;
+  margin-top: 10px;
+  border-radius: 200px;
+}
+
+.progressTrack span,
+.chatProgress span {
+  display: block;
+  height: 100%;
+  background: var(--preview-accent);
+}
+
+.levelBlock p,
+.coachContent p,
+.studyCard p,
+.contextPanel > p,
+.nextLevelCard > p {
+  margin: 8px 0 0;
+  color: var(--preview-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.coachCard {
+  min-height: 285px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  border-radius: 24px;
+  background: var(--preview-lilac);
+}
+
+.coachContent {
+  position: relative;
+  z-index: 1;
+  width: 68%;
+  padding: 28px 0 28px 28px;
+}
+
+.coachContent h2 {
+  font-size: 21px;
+}
+
+.coachLabel {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: var(--preview-accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.kokoWrap {
+  position: absolute;
+  right: -4px;
+  bottom: -10px;
+  width: 132px;
+  height: 150px;
+  display: grid;
+  place-items: center;
+  border-radius: 50% 0 0;
+  background: #fff;
+}
+
+.section {
+  margin-top: 72px;
+}
+
+.textButton {
+  border: 0;
+  padding: 6px 0;
+  background: transparent;
+  color: var(--preview-accent);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.studyGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.studyCard {
+  padding: 20px;
+  box-shadow: none;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.studyCard:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--preview-shadow);
+}
+
+.studyTop,
+.studyMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.typeBadge {
+  padding: 5px 9px;
+}
+
+.itemNumber {
+  color: var(--preview-fog);
+  font-size: 12px;
+}
+
+.studyCard h3 {
+  min-height: 48px;
+  margin: 24px 0 0;
+  color: var(--preview-ink);
+  font-size: 18px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.studyMeta {
+  margin-top: 28px;
+  padding-top: 14px;
+  border-top: 1px solid var(--preview-border);
+}
+
+.studyMeta span {
+  color: var(--preview-muted);
+  font-size: 12px;
+}
+
+.studyMeta button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--preview-border);
+  border-radius: 50%;
+  background: var(--preview-paper);
+  color: var(--preview-ink);
+}
+
+.coachLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: start;
+}
+
+.chatPanel {
+  overflow: hidden;
+}
+
+.chatHeader {
+  align-items: center;
+  padding: 24px;
+}
+
+.chatHeader h1 {
+  font-size: 28px;
+}
+
+.chatHeader > span {
+  color: var(--preview-accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chatProgress {
+  height: 4px;
+}
+
+.chatFeed {
+  min-height: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 40px 32px;
+  background: var(--preview-canvas);
+}
+
+.assistantRow {
+  max-width: 78%;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.miniKoko {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--preview-border);
+  border-radius: 50%;
+  background: #fff;
+}
+
+.assistantBubble,
+.studentBubble {
+  padding: 14px 16px;
+  color: var(--preview-deep);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.assistantBubble {
+  border: 1px solid var(--preview-border);
+  border-radius: 4px 8px 8px;
+  background: var(--preview-paper);
+}
+
+.assistantBubble strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--preview-accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.assistantBubble p {
+  margin: 0;
+}
+
+.studentBubble {
+  align-self: flex-end;
+  border-radius: 8px 4px 8px 8px;
+  background: var(--preview-lilac);
+}
+
+.composer {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--preview-border);
+}
+
+.composer input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--preview-border);
+  border-radius: 4px;
+  padding: 11px 13px;
+  outline: 0;
+  color: var(--preview-ink);
+}
+
+.composer input:focus {
+  border-color: var(--preview-accent);
+  box-shadow: 0 0 0 3px rgba(66, 85, 255, 0.12);
+}
+
+.contextPanel {
+  position: sticky;
+  top: 88px;
+  padding: 24px;
+}
+
+.contextLabel {
+  margin-top: 32px !important;
+  color: var(--preview-fog) !important;
+  font-size: 12px !important;
+}
+
+.contextPanel h2 {
+  margin-top: 6px;
+  font-size: 32px;
+}
+
+.hintBox,
+.rewardPreview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 8px;
+}
+
+.hintBox {
+  margin-top: 24px;
+  background: var(--preview-lilac);
+}
+
+.hintBox span,
+.rewardPreview span {
+  color: var(--preview-muted);
+  font-size: 12px;
+}
+
+.hintBox strong {
+  color: var(--preview-accent);
+  letter-spacing: 0.12em;
+}
+
+.rewardPreview {
+  margin-top: 8px;
+  background: var(--preview-canvas);
+}
+
+.rewardPreview strong {
+  color: var(--preview-deep);
+  font-size: 14px;
+}
+
+.completeShell {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.completeHero {
+  padding: 16px 24px 48px;
+  text-align: center;
+}
+
+.completeKoko {
+  width: 156px;
+  height: 156px;
+  margin: 0 auto 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  background: var(--preview-lilac);
+}
+
+.completeHero > p:not(.eyebrow) {
+  margin: 12px 0 0;
+  color: var(--preview-muted);
+  font-size: 16px;
+}
+
+.rewardPills {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.rewardPills span {
+  padding: 8px 14px;
+  border-radius: 200px;
+  background: var(--preview-paper);
+  border: 1px solid var(--preview-border);
+  color: var(--preview-deep);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.resultGrid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 20px;
+}
+
+.resultSummary,
+.nextLevelCard {
+  padding: 24px;
+}
+
+.scoreRing {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 5px solid var(--preview-lilac);
+  border-top-color: var(--preview-accent);
+  border-radius: 50%;
+  color: var(--preview-accent);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.resultRows {
+  margin-top: 24px;
+  border-top: 1px solid var(--preview-border);
+}
+
+.resultRows div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--preview-border);
+  color: var(--preview-muted);
+  font-size: 14px;
+}
+
+.resultRows strong {
+  color: var(--preview-ink);
+  font-weight: 600;
+}
+
+.nextLevelCard {
+  background: var(--preview-lilac);
+  border: 0;
+}
+
+.nextLevelCard .progressTrack {
+  margin-top: 28px;
+  background: #fff;
+}
+
+.ghostButton {
+  width: 100%;
+  margin-top: 32px;
+  border: 1px solid var(--preview-accent);
+  background: transparent;
+  color: var(--preview-accent);
+}
+
+@media (max-width: 900px) {
+  .desktopNav,
+  .streak {
+    display: none;
+  }
+
+  .overviewGrid,
+  .coachLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .coachCard {
+    min-height: 230px;
+  }
+
+  .contextPanel {
+    position: static;
+  }
+}
+
+@media (max-width: 680px) {
+  .previewBar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 16px;
+  }
+
+  .previewBar > div:first-child p {
+    display: none;
+  }
+
+  .previewTabs {
+    width: 100%;
+  }
+
+  .previewTabs button {
+    flex: 1;
+  }
+
+  .topNav {
+    top: 0;
+    height: 58px;
+  }
+
+  .navInner,
+  .page {
+    width: min(100% - 28px, 1200px);
+  }
+
+  .navInner {
+    gap: 10px;
+  }
+
+  .logo strong,
+  .search {
+    display: none;
+  }
+
+  .navActions {
+    margin-left: auto;
+  }
+
+  .page {
+    padding: 40px 0 64px;
+  }
+
+  .hero {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .hero h1,
+  .completeHero h1 {
+    font-size: 32px;
+  }
+
+  .hero .primaryButton {
+    width: 100%;
+  }
+
+  .cardHeading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .weekDays {
+    gap: 4px;
+  }
+
+  .day > span {
+    width: 30px;
+    height: 30px;
+  }
+
+  .coachContent {
+    width: 72%;
+    padding: 24px 0 24px 22px;
+  }
+
+  .kokoWrap {
+    width: 112px;
+  }
+
+  .section {
+    margin-top: 56px;
+  }
+
+  .sectionHeading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .studyGrid,
+  .resultGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .chatHeader {
+    padding: 20px;
+  }
+
+  .chatHeader h1 {
+    font-size: 22px;
+  }
+
+  .chatFeed {
+    min-height: 380px;
+    padding: 28px 16px;
+  }
+
+  .assistantRow {
+    max-width: 92%;
+  }
+
+  .composer {
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .composer .primaryButton {
+    padding-inline: 16px;
+  }
+
+  .completeHero {
+    padding-inline: 0;
+  }
+}
