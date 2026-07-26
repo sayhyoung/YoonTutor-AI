@@ -61,6 +61,8 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [results, setResults] = useState<SessionResult[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [isHintLoading, setIsHintLoading] = useState(false);
+  const [panelHint, setPanelHint] = useState("");
   const [isFinishing, setIsFinishing] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [itemsLoaded, setItemsLoaded] = useState(false);
@@ -340,6 +342,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     if (
       !trimmed ||
       isSending ||
+      isHintLoading ||
       isFinishing ||
       isFinished ||
       tutorStarting ||
@@ -393,6 +396,50 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
     }
   }
 
+  async function requestPanelHint() {
+    if (
+      isHintLoading ||
+      isSending ||
+      isFinishing ||
+      isFinished ||
+      tutorStarting ||
+      !learningItems[currentIndex]
+    ) {
+      return;
+    }
+
+    const requestText =
+      attemptCount > 0
+        ? "조금 더 구체적인 힌트 줘"
+        : "정답은 말하지 말고 힌트 줘";
+    const nextApi = [
+      ...apiMessages,
+      { role: "user" as const, content: requestText },
+    ];
+
+    setIsHintLoading(true);
+    try {
+      const data = await callTutor(learningItems, nextApi, {
+        currentItemIndex: currentIndex,
+        previousAttemptCount: attemptCount,
+        answer: requestText,
+      });
+      const raw = data.raw || data.reply;
+      setApiMessages([
+        ...nextApi,
+        { role: "assistant", content: raw },
+      ]);
+      setPanelHint(data.reply);
+      setAttemptCount(data.nextAttemptCount ?? attemptCount);
+    } catch {
+      setPanelHint(
+        "문제의 한국어 뜻을 천천히 읽고, 영어 단어의 첫소리나 문장 어순부터 떠올려봐.",
+      );
+    } finally {
+      setIsHintLoading(false);
+    }
+  }
+
   // 서버의 결정론 판정으로 현재 문항 결과와 다음 문항을 확정한다.
   function handleTurn(data: TutorTurn, submittedAnswer: string) {
     const item = learningItems[currentIndex];
@@ -432,6 +479,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
       ];
       const nextIndex = data.nextItemIndex;
       setResults(nextResults);
+      setPanelHint("");
       setCurrentIndex(nextIndex);
       setAttemptCount(0);
       if (data.done || nextIndex >= learningItems.length) {
@@ -542,6 +590,8 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
 
   function restartSession() {
     setAnswer("");
+    setPanelHint("");
+    setIsHintLoading(false);
     setCurrentIndex(0);
     setAttemptCount(0);
     setAttempts([]);
@@ -603,7 +653,7 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
   // ===== 학생: 모바일 폰 UI =====
   return (
     <div className="phone-shell">
-      <div className="phone">
+      <div className={`phone ${activeView === "coach" ? "coach-phone" : ""}`}>
         {activeView === "coach" ? (
           <>
             <div className="chat-head">
@@ -653,86 +703,113 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
                 </div>
               </div>
             ) : (
-              <>
-                <div className="chat-feed">
-                  {messages.map((message) =>
-                    message.role === "assistant" ? (
-                      <div key={message.id} className="msg-row">
-                        <span className="msg-avatar">
-                          <Koko
-                            size={32}
-                            mood={
-                              message.status === "Not mastered"
-                                ? "cheer"
-                                : message.status
-                                  ? "happy"
-                                  : "default"
-                            }
-                          />
-                        </span>
-                        <div className="message assistant">
+              <div className="coach-workspace">
+                <div className="coach-chat-column">
+                  <div className="chat-feed">
+                    {messages.map((message) =>
+                      message.role === "assistant" ? (
+                        <div key={message.id} className="msg-row">
+                          <span className="msg-avatar">
+                            <Koko
+                              size={32}
+                              mood={
+                                message.status === "Not mastered"
+                                  ? "cheer"
+                                  : message.status
+                                    ? "happy"
+                                    : "default"
+                              }
+                            />
+                          </span>
+                          <div className="message assistant">
+                            {message.content}
+                            {message.status ? (
+                              <div className="reward-row">
+                                <span className="star-earned">
+                                  ⭐×{message.earnedStars ?? starsForStatus(message.status)}{" "}
+                                  {rewardLabel(message.status)}
+                                </span>
+                                {message.combo && message.combo >= 2 ? (
+                                  <span className="combo-badge">🔥 {message.combo}연속!</span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={message.id} className="message student">
                           {message.content}
-                          {message.status ? (
-                            <div className="reward-row">
-                              <span className="star-earned">
-                                ⭐×{message.earnedStars ?? starsForStatus(message.status)}{" "}
-                                {rewardLabel(message.status)}
-                              </span>
-                              {message.combo && message.combo >= 2 ? (
-                                <span className="combo-badge">🔥 {message.combo}연속!</span>
-                              ) : null}
-                            </div>
-                          ) : null}
+                        </div>
+                      ),
+                    )}
+                    {isSending || isFinishing ? (
+                      <div className="msg-row">
+                        <span className="msg-avatar">
+                          <Koko size={32} />
+                        </span>
+                        <div className="message assistant typing">
+                          {isFinishing
+                            ? "오늘 결과를 정리하는 중…"
+                            : "코코가 생각 중…"}
                         </div>
                       </div>
-                    ) : (
-                      <div key={message.id} className="message student">
-                        {message.content}
-                      </div>
-                    ),
-                  )}
-                  {isSending || isFinishing ? (
-                    <div className="msg-row">
-                      <span className="msg-avatar">
-                        <Koko size={32} />
-                      </span>
-                      <div className="message assistant typing">
-                        {isFinishing
-                          ? "오늘 결과를 정리하는 중…"
-                          : "코코가 생각 중…"}
-                      </div>
-                    </div>
-                  ) : null}
+                    ) : null}
+                  </div>
+
+                  <div className="composer">
+                    <button
+                      className={`button mic-button ${isRecording ? "recording" : ""}`}
+                      onClick={toggleRecording}
+                      disabled={
+                        isSending ||
+                        isHintLoading ||
+                        isTranscribing ||
+                        isFinishing
+                      }
+                      title="음성으로 답하기"
+                      aria-label="음성으로 답하기"
+                    >
+                      {isRecording ? "●" : isTranscribing ? "…" : "🎤"}
+                    </button>
+                    <input
+                      value={answer}
+                      onChange={(event) => setAnswer(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") submitAnswer();
+                      }}
+                      placeholder="영어로 답하거나 마이크를 눌러봐"
+                      disabled={
+                        isSending ||
+                        isHintLoading ||
+                        isTranscribing ||
+                        isFinishing
+                      }
+                    />
+                    <button
+                      className="button primary"
+                      onClick={submitAnswer}
+                      disabled={
+                        isSending ||
+                        isHintLoading ||
+                        isTranscribing ||
+                        isFinishing
+                      }
+                    >
+                      제출
+                    </button>
+                  </div>
                 </div>
 
-                <div className="composer">
-                  <button
-                    className={`button mic-button ${isRecording ? "recording" : ""}`}
-                    onClick={toggleRecording}
-                    disabled={isSending || isTranscribing || isFinishing}
-                    title="음성으로 답하기"
-                    aria-label="음성으로 답하기"
-                  >
-                    {isRecording ? "●" : isTranscribing ? "…" : "🎤"}
-                  </button>
-                  <input
-                    value={answer}
-                    onChange={(event) => setAnswer(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") submitAnswer();
-                    }}
-                    placeholder="영어로 답하거나 마이크를 눌러봐"
-                    disabled={isSending || isTranscribing || isFinishing}
-                  />
-                  <button
-                    className="button primary"
-                    onClick={submitAnswer}
-                    disabled={isSending || isTranscribing || isFinishing}
-                  >
-                    제출
-                  </button>
-                </div>
-              </>
+                <CoachHintPanel
+                  item={learningItems[currentIndex]}
+                  currentIndex={currentIndex}
+                  totalItems={learningItems.length}
+                  attemptCount={attemptCount}
+                  hint={panelHint}
+                  isLoading={isHintLoading}
+                  onRequestHint={requestPanelHint}
+                />
+              </div>
             )}
           </>
         ) : activeView === "report" ? (
@@ -779,6 +856,70 @@ export function TutorPrototype({ appUser, onLogout }: TutorPrototypeProps) {
         </nav>
       </div>
     </div>
+  );
+}
+
+function CoachHintPanel({
+  item,
+  currentIndex,
+  totalItems,
+  attemptCount,
+  hint,
+  isLoading,
+  onRequestHint,
+}: {
+  item?: LearningItem;
+  currentIndex: number;
+  totalItems: number;
+  attemptCount: number;
+  hint: string;
+  isLoading: boolean;
+  onRequestHint: () => void;
+}) {
+  if (!item) return null;
+
+  return (
+    <aside className="coach-hint-panel" aria-label="현재 문제와 힌트">
+      <div className="hint-panel-head">
+        <span className={`item-badge cat-${item.sourceType}`}>
+          {item.sourceLabel}
+        </span>
+        <span className="hint-panel-count">
+          {currentIndex + 1}/{totalItems}
+        </span>
+      </div>
+
+      <div className="hint-question">
+        <span>현재 문제</span>
+        <strong>{item.meaningKo ?? item.promptKo}</strong>
+      </div>
+
+      <div className={`hint-card ${hint ? "revealed" : ""}`}>
+        <div className="hint-card-title">
+          <span aria-hidden>💡</span>
+          <div>
+            <strong>코코의 힌트</strong>
+            <small>힌트는 시도 횟수에 포함되지 않아</small>
+          </div>
+        </div>
+        <p>
+          {isLoading
+            ? "코코가 딱 맞는 힌트를 생각하고 있어…"
+            : hint ||
+              (attemptCount > 0
+                ? "조금 더 구체적인 힌트가 필요하면 눌러봐."
+                : "막히면 정답을 숨긴 채 방향만 알려줄게.")}
+        </p>
+        <button
+          className="hint-button"
+          type="button"
+          onClick={onRequestHint}
+          disabled={isLoading}
+        >
+          {isLoading ? "힌트 준비 중…" : hint ? "다른 힌트 보기" : "힌트 보기"}
+        </button>
+      </div>
+    </aside>
   );
 }
 
