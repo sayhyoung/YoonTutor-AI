@@ -1,6 +1,5 @@
 /* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -13,11 +12,7 @@ import {
   View,
 } from "react-native";
 
-import type {
-  CallPhase,
-  ConversationChoice,
-  InputMode,
-} from "@yoon-call/shared";
+import type { ConversationChoice, InputMode } from "@yoon-call/shared";
 
 import {
   previewHistory,
@@ -26,230 +21,97 @@ import {
   previewSchedule,
 } from "./src/mock";
 import { color, font, radius, space } from "./src/theme";
-
-type VoiceState = "idle" | "listening" | "review";
-type HomeSection = "home" | "my-page";
-type FinishReason = "completed" | "stopped" | "no-response";
+import {
+  type FinishReason,
+  type VoiceState,
+  useCallSession,
+} from "./src/useCallSession";
 
 export default function App() {
-  const [phase, setPhase] = useState<CallPhase>("home");
-  const [homeSection, setHomeSection] = useState<HomeSection>("home");
-  const [inputMode, setInputMode] = useState<InputMode>("voice");
-  const [captionsOn, setCaptionsOn] = useState(true);
-  const [targetIndex, setTargetIndex] = useState(0);
-  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
-  const [heardText, setHeardText] = useState("");
-  const [typedText, setTypedText] = useState("");
-  const [hintOpen, setHintOpen] = useState(false);
-  const [freeTalkTurnIndex, setFreeTalkTurnIndex] = useState(0);
-  const [conversationReplies, setConversationReplies] = useState<string[]>([]);
-  const [choiceAssistOpen, setChoiceAssistOpen] = useState(false);
-  const [finishReason, setFinishReason] = useState<FinishReason>("completed");
-  const [coachLine, setCoachLine] = useState(
-    "안녕! 오늘은 지난 학습에서 헷갈렸던 표현 세 개만 같이 확인해보자.",
-  );
-
-  const isCallSurface =
-    phase === "incoming" ||
-    phase === "connecting" ||
-    phase === "review" ||
-    phase === "free-talk";
-  const target = previewPlan.targets[targetIndex];
-  const freeTalkTurn =
-    previewPlan.freeTalk.turns[freeTalkTurnIndex] ??
-    previewPlan.freeTalk.turns[0]!;
-  const progressLabel = useMemo(() => {
-    if (phase === "free-talk") {
-      return `짧은 대화 ${freeTalkTurnIndex + 1}/${previewPlan.freeTalk.maxTurns}`;
-    }
-    return `복습 ${Math.min(targetIndex + 1, previewPlan.targets.length)}/${previewPlan.targets.length}`;
-  }, [phase, freeTalkTurnIndex, targetIndex]);
-
-  useEffect(() => {
-    if (
-      phase !== "free-talk" ||
-      voiceState !== "idle" ||
-      typedText.trim() ||
-      choiceAssistOpen
-    ) {
-      return;
-    }
-
-    const timeout = setTimeout(() => {
-      setFinishReason("no-response");
-      setPhase("complete");
-    }, previewPlan.freeTalk.idleStopSeconds * 1000);
-
-    return () => clearTimeout(timeout);
-  }, [choiceAssistOpen, phase, freeTalkTurnIndex, typedText, voiceState]);
-
-  function resetCall() {
-    setPhase("home");
-    setTargetIndex(0);
-    setVoiceState("idle");
-    setHeardText("");
-    setTypedText("");
-    setHintOpen(false);
-    setFreeTalkTurnIndex(0);
-    setConversationReplies([]);
-    setChoiceAssistOpen(false);
-    setFinishReason("completed");
-    setHomeSection("home");
-    setCoachLine(
-      "안녕! 오늘은 지난 학습에서 헷갈렸던 표현 세 개만 같이 확인해보자.",
-    );
-  }
-
-  function answerIncomingCall() {
-    setPhase("connecting");
-    setTimeout(() => setPhase("review"), 650);
-  }
-
-  function beginOrStopVoice() {
-    if (voiceState === "idle") {
-      setVoiceState("listening");
-      setHeardText("");
-      return;
-    }
-    if (voiceState === "listening") {
-      const previewText =
-        phase === "free-talk"
-          ? freeTalkTurn?.previewVoiceAnswer ?? ""
-          : target?.answerEn ?? "";
-      setHeardText(previewText);
-      setVoiceState("review");
-      return;
-    }
-    submitAnswer(heardText);
-  }
-
-  function submitTypedAnswer() {
-    const value = typedText.trim();
-    if (!value) return;
-    submitAnswer(value);
-  }
-
-  function submitAnswer(value: string) {
-    if (!value.trim()) return;
-    setHintOpen(false);
-    setHeardText("");
-    setTypedText("");
-    setVoiceState("idle");
-
-    if (phase === "free-talk") {
-      const nextReplies = [...conversationReplies, value];
-      setConversationReplies(nextReplies);
-
-      if (
-        freeTalkTurnIndex + 1 >= previewPlan.freeTalk.maxTurns ||
-        freeTalkTurnIndex + 1 >= previewPlan.freeTalk.turns.length
-      ) {
-        setFinishReason("completed");
-        setPhase("complete");
-        return;
-      }
-
-      const nextTurnIndex = freeTalkTurnIndex + 1;
-      const nextTurn = previewPlan.freeTalk.turns[nextTurnIndex];
-      if (!nextTurn) {
-        setFinishReason("completed");
-        setPhase("complete");
-        return;
-      }
-      setFreeTalkTurnIndex(nextTurnIndex);
-      setChoiceAssistOpen(false);
-      setCoachLine(nextTurn.questionEn);
-      return;
-    }
-
-    if (targetIndex + 1 >= previewPlan.targets.length) {
-      setCoachLine(previewPlan.freeTalk.turns[0]!.questionEn);
-      setFreeTalkTurnIndex(0);
-      setChoiceAssistOpen(false);
-      setPhase("free-talk");
-      return;
-    }
-
-    setCoachLine("정확하게 말했어. 바로 다음 표현으로 넘어가 볼게.");
-    setTargetIndex((current) => current + 1);
-  }
+  const session = useCallSession(previewPlan);
 
   return (
-    <View style={[styles.appRoot, isCallSurface && styles.appRootCall]}>
+    <View
+      style={[styles.appRoot, session.isCallSurface && styles.appRootCall]}
+    >
       <SafeAreaView
         style={[
           styles.safe,
           Platform.OS === "web" && styles.safeWeb,
-          isCallSurface && styles.safeCall,
+          session.isCallSurface && styles.safeCall,
         ]}
       >
-        <StatusBar style={isCallSurface ? "light" : "dark"} />
-        {phase === "home" && (
-          homeSection === "home" ? (
+        <StatusBar style={session.isCallSurface ? "light" : "dark"} />
+        {session.phase === "home" && (
+          session.homeSection === "home" ? (
             <HomeScreen
-              onOpenMyPage={() => setHomeSection("my-page")}
-              onStart={() => setPhase("incoming")}
+              onOpenMyPage={session.openMyPage}
+              onStart={session.showIncomingCall}
             />
           ) : (
-            <MyPageScreen onBack={() => setHomeSection("home")} />
+            <MyPageScreen onBack={session.closeMyPage} />
           )
         )}
-        {phase === "incoming" && (
+        {session.phase === "incoming" && (
           <IncomingScreen
-            onAnswer={answerIncomingCall}
-            onDecline={() => setPhase("home")}
+            onAnswer={session.answerIncomingCall}
+            onDecline={session.declineIncomingCall}
           />
         )}
-        {phase === "connecting" && <ConnectingScreen />}
-        {(phase === "review" || phase === "free-talk") && target && (
+        {session.phase === "connecting" && <ConnectingScreen />}
+        {(session.phase === "review" || session.phase === "free-talk") &&
+          session.target && (
           <CallScreen
-            phase={phase}
-            progressLabel={progressLabel}
-            coachLine={coachLine}
-            promptKo={target.promptKo}
+            phase={session.phase}
+            progressLabel={session.progressLabel}
+            coachLine={session.coachLine}
+            promptKo={session.target.promptKo}
             questionMeaningKo={
-              phase === "free-talk"
-                ? freeTalkTurn.questionMeaningKo
+              session.phase === "free-talk"
+                ? session.freeTalkTurn.questionMeaningKo
                 : undefined
             }
             hint={
-              phase === "free-talk"
-                ? freeTalkTurn.answerHint
-                : target.hint
+              session.phase === "free-talk"
+                ? session.freeTalkTurn.answerHint
+                : session.target.hint
             }
-            choiceOptions={phase === "free-talk" ? freeTalkTurn.choices : []}
-            choiceAssistOpen={choiceAssistOpen}
+            choiceOptions={
+              session.phase === "free-talk"
+                ? session.freeTalkTurn.choices
+                : []
+            }
+            choiceAssistOpen={session.choiceAssistOpen}
             previousReply={
-              phase === "free-talk"
-                ? conversationReplies[conversationReplies.length - 1]
+              session.phase === "free-talk"
+                ? session.conversationReplies[
+                    session.conversationReplies.length - 1
+                  ]
                 : undefined
             }
-            inputMode={inputMode}
-            captionsOn={captionsOn}
-            voiceState={voiceState}
-            heardText={heardText}
-            typedText={typedText}
-            hintOpen={hintOpen}
-            onChangeMode={setInputMode}
-            onToggleCaptions={() => setCaptionsOn((current) => !current)}
-            onToggleHint={() => setHintOpen((current) => !current)}
-            onChangeText={setTypedText}
-            onVoiceAction={beginOrStopVoice}
-            onSubmitText={submitTypedAnswer}
-            onRetryVoice={() => {
-              setHeardText("");
-              setVoiceState("listening");
-            }}
-            onChooseAnswer={(answer) => submitAnswer(answer)}
-            onToggleChoiceAssist={() => setChoiceAssistOpen((current) => !current)}
-            onEnd={() => {
-              setFinishReason("stopped");
-              setPhase("complete");
-            }}
+            inputMode={session.inputMode}
+            captionsOn={session.captionsOn}
+            voiceState={session.voiceState}
+            heardText={session.heardText}
+            typedText={session.typedText}
+            hintOpen={session.hintOpen}
+            onChangeMode={session.changeInputMode}
+            onToggleCaptions={session.toggleCaptions}
+            onToggleHint={session.toggleHint}
+            onChangeText={session.changeTypedText}
+            onVoiceAction={session.beginOrStopVoice}
+            onSubmitText={session.submitTypedAnswer}
+            onRetryVoice={session.retryVoice}
+            onChooseAnswer={session.chooseAnswer}
+            onToggleChoiceAssist={session.toggleChoiceAssist}
+            onEnd={session.endCall}
           />
         )}
-        {phase === "complete" && (
-          <ReportScreen finishReason={finishReason} onDone={resetCall} />
+        {session.phase === "complete" && (
+          <ReportScreen
+            finishReason={session.finishReason}
+            onDone={session.resetCall}
+          />
         )}
       </SafeAreaView>
     </View>
