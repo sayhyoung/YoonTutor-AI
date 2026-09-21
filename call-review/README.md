@@ -8,7 +8,7 @@
 - `apps/teacher-web`: 기존 교사 LMS에서 링크로 여는 Next.js 관리 페이지
 - `packages/shared`: 통화 단계, 학습 계획, 리포트 등 공통 도메인 타입
 
-모바일의 통화 상태 전환과 무응답 종료 로직은 `apps/mobile/src/useCallSession.ts`에 분리되어 있다. 화면 컴포넌트는 이 세션 인터페이스를 통해서만 통화 상태를 변경한다.
+모바일의 통화 상태 전환과 무응답 종료 로직은 `apps/mobile/src/useCallSession.ts`에 분리되어 있다. 화면 컴포넌트는 이 세션 인터페이스를 통해서만 통화 상태를 변경한다. 계획·리포트·일정·학습이력은 `CallReviewRepository` 경계를 통해 로드하며, 현재는 프리뷰 저장소 구현을 사용한다.
 
 ## 현재 범위
 

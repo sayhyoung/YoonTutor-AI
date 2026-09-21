@@ -12,23 +12,40 @@ import {
   View,
 } from "react-native";
 
-import type { ConversationChoice, InputMode } from "@yoon-call/shared";
+import type {
+  CallHistoryEntry,
+  CallReport,
+  ConversationChoice,
+  InputMode,
+  TeacherScheduleSettings,
+} from "@yoon-call/shared";
 
 import {
-  previewHistory,
-  previewPlan,
-  previewReport,
-  previewSchedule,
-} from "./src/mock";
+  type CallReviewSnapshot,
+  previewCallReviewRepository,
+} from "./src/callReviewRepository";
 import { color, font, radius, space } from "./src/theme";
 import {
   type FinishReason,
   type VoiceState,
   useCallSession,
 } from "./src/useCallSession";
+import { useCallReviewData } from "./src/useCallReviewData";
 
 export default function App() {
-  const session = useCallSession(previewPlan);
+  const { data, error, reload } = useCallReviewData(
+    previewCallReviewRepository,
+  );
+
+  if (!data) {
+    return <BootstrapScreen error={error} onRetry={reload} />;
+  }
+
+  return <CallReviewApp data={data} />;
+}
+
+function CallReviewApp({ data }: { data: CallReviewSnapshot }) {
+  const session = useCallSession(data.plan);
 
   return (
     <View
@@ -45,11 +62,16 @@ export default function App() {
         {session.phase === "home" && (
           session.homeSection === "home" ? (
             <HomeScreen
+              scheduledAtLabel={data.plan.scheduledAtLabel}
               onOpenMyPage={session.openMyPage}
               onStart={session.showIncomingCall}
             />
           ) : (
-            <MyPageScreen onBack={session.closeMyPage} />
+            <MyPageScreen
+              history={data.history}
+              schedule={data.schedule}
+              onBack={session.closeMyPage}
+            />
           )
         )}
         {session.phase === "incoming" && (
@@ -105,11 +127,13 @@ export default function App() {
             onChooseAnswer={session.chooseAnswer}
             onToggleChoiceAssist={session.toggleChoiceAssist}
             onEnd={session.endCall}
+            idleStopSeconds={data.plan.freeTalk.idleStopSeconds}
           />
         )}
         {session.phase === "complete" && (
           <ReportScreen
             finishReason={session.finishReason}
+            report={data.report}
             onDone={session.resetCall}
           />
         )}
@@ -118,10 +142,47 @@ export default function App() {
   );
 }
 
+function BootstrapScreen({
+  error,
+  onRetry,
+}: {
+  error: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <SafeAreaView style={styles.bootstrapScreen}>
+      <StatusBar style="dark" />
+      <Text style={styles.brandEyebrow}>윤선생 AI 전화관리</Text>
+      <Text style={styles.bootstrapTitle}>
+        {error ? "학습 정보를 불러오지 못했어." : "오늘의 전화를 준비하고 있어."}
+      </Text>
+      <Text style={styles.bootstrapBody}>
+        {error
+          ? "연결 상태를 확인한 뒤 다시 시도해 주세요."
+          : "잠시만 기다려 주세요."}
+      </Text>
+      {error ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onRetry}
+          style={({ pressed }) => [
+            styles.bootstrapRetry,
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={styles.bootstrapRetryText}>다시 불러오기</Text>
+        </Pressable>
+      ) : null}
+    </SafeAreaView>
+  );
+}
+
 function HomeScreen({
+  scheduledAtLabel,
   onOpenMyPage,
   onStart,
 }: {
+  scheduledAtLabel: string;
   onOpenMyPage: () => void;
   onStart: () => void;
 }) {
@@ -155,7 +216,7 @@ function HomeScreen({
             <Text style={styles.readyBadgeText}>준비됨</Text>
           </View>
         </View>
-        <Text style={styles.nextCallTime}>{previewPlan.scheduledAtLabel}</Text>
+        <Text style={styles.nextCallTime}>{scheduledAtLabel}</Text>
         <Text style={styles.nextCallDescription}>
           지난 학습에서 놓친 표현 3개와 짧은 대화를 준비했어.
         </Text>
@@ -189,7 +250,15 @@ function HomeScreen({
   );
 }
 
-function MyPageScreen({ onBack }: { onBack: () => void }) {
+function MyPageScreen({
+  history,
+  schedule,
+  onBack,
+}: {
+  history: CallHistoryEntry[];
+  schedule: TeacherScheduleSettings;
+  onBack: () => void;
+}) {
   return (
     <ScrollView
       contentContainerStyle={styles.myPageContent}
@@ -232,10 +301,10 @@ function MyPageScreen({ onBack }: { onBack: () => void }) {
           </View>
         </View>
         <Text style={styles.scheduleValue}>
-          매주 {previewSchedule.weekdays.join(" · ")}요일 {previewSchedule.time}
+          매주 {schedule.weekdays.join(" · ")}요일 {schedule.time}
         </Text>
         <Text style={styles.scheduleMeta}>
-          주 {previewSchedule.callsPerWeek}회 · {previewSchedule.reminderMinutesBefore}분 전 알림
+          주 {schedule.callsPerWeek}회 · {schedule.reminderMinutesBefore}분 전 알림
         </Text>
         <Text style={styles.scheduleHelp}>
           일정 변경이 필요하면 담당 교사에게 요청해 주세요.
@@ -244,7 +313,7 @@ function MyPageScreen({ onBack }: { onBack: () => void }) {
 
       <Text style={styles.sectionTitle}>내 전화관리 학습이력</Text>
       <View style={styles.historyList}>
-        {previewHistory.map((entry) => (
+        {history.map((entry) => (
           <View key={entry.id} style={styles.historyRow}>
             <View style={styles.historyDateBlock}>
               <Text style={styles.historyDate}>{entry.completedAtLabel}</Text>
@@ -382,6 +451,7 @@ type CallScreenProps = {
   onSubmitText: () => void;
   onRetryVoice: () => void;
   onEnd: () => void;
+  idleStopSeconds: number;
 };
 
 function CallScreen(props: CallScreenProps) {
@@ -547,7 +617,7 @@ function CallScreen(props: CallScreenProps) {
                 <Text style={styles.stopTalkButtonText}>오늘은 여기까지</Text>
               </Pressable>
               <Text style={styles.idleStopText}>
-                {previewPlan.freeTalk.idleStopSeconds}초간 응답이 없으면 통화를 마쳐요.
+                {props.idleStopSeconds}초간 응답이 없으면 통화를 마쳐요.
               </Text>
             </View>
           </View>
@@ -701,9 +771,11 @@ function Signal({ active }: { active: boolean }) {
 
 function ReportScreen({
   finishReason,
+  report,
   onDone,
 }: {
   finishReason: FinishReason;
+  report: CallReport;
   onDone: () => void;
 }) {
   const reportCopy =
@@ -729,24 +801,24 @@ function ReportScreen({
 
       <View style={styles.reportSummary}>
         <View style={styles.reportScore}>
-          <Text style={styles.reportScoreValue}>{previewReport.reviewedCount}</Text>
+          <Text style={styles.reportScoreValue}>{report.reviewedCount}</Text>
           <Text style={styles.reportScoreLabel}>복습한 표현</Text>
         </View>
         <View style={styles.reportDivider} />
         <View style={styles.reportScore}>
-          <Text style={styles.reportScoreValue}>{previewReport.needsReviewCount}</Text>
+          <Text style={styles.reportScoreValue}>{report.needsReviewCount}</Text>
           <Text style={styles.reportScoreLabel}>다음에 다시</Text>
         </View>
       </View>
 
       <View style={styles.commentCard}>
         <Text style={styles.commentLabel}>코코의 한마디</Text>
-        <Text style={styles.commentText}>{previewReport.coachComment}</Text>
+        <Text style={styles.commentText}>{report.coachComment}</Text>
       </View>
 
       <Text style={styles.sectionTitle}>오늘 사용한 표현</Text>
       <View style={styles.expressionList}>
-        {previewReport.expressions.map((expression, index) => (
+        {report.expressions.map((expression, index) => (
           <View key={expression} style={styles.expressionRow}>
             <Text style={styles.expressionNumber}>{index + 1}</Text>
             <Text style={styles.expressionText}>{expression}</Text>
@@ -766,6 +838,11 @@ function ReportScreen({
 }
 
 const styles = StyleSheet.create({
+  bootstrapScreen: { flex: 1, justifyContent: "center", padding: space.lg, backgroundColor: color.paper, gap: space.md },
+  bootstrapTitle: { color: color.ink, fontFamily: font.display, fontSize: 28, lineHeight: 36, fontWeight: "800", letterSpacing: -0.7 },
+  bootstrapBody: { color: color.muted, fontSize: 15, lineHeight: 23 },
+  bootstrapRetry: { minHeight: 52, alignSelf: "flex-start", justifyContent: "center", borderRadius: radius.md, paddingHorizontal: space.lg, backgroundColor: color.primary },
+  bootstrapRetryText: { color: color.accentInk, fontSize: 15, fontWeight: "800" },
   appRoot: { flex: 1, alignItems: "center", backgroundColor: color.paper },
   appRootCall: { backgroundColor: color.call },
   safe: { flex: 1, width: "100%", backgroundColor: color.paper },

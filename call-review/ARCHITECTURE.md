@@ -13,7 +13,7 @@
 
 ## 런타임 구성
 
-모바일 화면 컴포넌트는 렌더링에 집중하고, 통화 단계 전환·무응답 타이머·답변 제출은 `apps/mobile/src/useCallSession.ts`에서 관리한다. 이후 STT와 서버 API는 이 세션 계층의 입력·출력 경계에 연결한다.
+모바일 화면 컴포넌트는 렌더링에 집중하고, 통화 단계 전환·무응답 타이머·답변 제출은 `apps/mobile/src/useCallSession.ts`에서 관리한다. 계획·리포트·일정·학습이력은 `CallReviewRepository`를 통해 로드한다. 이후 실제 학습 API 구현으로 저장소만 교체하고, STT는 세션 계층의 입력 경계에 연결한다.
 
 ```text
 학습 데이터 API
