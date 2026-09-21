@@ -1,40 +1,43 @@
 import type {
   CallHistoryEntry,
-  CallPlan,
   CallReport,
+  FreeTalkPlan,
+  LearningHistoryItem,
   TeacherScheduleSettings,
 } from "@yoon-call/shared";
+import { buildCallPlanFromLearningItems } from "@yoon-call/shared";
 
-export const previewPlan: CallPlan = {
-  id: "preview-call",
-  studentId: "preview-student",
-  title: "오늘의 5분 관리 전화",
-  scheduledAtLabel: "오늘 오후 7:30",
-  estimatedMinutes: 5,
-  targets: [
-    {
-      id: "target-1",
-      sourceLabel: "단어 복습",
-      promptKo: "습관",
-      answerEn: "habit",
-      hint: "첫소리는 h야. 매일 반복하는 행동을 떠올려봐.",
-    },
-    {
-      id: "target-2",
-      sourceLabel: "문장 복습",
-      promptKo: "나는 숙제를 끝냈어.",
-      answerEn: "I finished my homework.",
-      hint: "finish를 과거형으로 바꿔서 말해봐.",
-    },
-    {
-      id: "target-3",
-      sourceLabel: "표현 복습",
-      promptKo: "한번 확인해 볼게.",
-      answerEn: "Let me check.",
-      hint: "Let me로 시작하는 짧은 표현이야.",
-    },
-  ],
-  freeTalk: {
+const previewLearningItems: LearningHistoryItem[] = [
+  {
+    id: "target-1",
+    studentId: "preview-student",
+    sourceType: "word",
+    sourceLabel: "단어 복습",
+    promptKo: "습관",
+    answerEn: "habit",
+    hint: "첫소리는 h야. 매일 반복하는 행동을 떠올려봐.",
+  },
+  {
+    id: "target-2",
+    studentId: "preview-student",
+    sourceType: "sentence",
+    sourceLabel: "문장 복습",
+    promptKo: "나는 숙제를 끝냈어.",
+    answerEn: "I finished my homework.",
+    hint: "finish를 과거형으로 바꿔서 말해봐.",
+  },
+  {
+    id: "target-3",
+    studentId: "preview-student",
+    sourceType: "assessment",
+    sourceLabel: "표현 복습",
+    promptKo: "한번 확인해 볼게.",
+    answerEn: "Let me check.",
+    hint: "Let me로 시작하는 짧은 표현이야.",
+  },
+];
+
+const previewFreeTalk: FreeTalkPlan = {
     maxTurns: 3,
     idleStopSeconds: 20,
     turns: [
@@ -78,8 +81,15 @@ export const previewPlan: CallPlan = {
         ],
       },
     ],
-  },
 };
+
+export const previewPlan = buildCallPlanFromLearningItems({
+  id: "preview-call",
+  studentId: "preview-student",
+  scheduledAtLabel: "오늘 오후 7:30",
+  items: previewLearningItems,
+  freeTalk: previewFreeTalk,
+});
 
 export const previewReport: CallReport = {
   callId: "preview-call",

@@ -18,7 +18,9 @@
 ```text
 학습 데이터 API
       ↓
-CallPlan 생성 계층
+LearningHistoryItem 정규화
+      ↓
+buildCallPlanFromLearningItems
       ↓
 모바일 통화 상태 머신
   ├─ 음성 입력 → STT → 인식 결과 확인
@@ -42,6 +44,10 @@ CallReport 저장
 - `review`: 취약 단어·문장 복습
 - `free-talk`: 오늘 표현을 활용한 짧은 대화
 - `complete`: 결과, 보상, 다음 일정
+
+## 학습 데이터 변환
+
+기존 웹 BFF가 반환하는 오답 항목을 `LearningHistoryItem`으로 정규화한 뒤 공통 패키지의 `buildCallPlanFromLearningItems`로 전달한다. 변환기는 단어·문장·평가 유형을 우선 한 개씩 선택하고, 남는 자리는 원래 순서의 항목으로 채워 기본 3개 복습 타깃을 만든다. 실제 회원번호와 인증 토큰은 변환 계층에 전달하지 않고 인증된 저장소 구현 내부에서만 다룬다.
 
 ## 모바일 배포 방향
 
