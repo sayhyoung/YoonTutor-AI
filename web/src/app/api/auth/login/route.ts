@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { studyLogin } from "@/lib/study-api/auth";
+import { setCallReviewSession } from "@/lib/study-api/call-review-session";
 import { StudyApiError } from "@/lib/study-api/client";
 import { setTokens } from "@/lib/study-api/token-store";
 import { extractProfile } from "@/lib/study-api/types";
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "잘못된 요청" }, { status: 400 });
   }
 
-  const { userId, password, role } = body;
+  const { userId, password, role = "student" } = body;
   if (!userId?.trim() || !password) {
     return NextResponse.json({ error: "아이디와 비밀번호를 입력해줘." }, { status: 400 });
   }
@@ -28,7 +29,9 @@ export async function POST(request: Request) {
   try {
     const data = await studyLogin({ userId, password, role });
     await setTokens(data);
-    return NextResponse.json({ profile: extractProfile(data) });
+    const profile = extractProfile(data);
+    await setCallReviewSession(profile, role, data.refreshTokenExpiresIn);
+    return NextResponse.json({ profile });
   } catch (error) {
     if (error instanceof StudyApiError) {
       // A-1200(아이디/비번 불일치) 등은 상태코드와 함께 전달.

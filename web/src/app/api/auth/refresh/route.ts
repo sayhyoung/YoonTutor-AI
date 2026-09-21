@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { studyRefresh } from "@/lib/study-api/auth";
+import {
+  clearCallReviewSession,
+  refreshCallReviewSession,
+} from "@/lib/study-api/call-review-session";
 import { clearTokens, getRefreshToken, setTokens } from "@/lib/study-api/token-store";
 
 export const runtime = "nodejs";
@@ -15,9 +19,11 @@ export async function POST() {
   try {
     const tokens = await studyRefresh(refreshToken);
     await setTokens(tokens);
+    await refreshCallReviewSession(tokens.refreshTokenExpiresIn);
     return NextResponse.json({ ok: true });
   } catch {
     await clearTokens();
+    await clearCallReviewSession();
     return NextResponse.json({ error: "세션이 만료됐어. 다시 로그인해줘." }, { status: 401 });
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { studyLogout } from "@/lib/study-api/auth";
+import { clearCallReviewSession } from "@/lib/study-api/call-review-session";
 import { clearTokens, getRefreshToken } from "@/lib/study-api/token-store";
 
 export const runtime = "nodejs";
@@ -16,6 +17,7 @@ export async function POST() {
     // 무효화 실패해도 로컬 세션은 정리한다.
   } finally {
     await clearTokens();
+    await clearCallReviewSession();
   }
   return NextResponse.json({ ok: true });
 }
