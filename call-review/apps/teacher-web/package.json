@@ -1,0 +1,27 @@
+{
+  "name": "@yoon-call/teacher-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@yoon-call/shared": "*",
+    "next": "latest",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.3",
+    "es-abstract": "^1.24.2",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "typescript": "~6.0.3"
+  }
+}

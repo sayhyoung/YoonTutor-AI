@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "윤선생 AI 전화관리",
+    "slug": "yoon-ai-call-review",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "yooncall",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yoonsaeng.aicallreview"
+    },
+    "android": {
+      "package": "com.yoonsaeng.aicallreview",
+      "adaptiveIcon": {
+        "backgroundColor": "#171522"
+      },
+      "edgeToEdgeEnabled": true
+    }
+  }
+}

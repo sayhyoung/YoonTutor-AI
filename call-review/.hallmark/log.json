@@ -1,0 +1,25 @@
+[
+  {
+    "date": "2026-09-19",
+    "macrostructure": "Workbench",
+    "theme": "Midnight",
+    "enrichment": "none",
+    "brief": "코코 영어 질문, 한국어 뜻, 학습자 영어 응답 역할 구분 개선",
+    "knob_deltas": "question-first bilingual hierarchy; persistent English prompt; explicit learner reply cue"
+  },
+  {
+    "date": "2026-09-19",
+    "macrostructure": "Workbench",
+    "theme": "Midnight",
+    "enrichment": "none",
+    "brief": "표현 기반 3턴 자유대화, 학습이력, 교사 일정 권한 확장",
+    "knob_deltas": "mobile home-to-my-page branch; teacher schedule control plane"
+  },
+  {
+    "date": "2026-09-19",
+    "macrostructure": "Workbench",
+    "theme": "Midnight",
+    "enrichment": "none",
+    "brief": "윤선생 AI 전화관리 모바일 앱과 교사용 관리 웹 프리뷰"
+  }
+]

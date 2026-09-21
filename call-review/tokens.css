@@ -1,0 +1,53 @@
+/* Hallmark · genre: atmospheric · tone: friendly-focused · anchor: Yoon violet · macrostructure: Workbench (same-product revision) · knobs: question-first bilingual hierarchy + explicit English reply cue · theme: Midnight · enrichment: none · contrast: pass (40–41) · nav: N2 · footer: none · slop: pass (42–45) · honest: pass (46) · chrome: pass (47) · tokens: pass (48) · responsive: pass (49) · icons: pass (30) · mobile: pass (34, 49, 50–57) */
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+:root {
+  --color-paper: oklch(97% 0.01 290);
+  --color-paper-2: oklch(94% 0.018 290);
+  --color-paper-3: oklch(99% 0.006 290);
+  --color-call: oklch(14% 0.022 275);
+  --color-call-2: oklch(19% 0.026 275);
+  --color-ink: oklch(20% 0.025 278);
+  --color-ink-inverse: oklch(98% 0.006 278);
+  --color-muted: oklch(50% 0.025 278);
+  --color-muted-inverse: oklch(72% 0.025 278);
+  --color-accent: oklch(54% 0.22 285);
+  --color-accent-ink: oklch(98% 0.006 278);
+  --color-primary: var(--color-accent);
+  --color-primary-strong: oklch(46% 0.24 285);
+  --color-primary-soft: oklch(91% 0.055 285);
+  --color-success: oklch(49% 0.16 145);
+  --color-warning: oklch(72% 0.15 76);
+  --color-danger: oklch(53% 0.21 25);
+  --color-rule: oklch(87% 0.022 285);
+  --color-rule-inverse: oklch(35% 0.028 275);
+
+  --font-display: "Wanted Sans Variable", "Pretendard Variable", sans-serif;
+  --font-body: "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+  --text-display: clamp(2rem, 4vw, 3.5rem);
+
+  --radius-sm: 0.75rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.5rem;
+  --radius-pill: 999px;
+  --rule-thin: 1px;
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}

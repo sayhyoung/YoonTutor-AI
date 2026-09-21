@@ -1,0 +1,16 @@
+{
+  "name": "yoon-call-review",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:mobile": "npm run start --workspace @yoon-call/mobile",
+    "dev:teacher": "npm run dev --workspace @yoon-call/teacher-web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build:teacher": "npm run build --workspace @yoon-call/teacher-web",
+    "lint": "npm run lint --workspaces --if-present"
+  }
+}

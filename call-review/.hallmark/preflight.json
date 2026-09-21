@@ -1,0 +1,9 @@
+{
+  "scannedAt": "2026-09-19",
+  "frameworks": ["Expo SDK 57", "React Native", "Next.js App Router"],
+  "fontStack": ["Wanted Sans Variable", "Pretendard Variable", "system sans"],
+  "palette": "YoonTutor violet adapted to a dark call surface and light teacher surface",
+  "motion": "motion-cut; only functional call pulse and signal feedback",
+  "spacing": "4pt scale",
+  "slopTest": "pass (58 gates reviewed; no open failures)"
+}
