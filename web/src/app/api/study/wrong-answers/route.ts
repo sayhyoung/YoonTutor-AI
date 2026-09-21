@@ -1,133 +1,35 @@
 import { NextResponse } from "next/server";
 
 import { StudyApiError, isStudyApiConfigured } from "@/lib/study-api/client";
-import { mapStudyResultsToLearningItems } from "@/lib/study-api/mapping";
-import { authedStudyFetch } from "@/lib/study-api/server-fetch";
-import type { StudyQueryData } from "@/lib/study-api/types";
-import { callOpenAiText, isOpenAiEnabled } from "@/lib/openai";
-import type { LearningItem } from "@/lib/types";
-
-// 한글 뜻이 없는 항목(문장/평가)은 정답 영어를 한국어로 번역해 meaningKo를 채운다.
-// 완료 결과표·튜터 출제에서 '영어 : 우리말'로 함께 보여주기 위함. 실패해도 조용히 통과.
-async function fillKoreanMeanings(items: LearningItem[]): Promise<void> {
-  if (!isOpenAiEnabled()) return;
-  const need = items.filter((it) => !it.meaningKo && it.answerEn.trim().length > 0);
-  if (need.length === 0) return;
-  try {
-    const prompt = [
-      "다음 영어 단어/문장 각각을 자연스러운 한국어로 번역해줘.",
-      "설명 없이, 입력 순서 그대로 한국어 번역만 JSON 문자열 배열로 답해.",
-      JSON.stringify(need.map((it) => it.answerEn)),
-    ].join("\n");
-    const raw = await callOpenAiText(prompt, 700);
-    const s = raw.indexOf("[");
-    const e = raw.lastIndexOf("]");
-    if (s >= 0 && e > s) {
-      const arr = JSON.parse(raw.slice(s, e + 1)) as string[];
-      need.forEach((it, idx) => {
-        if (arr[idx]) it.meaningKo = String(arr[idx]).trim();
-      });
-    }
-  } catch {
-    // 번역 실패 시 meaningKo 없이 진행.
-  }
-}
+import { loadWrongAnswerItems } from "@/lib/study-api/wrong-answer-service";
 
 export const runtime = "nodejs";
 
-const MAX_RANGE_DAYS = 365; // 서버 제약: 조회 기간 1년 초과 시 400(ST-1100)
-
-function toIsoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function shiftDays(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return toIsoDate(d);
-}
-
-// study-api 학습조회(기간)는 사내망 전용 서버이며 현재 인증 없이 조회 가능.
-// BFF(서버 라우트)가 호출하므로 브라우저 CORS 문제가 없다.
-// 인증이 적용되면 STUDY_API_ACCESS_TOKEN을 Bearer로 첨부한다.
+// 기존 웹 POC용 엔드포인트. 모바일 전화관리는 회원번호를 쿼리로 받지 않는
+// /api/call-review/learning-items를 사용한다.
 export async function GET(request: Request) {
   if (!isStudyApiConfigured()) {
-    // LEARNING_API_BASE_URL 미설정(예: 클라우드 배포 환경) → 빈 목록.
     return NextResponse.json({ items: [], source: "unconfigured" });
   }
 
-  const sp = new URL(request.url).searchParams;
-  const customerNo = sp.get("customerNo") ?? sp.get("studentId") ?? "";
+  const params = new URL(request.url).searchParams;
+  const customerNo = params.get("customerNo") ?? params.get("studentId") ?? "";
   if (!customerNo.trim()) {
     return NextResponse.json({ error: "customerNo is required" }, { status: 400 });
   }
 
-  // 조회 기간 결정: 쿼리 > 환경변수 > 기본(최근 LOOKBACK일).
-  // 빈 문자열 env(예: STUDY_API_DEMO_DATE=)는 "없음"으로 취급한다(?? 통과 방지).
-  const firstNonEmpty = (...vals: (string | null | undefined)[]) =>
-    vals.find((v) => v != null && v.trim() !== "")?.trim();
-  const lookbackDays = Number(process.env.STUDY_API_LOOKBACK_DAYS ?? "90") || 90;
-  const today = toIsoDate(new Date());
-  let endDate =
-    firstNonEmpty(
-      sp.get("to"),
-      sp.get("studyEndDate"),
-      process.env.STUDY_API_DEMO_END,
-      process.env.STUDY_API_DEMO_DATE,
-    ) ?? today;
-  let startDate =
-    firstNonEmpty(
-      sp.get("from"),
-      sp.get("studyStartDate"),
-      process.env.STUDY_API_DEMO_START,
-      process.env.STUDY_API_DEMO_DATE,
-    ) ?? shiftDays(endDate, -lookbackDays);
-
-  // 시작>종료면 교정, 1년 초과면 시작일을 당겨 클램프.
-  if (startDate > endDate) [startDate, endDate] = [endDate, startDate];
-  if (shiftDays(startDate, MAX_RANGE_DAYS) < endDate) {
-    startDate = shiftDays(endDate, -MAX_RANGE_DAYS);
-  }
-
-  const query = `studyStartDate=${encodeURIComponent(startDate)}&studyEndDate=${encodeURIComponent(
-    endDate,
-  )}&customerNo=${encodeURIComponent(customerNo)}`;
-
-  // smart-befly(단어/문장)와 4skill-befly(평가 등) 기간조회를 호출하고 오답만 합친다.
-  // 인증 토큰은 쿠키에서 읽고, 401이면 refresh 후 재시도(authedStudyFetch).
-  // rotation 경합을 피하려 순차 호출(둘째 호출은 갱신된 토큰을 사용).
-  const endpoints = [
-    `/api/study/results/smart-befly/range?${query}`,
-    `/api/study/results/4skill-befly/range?${query}`,
-  ];
-
-  const items: LearningItem[] = [];
-  let lastError: unknown = null;
-
-  for (const path of endpoints) {
-    try {
-      const data = await authedStudyFetch<StudyQueryData>(path);
-      if (data) items.push(...mapStudyResultsToLearningItems(data, customerNo));
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  // 둘 다 실패한 경우에만 에러로 응답(부분 성공은 통과).
-  if (items.length === 0 && lastError) {
-    const status = lastError instanceof StudyApiError ? lastError.status : 502;
+  try {
+    const result = await loadWrongAnswerItems({
+      customerNo,
+      from: params.get("from") ?? params.get("studyStartDate"),
+      to: params.get("to") ?? params.get("studyEndDate"),
+    });
+    return NextResponse.json({ ...result, source: "study-api" });
+  } catch (error) {
+    const status = error instanceof StudyApiError ? error.status : 502;
     return NextResponse.json(
-      { items: [], source: "study-api", error: String(lastError) },
+      { items: [], source: "study-api", error: String(error) },
       { status },
     );
   }
-
-  // 문장/평가 등 한글 뜻이 없는 항목은 번역해 meaningKo를 채운다.
-  await fillKoreanMeanings(items);
-
-  // POC 출제 순서: 단어 → 문장 → 평가 (영역 내 순서는 유지, JS sort는 안정 정렬).
-  const order: Record<string, number> = { word: 0, sentence: 1, assessment: 2 };
-  items.sort((a, b) => (order[a.sourceType] ?? 9) - (order[b.sourceType] ?? 9));
-
-  return NextResponse.json({ items, source: "study-api", studyStartDate: startDate, studyEndDate: endDate });
 }
