@@ -10,6 +10,7 @@ export type WrongAnswerQuery = {
   customerNo: string;
   from?: string | null;
   to?: string | null;
+  sources?: "all" | "word-sentence";
 };
 
 export type WrongAnswerResult = {
@@ -89,6 +90,7 @@ export async function loadWrongAnswerItems({
   customerNo,
   from,
   to,
+  sources = "all",
 }: WrongAnswerQuery): Promise<WrongAnswerResult> {
   const { studyStartDate, studyEndDate } = resolveDateRange(from, to);
   const query = `studyStartDate=${encodeURIComponent(
@@ -96,10 +98,10 @@ export async function loadWrongAnswerItems({
   )}&studyEndDate=${encodeURIComponent(studyEndDate)}&customerNo=${encodeURIComponent(
     customerNo,
   )}`;
-  const endpoints = [
-    `/api/study/results/smart-befly/range?${query}`,
-    `/api/study/results/4skill-befly/range?${query}`,
-  ];
+  const endpoints = [`/api/study/results/smart-befly/range?${query}`];
+  if (sources === "all") {
+    endpoints.push(`/api/study/results/4skill-befly/range?${query}`);
+  }
 
   const items: LearningItem[] = [];
   let lastError: unknown = null;
@@ -108,7 +110,14 @@ export async function loadWrongAnswerItems({
   for (const path of endpoints) {
     try {
       const data = await authedStudyFetch<StudyQueryData>(path);
-      if (data) items.push(...mapStudyResultsToLearningItems(data, customerNo));
+      if (data) {
+        const mapped = mapStudyResultsToLearningItems(data, customerNo);
+        items.push(
+          ...mapped.filter(
+            (item) => sources === "all" || item.sourceType !== "assessment",
+          ),
+        );
+      }
     } catch (error) {
       lastError = error;
     }

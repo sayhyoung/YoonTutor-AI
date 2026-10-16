@@ -40,6 +40,7 @@ export async function GET(request: Request) {
       customerNo: session.subjectId,
       from: params.get("from"),
       to: params.get("to"),
+      sources: "word-sentence",
     });
     return NextResponse.json(
       { ...result, source: "study-api" },

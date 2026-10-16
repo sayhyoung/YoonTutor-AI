@@ -29,8 +29,8 @@ const previewLearningItems: LearningHistoryItem[] = [
   {
     id: "target-3",
     studentId: "preview-student",
-    sourceType: "assessment",
-    sourceLabel: "표현 복습",
+    sourceType: "sentence",
+    sourceLabel: "문장 복습",
     promptKo: "한번 확인해 볼게.",
     answerEn: "Let me check.",
     hint: "Let me로 시작하는 짧은 표현이야.",
@@ -99,7 +99,7 @@ export const previewReport: CallReport = {
   needsReviewCount: 1,
   expressions: ["habit", "I finished my homework.", "Let me check."],
   coachComment:
-    "오늘은 과거형 문장을 차분하게 완성했어. 다음 전화에서는 Let me로 시작하는 표현을 한 번 더 써보자.",
+    "오늘은 과거형 문장을 차분하게 완성했어. 다음 전화에서는 Let me로 시작하는 문장을 한 번 더 써보자.",
 };
 
 export const previewSchedule: TeacherScheduleSettings = {

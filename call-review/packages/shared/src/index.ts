@@ -8,7 +8,7 @@ export type CallPhase =
 
 export type InputMode = "voice" | "text";
 
-export type LearningSourceType = "word" | "sentence" | "assessment";
+export type LearningSourceType = "word" | "sentence";
 
 export type LearningHistoryItem = {
   id: string;
@@ -70,20 +70,13 @@ export type BuildCallPlanInput = {
   maxTargets?: number;
 };
 
-const SOURCE_PRIORITY: LearningSourceType[] = [
-  "word",
-  "sentence",
-  "assessment",
-];
+const SOURCE_PRIORITY: LearningSourceType[] = ["word", "sentence"];
 
 function defaultHint(sourceType: LearningSourceType): string {
   if (sourceType === "word") {
     return "첫소리를 떠올리며 영어 단어로 말해봐.";
   }
-  if (sourceType === "sentence") {
-    return "핵심 동사와 시제를 먼저 확인해봐.";
-  }
-  return "문장의 뜻을 먼저 정리하고 영어로 말해봐.";
+  return "핵심 동사와 시제를 먼저 확인해봐.";
 }
 
 export function buildCallPlanFromLearningItems({
