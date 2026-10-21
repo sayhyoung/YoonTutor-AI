@@ -30,21 +30,58 @@ beforeEach(() => {
 });
 
 describe("loadWrongAnswerItems", () => {
-  it("loads only word and sentence results for call review", async () => {
+  const paths = () => fetchStudy.mock.calls.map((call) => String(call[0]));
+
+  it("loads only word and sentence results from Smart Befly for WYC members", async () => {
     const result = await loadWrongAnswerItems({
       customerNo: "<CUSTOMER_NO>",
       sources: "word-sentence",
+      bms: ["HOME"],
     });
 
-    expect(fetchStudy).toHaveBeenCalledTimes(1);
-    expect(fetchStudy.mock.calls[0][0]).toContain("/smart-befly/range?");
+    expect(paths()).toHaveLength(1);
+    expect(paths()[0]).toContain("/smart-befly/range?");
     expect(result.items.map((item) => item.sourceType)).toEqual(["word", "sentence"]);
   });
 
-  it("keeps both study sources for the existing web flow", async () => {
-    await loadWrongAnswerItems({ customerNo: "<CUSTOMER_NO>" });
+  it("uses the academy API for FOREST and IGSE members", async () => {
+    const result = await loadWrongAnswerItems({
+      customerNo: "<CUSTOMER_NO>",
+      sources: "word-sentence",
+      bms: ["FOREST"],
+    });
 
-    expect(fetchStudy).toHaveBeenCalledTimes(2);
-    expect(fetchStudy.mock.calls[1][0]).toContain("/4skill-befly/range?");
+    expect(paths()).toHaveLength(1);
+    expect(paths()[0]).toContain("/academy/range?");
+    expect(result.items.every((item) => item.id.includes("academy-"))).toBe(true);
+  });
+
+  it("queries both learning APIs for members in both BM types", async () => {
+    await loadWrongAnswerItems({ customerNo: "<CUSTOMER_NO>", sources: "word-sentence", bms: ["HOME", "IGSE"] });
+
+    expect(paths().some((path) => path.includes("/smart-befly/"))).toBe(true);
+    expect(paths().some((path) => path.includes("/academy/"))).toBe(true);
+  });
+
+  it("queries both learning APIs when the BM is unknown", async () => {
+    const result = await loadWrongAnswerItems({ customerNo: "<CUSTOMER_NO>", sources: "word-sentence" });
+
+    expect(paths()).toHaveLength(2);
+    // 같은 오답이 두 API에서 와도 한 번만 남는다.
+    expect(result.items.map((item) => item.sourceType)).toEqual(["word", "sentence"]);
+  });
+
+  it("keeps the 4skill source for the existing web flow", async () => {
+    await loadWrongAnswerItems({ customerNo: "<CUSTOMER_NO>", bms: ["HOME"] });
+
+    expect(paths()).toHaveLength(2);
+    expect(paths()[1]).toContain("/4skill-befly/range?");
+  });
+
+  it("still returns items when one learning API fails", async () => {
+    fetchStudy.mockRejectedValueOnce(new Error("academy down"));
+    const result = await loadWrongAnswerItems({ customerNo: "<CUSTOMER_NO>", sources: "word-sentence" });
+
+    expect(result.items.length).toBeGreaterThan(0);
   });
 });

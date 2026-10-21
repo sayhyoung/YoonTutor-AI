@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { cookies } from "next/headers";
 
-import type { StudyProfile, StudyRole } from "./types";
+import { type StudyProfile, type StudyRole, bmsOf } from "./types";
 
 const SESSION_COOKIE = "call_review_session";
 const SESSION_VERSION = 1;
@@ -13,6 +13,7 @@ export type CallReviewSession = {
   role: StudyRole;
   subjectId: string;
   displayName?: string;
+  bms?: string[];
   expiresAt: number;
 };
 
@@ -34,6 +35,8 @@ function isSession(value: unknown): value is CallReviewSession {
     typeof session.subjectId === "string" &&
     session.subjectId.length > 0 &&
     (session.displayName === undefined || typeof session.displayName === "string") &&
+    (session.bms === undefined ||
+      (Array.isArray(session.bms) && session.bms.every((bm) => typeof bm === "string"))) &&
     typeof session.expiresAt === "number"
   );
 }
@@ -82,6 +85,7 @@ function sessionFromProfile(
     role,
     subjectId,
     displayName: role === "student" ? profile.customerName : profile.teacherName,
+    bms: bmsOf(profile.memberships),
     expiresAt: Math.floor(Date.now() / 1000) + maxAgeSeconds,
   };
 }

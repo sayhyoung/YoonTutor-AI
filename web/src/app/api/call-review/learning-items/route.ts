@@ -54,6 +54,7 @@ export async function GET(request: Request) {
       from: params.get("from"),
       to: params.get("to"),
       sources: "word-sentence",
+      bms: subject.bms,
       ...(fetcher ? { fetcher: fetcher.fetch } : {}),
     });
     return NextResponse.json(

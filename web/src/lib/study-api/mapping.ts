@@ -34,6 +34,8 @@ function normKey(sourceType: string, answer: string): string {
 export function mapStudyResultsToLearningItems(
   data: StudyQueryData,
   customerNoArg?: string,
+  // 같은 차시 코드가 다른 학습 API에서 와도 id가 겹치지 않게 출처를 붙인다.
+  idPrefix = "",
 ): LearningItem[] {
   const customerNo = String(customerNoArg ?? data.customerNo ?? "");
   const items: LearningItem[] = [];
@@ -41,7 +43,7 @@ export function mapStudyResultsToLearningItems(
   for (const entry of data.studyResults ?? []) {
     const unitName = unitLabel(entry);
     const wrongAt = entry.studyDateTime ?? data.studyDate ?? data.studyStartDate ?? "";
-    const key = entryKey(customerNo, entry);
+    const key = `${idPrefix}${entryKey(customerNo, entry)}`;
 
     // 단어 (smart-befly wordResults)
     (entry.wordResults ?? []).forEach((w, i) => {

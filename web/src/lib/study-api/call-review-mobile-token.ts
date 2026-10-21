@@ -6,7 +6,7 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:cr
 
 import { studyRefresh } from "./auth";
 import { StudyApiError, studyFetch } from "./client";
-import type { StudyProfile, StudyTokenPair } from "./types";
+import { type StudyProfile, type StudyTokenPair, bmsOf } from "./types";
 
 const TOKEN_PREFIX = "crm1";
 const TOKEN_VERSION = 1;
@@ -19,6 +19,8 @@ export type MobileTokenPayload = {
   role: "student";
   subjectId: string;
   displayName?: string;
+  // 학습 API 선택용 BM(숲·IGSE면 학원 API). 이전 토큰에는 없을 수 있다.
+  bms?: string[];
   expiresAt: number;
   studyAccessToken: string;
   studyRefreshToken: string;
@@ -43,6 +45,8 @@ function isPayload(value: unknown): value is MobileTokenPayload {
     typeof payload.subjectId === "string" &&
     payload.subjectId.length > 0 &&
     (payload.displayName === undefined || typeof payload.displayName === "string") &&
+    (payload.bms === undefined ||
+      (Array.isArray(payload.bms) && payload.bms.every((bm) => typeof bm === "string"))) &&
     typeof payload.expiresAt === "number" &&
     typeof payload.studyAccessToken === "string" &&
     typeof payload.studyRefreshToken === "string"
@@ -114,6 +118,7 @@ export function issueMobileToken(
       role: "student",
       subjectId: profile.customerNo,
       displayName: profile.customerName,
+      bms: bmsOf(profile.memberships),
     },
     tokens,
   );

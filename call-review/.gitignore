@@ -10,3 +10,7 @@ web-build/
 .env.local
 android/
 ios/
+
+# 테스트 계정 메모(커밋 금지)
+*test accounts*
+*.rtf

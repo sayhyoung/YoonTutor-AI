@@ -2,7 +2,7 @@ import { callOpenAiText, isOpenAiEnabled } from "../openai";
 import type { LearningItem } from "../types";
 import { mapStudyResultsToLearningItems } from "./mapping";
 import { authedStudyFetch } from "./server-fetch";
-import type { StudyQueryData } from "./types";
+import { type StudyQueryData, learningSourcesForBms } from "./types";
 
 const MAX_RANGE_DAYS = 365;
 
@@ -11,6 +11,8 @@ export type WrongAnswerQuery = {
   from?: string | null;
   to?: string | null;
   sources?: "all" | "word-sentence";
+  // 회원의 BM 목록. 학원(숲·IGSE)이면 학원 학습 API를 조회한다. 모르면 둘 다 조회.
+  bms?: (string | null | undefined)[];
   // 기본은 쿠키 토큰 호출. 모바일 Bearer 토큰 요청은 자체 fetcher를 넘긴다.
   fetcher?: <T>(path: string) => Promise<T>;
 };
@@ -93,6 +95,7 @@ export async function loadWrongAnswerItems({
   from,
   to,
   sources = "all",
+  bms,
   fetcher = authedStudyFetch,
 }: WrongAnswerQuery): Promise<WrongAnswerResult> {
   const { studyStartDate, studyEndDate } = resolveDateRange(from, to);
@@ -101,20 +104,28 @@ export async function loadWrongAnswerItems({
   )}&studyEndDate=${encodeURIComponent(studyEndDate)}&customerNo=${encodeURIComponent(
     customerNo,
   )}`;
-  const endpoints = [`/api/study/results/smart-befly/range?${query}`];
+  const learning = learningSourcesForBms(bms);
+  const endpoints: { path: string; idPrefix: string }[] = [];
+  if (learning.smartBefly) {
+    endpoints.push({ path: `/api/study/results/smart-befly/range?${query}`, idPrefix: "" });
+  }
+  if (learning.academy) {
+    endpoints.push({ path: `/api/study/results/academy/range?${query}`, idPrefix: "academy-" });
+  }
+  // 4skill은 BM과 관계없이 전 BM 공통 API다(평가 포함 웹 POC 전용).
   if (sources === "all") {
-    endpoints.push(`/api/study/results/4skill-befly/range?${query}`);
+    endpoints.push({ path: `/api/study/results/4skill-befly/range?${query}`, idPrefix: "" });
   }
 
   const items: LearningItem[] = [];
   let lastError: unknown = null;
 
   // refresh token rotation 경합을 피하기 위해 두 조회는 순차 실행한다.
-  for (const path of endpoints) {
+  for (const { path, idPrefix } of endpoints) {
     try {
       const data = await fetcher<StudyQueryData>(path);
       if (data) {
-        const mapped = mapStudyResultsToLearningItems(data, customerNo);
+        const mapped = mapStudyResultsToLearningItems(data, customerNo, idPrefix);
         items.push(
           ...mapped.filter(
             (item) => sources === "all" || item.sourceType !== "assessment",
@@ -128,9 +139,18 @@ export async function loadWrongAnswerItems({
 
   if (items.length === 0 && lastError) throw lastError;
 
-  await fillKoreanMeanings(items);
-  const order: Record<string, number> = { word: 0, sentence: 1, assessment: 2 };
-  items.sort((a, b) => (order[a.sourceType] ?? 9) - (order[b.sourceType] ?? 9));
+  // 여러 학습 API에서 같은 오답(영역+정답)이 오면 처음 것만 남긴다.
+  const seen = new Set<string>();
+  const unique = items.filter((item) => {
+    const key = `${item.sourceType}::${item.answerEn.toLowerCase().replace(/[.?!,]/g, "").replace(/\s+/g, " ").trim()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
-  return { items, studyStartDate, studyEndDate };
+  await fillKoreanMeanings(unique);
+  const order: Record<string, number> = { word: 0, sentence: 1, assessment: 2 };
+  unique.sort((a, b) => (order[a.sourceType] ?? 9) - (order[b.sourceType] ?? 9));
+
+  return { items: unique, studyStartDate, studyEndDate };
 }

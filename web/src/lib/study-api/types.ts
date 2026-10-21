@@ -30,10 +30,20 @@ export type StudyTokenPair = {
   refreshTokenExpiresIn: number; // 초
 };
 
-// 로그인 응답 data: 토큰 + 사용자 유형별 profile 필드(평면 구조).
-// USER:    userId, customerNo, customerName, agencyNo, agencyName, bmName
-// TEACHER/CENTER: userId, teacherNo, teacherName, agencyNo, agencyName, bmName
+// 소속 센터·BM. 2026-09 변경으로 회원·교사 로그인은 memberships 배열로 내려온다
+// (소속이 1개여도 배열). 센터장 로그인만 기존처럼 평면 필드 1건이다.
+export type StudyMembershipData = {
+  agencyNo?: string | number;
+  agencyName?: string;
+  bmName?: string | null;
+};
+
+// 로그인 응답 data: 토큰 + 사용자 유형별 profile 필드.
+// USER:    userId, customerNo, customerName, memberships[]
+// TEACHER: userId, teacherNo, teacherName, memberships[]
+// CENTER:  userId, agencyNo, agencyName, bmName (teacherNo 없음)
 export type StudyLoginData = StudyTokenPair & {
+  memberships?: StudyMembershipData[];
   userId?: string;
   customerNo?: string | number;
   customerName?: string;
@@ -44,8 +54,16 @@ export type StudyLoginData = StudyTokenPair & {
   bmName?: string;
 };
 
+export type StudyMembership = {
+  agencyNo?: string;
+  agencyName?: string;
+  bmName?: string;
+};
+
 // 화면 표시/식별에 필요한 최소 profile (토큰 제외).
+// agencyNo/agencyName/bmName은 첫 소속(호환용)이고, 전체는 memberships를 본다.
 export type StudyProfile = {
+  memberships: StudyMembership[];
   userId?: string;
   customerNo?: string;
   customerName?: string;
@@ -126,23 +144,57 @@ export type StudyQueryData = {
 
 // GET /api/teacher/customers — 교사가 담당하는 회원 목록 항목
 export type TeacherCustomer = {
-  teacherNo?: number;
-  agencyNo?: number;
+  teacherNo?: number | string;
+  agencyNo?: number | string;
   customerNo: number | string;
   customerName?: string;
   schoolYear?: number;
+  usingPerfectCare?: boolean;
+  // 회원별 BM. 없으면 교사 memberships의 같은 센터 BM으로 보완한다.
+  bmName?: string | null;
 };
 
+const str = (v: unknown) => (v === undefined || v === null || v === "" ? undefined : String(v));
+
+function toMembership(raw: StudyMembershipData): StudyMembership {
+  return { agencyNo: str(raw.agencyNo), agencyName: str(raw.agencyName), bmName: str(raw.bmName) };
+}
+
 export function extractProfile(data: StudyLoginData): StudyProfile {
-  const str = (v: unknown) => (v === undefined || v === null ? undefined : String(v));
+  const memberships = Array.isArray(data.memberships)
+    ? data.memberships.map(toMembership)
+    : data.agencyNo !== undefined || data.bmName !== undefined
+      ? [toMembership({ agencyNo: data.agencyNo, agencyName: data.agencyName, bmName: data.bmName })]
+      : [];
+  const first = memberships[0];
   return {
     userId: str(data.userId),
     customerNo: str(data.customerNo),
     customerName: str(data.customerName),
     teacherNo: str(data.teacherNo),
     teacherName: str(data.teacherName),
-    agencyNo: str(data.agencyNo),
-    agencyName: str(data.agencyName),
-    bmName: str(data.bmName),
+    agencyNo: first?.agencyNo,
+    agencyName: first?.agencyName,
+    bmName: first?.bmName,
+    memberships,
   };
+}
+
+// 학원 BM(숲·IGSE)은 학원 학습 API, 그 외 WYC 계열(교실·웰·우영)은 Smart Befly API.
+// BM을 모르면(누락·null) 두 API를 모두 조회해 누락을 막는다.
+const ACADEMY_BMS = new Set(["FOREST", "IGSE"]);
+
+export type LearningSources = { smartBefly: boolean; academy: boolean };
+
+export function learningSourcesForBms(bms: (string | null | undefined)[] | undefined): LearningSources {
+  const known = (bms ?? []).map((bm) => bm?.trim().toUpperCase()).filter((bm): bm is string => Boolean(bm));
+  if (known.length === 0) return { smartBefly: true, academy: true };
+  return {
+    smartBefly: known.some((bm) => !ACADEMY_BMS.has(bm)),
+    academy: known.some((bm) => ACADEMY_BMS.has(bm)),
+  };
+}
+
+export function bmsOf(memberships: StudyMembership[] | undefined): string[] {
+  return (memberships ?? []).map((m) => m.bmName).filter((bm): bm is string => Boolean(bm));
 }
