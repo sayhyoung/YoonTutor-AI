@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import { File } from "expo-file-system";
 
 // 비어 있으면 로그인 없이 샘플 데이터로 동작하는 프리뷰 모드.
 export const callReviewApiBaseUrl =
@@ -147,5 +148,95 @@ export function saveCallReport(token: string, report: CallReportPayload): Promis
 }
 
 export function fetchCallReports(token: string): Promise<{ reports: CallReportSummary[]; configured: boolean }> {
-  return request("/api/call-review/reports?limit=10", { token });
+  // 학습현황(정답률 추이·자주 틀린 표현)을 내려고 최근 30건을 받는다. 목록은 화면에서 10건만 보인다.
+  return request("/api/call-review/reports?limit=30", { token });
+}
+
+export type ApiSchedule = {
+  weekdays: string[];
+  time: string;
+  reminderMinutesBefore: number;
+  active: boolean;
+  callsPerWeek: number;
+  nextCallAt: string | null;
+  nextCallLabel: string | null;
+};
+
+export function fetchSchedule(token: string): Promise<{ schedule: ApiSchedule | null; configured?: boolean }> {
+  return request("/api/call-review/schedule", { token });
+}
+
+export type FreeTalkTurnRequest = {
+  expressions: { answerEn: string; promptKo: string; sourceType: "word" | "sentence" }[];
+  history: { questionEn: string; answer: string }[];
+  turnIndex: number;
+};
+
+export type GeneratedTurn = {
+  questionEn: string;
+  questionMeaningKo: string;
+  answerHint: string;
+  choices: { answerEn: string; meaningKo: string }[];
+};
+
+export async function generateFreeTalkTurn(token: string, body: FreeTalkTurnRequest): Promise<GeneratedTurn | null> {
+  const response = await request<{ turn: GeneratedTurn | null }>("/api/call-review/free-talk", {
+    method: "POST",
+    token,
+    body,
+  });
+  return response.turn;
+}
+
+// 녹음 파일(uri)을 BFF로 올려 영어 텍스트로 바꾼다. 웹은 blob URL, 네이티브는 파일 uri.
+export async function transcribeAnswer(token: string, uri: string): Promise<string> {
+  if (!callReviewApiBaseUrl) throw new ApiError("서버 주소가 설정되지 않았어요.", 0);
+  const form = new FormData();
+  if (Platform.OS === "web") {
+    const blob = await fetch(uri).then((response) => response.blob());
+    form.append("audio", blob, blob.type.includes("webm") ? "answer.webm" : "answer.m4a");
+  } else {
+    // Expo의 fetch는 RN식 { uri, name, type } 파트를 받지 않는다("Unsupported FormDataPart").
+    // expo-file-system의 File은 Blob을 구현하므로 그대로 붙인다. 형식은 녹음 확장자로 정한다.
+    const fileUri = uri.startsWith("/") ? `file://${uri}` : uri;
+    const extension = fileUri.split("?")[0]!.split(".").pop()?.toLowerCase() ?? "m4a";
+    form.append("audio", new File(fileUri), `answer.${extension}`);
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${callReviewApiBaseUrl}/api/call-review/stt`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+  } catch (error) {
+    console.warn("[voice] 녹음 업로드 실패", uri.split(":")[0], error instanceof Error ? error.message : error);
+    throw new ApiError("서버에 연결하지 못했어요.", 0);
+  }
+  const data = (await response.json().catch(() => ({}))) as { text?: string; error?: string };
+  if (response.status === 401) throw new UnauthorizedError();
+  if (!response.ok) throw new ApiError(data.error ?? "말한 내용을 알아듣지 못했어요.", response.status);
+  return data.text ?? "";
+}
+
+export async function registerPushDevice(token: string, pushToken: string): Promise<boolean> {
+  const result = await request<{ ok: boolean }>("/api/call-review/devices", {
+    method: "POST",
+    token,
+    body: { token: pushToken, platform: Platform.OS },
+  });
+  return result.ok;
+}
+
+export async function unregisterPushDevice(token: string, pushToken: string): Promise<void> {
+  await request("/api/call-review/devices", { method: "DELETE", token, body: { token: pushToken, platform: Platform.OS } }).catch(
+    () => undefined,
+  );
+}
+
+// Gemini 읽어 주기 오디오 주소(재생기가 Authorization 헤더를 붙여 직접 받는다).
+export function ttsSource(token: string, text: string, language: "en" | "ko") {
+  if (!callReviewApiBaseUrl) return null;
+  const query = `text=${encodeURIComponent(text)}&lang=${language}`;
+  return { uri: `${callReviewApiBaseUrl}/api/call-review/tts?${query}`, headers: { Authorization: `Bearer ${token}` } };
 }

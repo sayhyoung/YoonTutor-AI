@@ -91,5 +91,19 @@ service cloud.firestore {
     match /callReports/{reportId} {
       allow read, write: if false;
     }
+
+    // 전화관리 일정: 교사가 BFF를 통해서만 설정한다.
+    match /callSchedules/{customerNo} {
+      allow read, write: if false;
+    }
+
+    // 기기 푸시 토큰·발송 기록: BFF 전용.
+    match /callDevices/{customerNo} {
+      allow read, write: if false;
+    }
+
+    match /callDispatches/{dispatchId} {
+      allow read, write: if false;
+    }
   }
 }

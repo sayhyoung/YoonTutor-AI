@@ -58,3 +58,18 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  # --- AI 전화관리(call-review) ---
+  # 아래 값은 Secret Manager에 시크릿을 만든 뒤 주석을 해제한다. 없는 시크릿을 참조하면 롤아웃이 실패한다.
+  # 순서: call-review/DEPLOY.md 참고.
+  # - variable: CALL_REVIEW_SESSION_SECRET   # 모바일 토큰·교사 세션 서명/암호화 키(32자 이상)
+  #   secret: CALL_REVIEW_SESSION_SECRET
+  # - variable: CALL_REVIEW_CRON_SECRET      # 푸시 예약 작업 호출 인증값(32자 이상)
+  #   secret: CALL_REVIEW_CRON_SECRET
+  # - variable: CALL_REVIEW_FIRESTORE        # 통화 결과·일정을 운영 Firestore에 저장
+  #   value: enabled
+  # - variable: CALL_REVIEW_MOBILE_ORIGINS   # 웹에서 모바일 API를 부를 출처(네이티브 앱은 불필요)
+  #   value: https://<teacher-or-preview-origin>
+  # - variable: CALL_REVIEW_FREE_TALK_MODEL  # (선택) 짧은 대화 질문용 더 빠른 모델
+  #   value: <model>
+  # - variable: EXPO_ACCESS_TOKEN            # (선택) Expo 푸시 보안 설정을 켠 경우
+  #   secret: EXPO_ACCESS_TOKEN

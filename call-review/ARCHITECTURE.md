@@ -59,7 +59,7 @@ CallReport 저장
 
 통화가 `complete`가 되는 순간 앱이 `POST /api/call-review/reports`로 결과를 한 번 보낸다. 본문에는 통화마다 새로 만든 `reportId`, 시작·종료 시각, 종료 사유, 표현별 판정(`correct`·`retry`·`skipped`, 틀린 경우 첫 답), 대화 질문과 답이 들어간다. 학생 번호와 이름은 본문이 아니라 Bearer 토큰에서 채우고, 복습·다시 볼 표현 수는 서버가 판정에서 다시 계산한다. 저장 실패 시 결과 화면에서 같은 `reportId`로 다시 시도하며, 서버는 `{학생번호}_{reportId}` 문서를 `create`로만 써서 중복 저장하지 않는다.
 
-저장소는 Firestore `callReports` 컬렉션이고 BFF가 `firebase-admin`으로만 접근한다(클라이언트 규칙은 전부 거부). 로컬은 `FIRESTORE_EMULATOR_HOST`가 있을 때 에뮬레이터에만 쓰고, 실제 Firestore는 `CALL_REVIEW_FIRESTORE=enabled`일 때만 쓴다. 둘 다 없으면 저장 API는 503을 돌려주고 앱은 저장 실패로 표시한다. 학생 앱 마이페이지의 지난 통화 기록은 `GET /api/call-review/reports`로 본인 결과만 읽는다. 운영 배포 전에 `firestore.indexes.json`의 `callReports`(studentId, endedAt) 색인과 규칙을 배포해야 한다.
+저장소는 Firestore `callReports` 컬렉션이고 BFF가 `firebase-admin`으로만 접근한다(클라이언트 규칙은 전부 거부). 로컬은 `FIRESTORE_EMULATOR_HOST`가 있을 때 에뮬레이터에만 쓰고, 실제 Firestore는 `CALL_REVIEW_FIRESTORE=enabled`일 때만 쓴다. 둘 다 없으면 저장 API는 503을 돌려주고 앱은 저장 실패로 표시한다. 학생 앱 마이페이지의 지난 통화 기록은 `GET /api/call-review/reports`로 본인 결과만 읽고(최근 10건), 기록을 누르면 그날의 리포트(표현별 결과·내 답·베플리와 나눈 대화)를 다시 본다. 마이페이지 상단 "나의 학습현황"은 예전 AI 튜터 학습 리포트 구성(누적 지표 4칸 → 코치 한마디 → 성취도 변화 → 결과 분포 → 영역별 성취 → 다시 볼 표현(틀림) → 제대로 못한 표현(넘김))을 따르며, 점수 대신 복습 정답률로 최근 30건을 집계한다(`apps/mobile/src/learningStatus.ts`). 운영 배포 전에 `firestore.indexes.json`의 `callReports`(studentId, endedAt) 색인과 규칙을 배포해야 한다.
 
 ## 학습 데이터 변환
 
@@ -79,13 +79,30 @@ CallReport 저장
 
 로그인 응답의 소속은 `memberships` 배열로 읽는다(센터장만 평면 필드). 학생 오답은 BM에 따라 조회 API를 고른다. 숲·IGSE는 학원 학습 API(`/api/study/results/academy/range`), 교실·웰·우영은 Smart Befly를 쓰고, BM을 모르거나 두 종류에 모두 속하면 둘 다 조회한 뒤 같은 오답(영역+정답)을 하나로 합친다. 한쪽 API가 실패해도 다른 쪽 결과로 통화를 구성한다. 학생 BM은 로그인 시 모바일 토큰과 웹 세션에 함께 담는다.
 
-교사 화면(`apps/teacher-web`)은 `/api/*`를 BFF로 넘겨(`CALL_REVIEW_BFF_URL`) 브라우저 입장에서 같은 origin을 쓴다. 교사는 기존 `/api/auth/login`(role `teacher`)으로 로그인하고, 토큰과 서명 세션은 httpOnly 쿠키로만 보관한다. `GET /api/call-review/teacher/students`는 study-api `/api/teacher/customers`로 담당 학생을 불러와 회원번호 기준으로 합치고, Firestore의 최근 통화 결과를 붙인다(무응답 종료는 `재통화 필요`). `GET /api/call-review/teacher/students/{회원번호}/reports`는 요청한 학생이 지금 이 교사의 담당인지 매번 study-api로 다시 확인하고, 담당이 아니면 404를 돌려준다. 학생 계정 세션으로는 교사 API에 접근할 수 없다(403). 전화 일정 API가 없어 일정 설정 영역은 안내만 표시한다.
+교사 화면(`apps/teacher-web`)은 `/api/*`를 BFF로 넘겨(`CALL_REVIEW_BFF_URL`) 브라우저 입장에서 같은 origin을 쓴다. 교사는 기존 `/api/auth/login`(role `teacher`)으로 로그인하고, 토큰과 서명 세션은 httpOnly 쿠키로만 보관한다. `GET /api/call-review/teacher/students`는 study-api `/api/teacher/customers`로 담당 학생을 불러와 회원번호 기준으로 합치고, Firestore의 최근 통화 결과를 붙인다(무응답 종료는 `재통화 필요`). `GET /api/call-review/teacher/students/{회원번호}/reports`는 요청한 학생이 지금 이 교사의 담당인지 매번 study-api로 다시 확인하고, 담당이 아니면 404를 돌려준다. 학생 계정 세션으로는 교사 API에 접근할 수 없다(403). 전화 일정은 교사 화면의 학습자 리포트와 운영 설정에서 설정한다.
 
 교사 화면은 기존 교사용 LMS에 들어갈 웹 페이지로, AI 튜터 학습 리포트의 구성(요약 지표·총평·추이·결과 분포·영역별 성취·재복습 목록·회차별 상세)을 관리 전화에 맞게 옮겼다. 관리 현황은 최근 14일 일별 통화(종료 유형별), 반 전체 복습 결과, 여러 학습자가 다시 본 표현 TOP 5를 보여준다(`classStats`, 서버 집계). 학습자 리포트는 통화 기록 최대 50건으로 정답률 추이·결과 분포·영역별 성취·종료 유형·다시 볼 표현을 화면에서 계산하고, 다음 통화에서 복습할 현재 오답을 study-api에서 함께 보여준다. 차트는 외부 라이브러리 없이 CSS·SVG로 그리며, 색만으로 구분하지 않도록 범례에 이름과 수치를 함께 쓴다.
+
+### 전화 일정
+
+study-api는 학습 데이터를 읽기만 하므로 전화 일정은 우리 서비스가 Firestore `callSchedules/{회원번호}`에 둔다(BFF 전용, 클라이언트 규칙은 거부). 일정 형식·계산은 `schedule.ts`, 읽기·쓰기는 `schedule-store.ts`에 모아 두어, 나중에 LMS 일정관리 페이지로 옮길 때 저장소만 바꾸면 되게 한다. 일정은 요일(월~일), 시각(HH:mm, 한국 시간), 사전 알림(0·5·10·20·30분), 쉬기 여부이며 주 횟수는 요일 수로 계산한다.
+
+- 교사: `GET/PUT /api/call-review/teacher/students/{회원번호}/schedule`. 저장할 때마다 담당 학생인지 study-api로 다시 확인한다.
+- 학생 앱: `GET /api/call-review/schedule`(Bearer). 다음 통화 시각과 "오늘/내일/10월 23일(목) 오후 7:30" 표시 문구를 서버가 KST로 계산해 준다.
+- 교사 현황: 학생별 다음 통화를 보여주고, 가장 최근 예정 회차에서 1시간이 지나도록 통화 기록이 없으면 `부재중`으로 표시한다(일정을 그 회차 이후에 만들었으면 제외, 30분 일찍 받은 통화는 인정).
+- 알림 1차(기기): 앱이 일정을 받을 때마다 기기 알림을 매주 반복으로 다시 예약한다(전화 시각 + 사전 알림). 교사가 바꾼 일정은 학생이 앱을 다음에 열 때 반영되며, 기기 시간대가 한국이라고 가정한다.
+- 알림 2차(서버 푸시): EAS 프로젝트 ID가 있으면 앱이 Expo 푸시 토큰을 `POST /api/call-review/devices`로 등록하고(최대 5대, 로그아웃 때 해제), 이때는 기기 자체 예약을 지워 중복을 막는다. 예약 작업이 5분마다 `POST /api/call-review/dispatch`(`CALL_REVIEW_CRON_SECRET` 인증)를 부르면 그 사이 도래한 전화·사전 알림을 Expo 푸시로 보내고, `callDispatches/{회원번호}_{종류}_{시각}`을 `create`로 남겨 같은 회차를 두 번 보내지 않는다. 더 이상 유효하지 않은 토큰은 지운다.
+- 어느 방식이든 전화 알림을 누르거나 앱 사용 중 전화 시각이 되면 홈에서 수신 화면을 띄운다.
 
 ## 모바일 배포 방향
 
 초기 버전은 Expo managed workflow로 Android/iOS를 동시에 검증한다. OS의 실제 전화 수신 UI나 백그라운드 통화가 필요해지는 시점에 개발 빌드와 네이티브 모듈을 도입한다. 앱 내부 수신 화면과 푸시 알림은 먼저 분리해 검증한다.
+
+## 음성과 AI 대화
+
+- 읽어 주기(TTS): 짧은 대화 질문은 화면에 뜨면 읽고, 다시 듣기 버튼으로 반복한다. 복습 단계의 다시 듣기는 한국어 표현을 읽는다. 앱은 `GET /api/call-review/tts`(Bearer)로 Gemini TTS가 만든 WAV를 받아 재생하고(`GEMINI_API_KEY`, `GEMINI_TTS_MODEL`, `GEMINI_TTS_VOICE`), 같은 문장은 서버 메모리에 잠깐 캐시한다. 설정이 없거나 8초 안에 재생을 시작하지 못하면 기기 음성(`expo-speech`)으로 읽는다. 전화가 오면(수신·연결 화면) 복습 문항과 첫 대화 질문 음성을 기기 캐시(`expo-file-system`)에 미리 받아 두어 문항이 뜨자마자 읽는다. 통화 화면 상단 스피커 버튼으로 자동 읽기(음성 가이드)를 끌 수 있고, 다시 듣기 버튼은 꺼져 있어도 읽는다. Gemini 3.8 TTS는 C2PA 청크가 붙은 완성 WAV를 주므로 서버는 그대로 전달한다(헤더를 다시 씌우면 끝에 잡음). 무응답 타이머는 읽기가 끝난 뒤(그리고 다음 질문을 만드는 동안이 아닐 때) 센다.
+- 음성 인식(STT): 앱이 답변을 녹음(`expo-audio`; Android AAC, iOS 16kHz WAV, 웹 WebM)해 `POST /api/call-review/stt`(Bearer)로 보내면 BFF가 Azure Speech Fast Transcription(`AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, en-US)으로 바꾼다. Azure 설정이 없으면 OpenAI 음성 인식(`OPENAI_STT_MODEL`, 기본 whisper-1)을 쓴다. 녹음은 변환에만 쓰고 저장하지 않는다. 결과는 바로 제출하지 않고 "이렇게 들었어"로 확인받는다. 마이크 권한이 없거나 8초 안에 준비되지 않으면 글자 입력으로 바꾼다. 프리뷰(서버 없음)에서는 정답 문장을 인식 결과로 채운다.
+- AI 질문: `POST /api/call-review/free-talk`(Bearer)이 당일 복습 표현·지난 대화·회차만 받아 질문 하나를 만든다(학생 이름·번호는 보내지 않음). 첫 질문은 전화를 받을 때 미리 만들고, 후속 질문은 학생 답에 짧게 반응한 뒤 아직 쓰지 않은 표현으로 묻는다. 학생 답은 따옴표로 감싼 데이터로만 전달한다. 응답은 JSON 형식·영어 질문(물음표 포함)·선택지 2개 이상을 검증하고, 실패·8초 초과·검증 실패면 앱이 결정론적 템플릿 질문을 쓴다. 모델은 `CALL_REVIEW_FREE_TALK_MODEL`(없으면 `OPENAI_MODEL`).
 
 ## 자유대화 생성 규칙
 

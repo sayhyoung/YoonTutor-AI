@@ -1,13 +1,44 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { CallPhase, CallPlan, InputMode } from "@yoon-call/shared";
+import type { CallPhase, CallPlan, ConversationTurn, InputMode } from "@yoon-call/shared";
 
-export type VoiceState = "idle" | "listening" | "review";
+import type { FreeTalkTurnRequest, GeneratedTurn } from "./callReviewApi";
+
+export type VoiceState = "idle" | "preparing" | "listening" | "transcribing" | "review";
 export type FinishReason = "completed" | "stopped" | "no-response";
-export type ReviewFeedback = { kind: "correct" | "retry"; answer: string };
+// message: 틀렸을 때 보여 줄 위로 멘트(매번 다르게 고른다).
+export type ReviewFeedback = { kind: "correct" | "retry"; answer: string; message?: string };
 export type ReviewOutcome = ReviewFeedback["kind"];
 
 export type ConversationTurnRecord = { questionEn: string; answer: string };
+
+// 실회원 모드에서만 주입된다. 없으면(프리뷰) 템플릿 질문과 가짜 인식 결과를 쓴다.
+export type SessionServices = {
+  generateTurn?: (request: FreeTalkTurnRequest) => Promise<GeneratedTurn | null>;
+  voice?: {
+    start: () => Promise<void>;
+    stop: () => Promise<string | null>;
+    transcribe: (uri: string) => Promise<string>;
+  };
+  // 읽어 줄 질문이 정해지면 미리 받아 둔다(첫 대화 질문은 복습 중에 미리 만들어진다).
+  prepareSpeech?: (questionEn: string) => void;
+};
+
+// 복습 표현을 틀렸을 때 고르는 멘트. 같은 멘트가 연달아 나오지 않게 한다.
+export const RETRY_MESSAGES = [
+  "아, 살짝 아쉬워요",
+  "거의 맞혔어요",
+  "비슷하긴 한데 정답은 아니에요",
+  "조금만 더 하면 돼요",
+  "아깝다! 한 끗 차이예요",
+  "좋은 시도였어요",
+  "거의 다 왔어요",
+] as const;
+
+export function pickRetryMessage(previous?: string, random: () => number = Math.random): string {
+  const choices = RETRY_MESSAGES.filter((message) => message !== previous);
+  return choices[Math.floor(random() * choices.length)] ?? RETRY_MESSAGES[0];
+}
 
 type HomeSection = "home" | "my-page";
 
@@ -21,18 +52,42 @@ const INTRO_LINE =
 const QUESTION_SETTLE_MS = 1500;
 // Preview only: long enough to read the connection checklist.
 const CONNECT_PREVIEW_MS = 1800;
+// AI 질문을 이보다 오래 기다리지 않고 템플릿 질문을 쓴다.
+const TURN_TIMEOUT_MS = 9000;
+// 첫 질문은 통화 시작 때 미리 만들어 두고, 대화에 들어갈 때 이만큼만 더 기다린다.
+const FIRST_TURN_WAIT_MS = 2500;
 
-export function useCallSession(plan: CallPlan) {
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
+}
+
+function toConversationTurn(turn: GeneratedTurn, index: number): ConversationTurn {
+  return {
+    id: `ai-${index}`,
+    relatedExpression: "",
+    questionEn: turn.questionEn,
+    questionMeaningKo: turn.questionMeaningKo,
+    answerHint: turn.answerHint,
+    previewVoiceAnswer: turn.choices[0]?.answerEn ?? "",
+    choices: turn.choices.map((choice, choiceIndex) => ({ id: `ai-${index}-${choiceIndex}`, ...choice })),
+  };
+}
+
+export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   const [phase, setPhase] = useState<CallPhase>("home");
   const [homeSection, setHomeSection] = useState<HomeSection>("home");
   const [inputMode, setInputMode] = useState<InputMode>("voice");
   const [captionsOn, setCaptionsOn] = useState(true);
   const [targetIndex, setTargetIndex] = useState(0);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [heardText, setHeardText] = useState("");
   const [typedText, setTypedText] = useState("");
   const [hintOpen, setHintOpen] = useState(false);
   const [freeTalkTurnIndex, setFreeTalkTurnIndex] = useState(0);
+  const [shownTurns, setShownTurns] = useState<Record<number, ConversationTurn>>({});
+  const [turnLoading, setTurnLoading] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const [conversationTurns, setConversationTurns] = useState<ConversationTurnRecord[]>([]);
   const [choiceAssistOpen, setChoiceAssistOpen] = useState(false);
   const [finishReason, setFinishReason] =
@@ -46,6 +101,10 @@ export function useCallSession(plan: CallPlan) {
   const [callStartedAt, setCallStartedAt] = useState<string | null>(null);
   const [idleSecondsLeft, setIdleSecondsLeft] = useState(plan.freeTalk.idleStopSeconds);
   const connectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 통화가 바뀌면 늦게 도착한 AI 질문·음성 인식 결과를 버리기 위한 세대 번호.
+  const generation = useRef(0);
+  const firstTurn = useRef<Promise<ConversationTurn | null> | null>(null);
+  const lastRetryMessage = useRef<string | undefined>(undefined);
 
   const isCallSurface =
     phase === "incoming" ||
@@ -54,7 +113,7 @@ export function useCallSession(plan: CallPlan) {
     phase === "free-talk";
   const target = plan.targets[targetIndex];
   const freeTalkTurn =
-    plan.freeTalk.turns[freeTalkTurnIndex] ?? plan.freeTalk.turns[0]!;
+    shownTurns[freeTalkTurnIndex] ?? plan.freeTalk.turns[freeTalkTurnIndex] ?? plan.freeTalk.turns[0]!;
   const progressLabel = useMemo(() => {
     if (phase === "free-talk") {
       return `질문 ${freeTalkTurnIndex + 1} / ${plan.freeTalk.maxTurns}`;
@@ -63,9 +122,9 @@ export function useCallSession(plan: CallPlan) {
   }, [freeTalkTurnIndex, phase, plan.freeTalk.maxTurns, plan.targets.length, targetIndex]);
 
   useEffect(() => {
-    // The preview has no TTS. Allow the new question to settle before counting;
-    // actual TTS should start this countdown from its playback-complete event.
-    if (phase !== "free-talk" || voiceState !== "idle") {
+    // 질문을 읽어 주는 동안·다음 질문을 만드는 동안·말하는 동안에는 세지 않는다.
+    // 읽기가 끝나면 다시 시작해 학생에게 온전한 시간을 준다.
+    if (phase !== "free-talk" || voiceState !== "idle" || turnLoading || speaking) {
       return;
     }
     const startedAt = Date.now() + QUESTION_SETTLE_MS;
@@ -88,16 +147,60 @@ export function useCallSession(plan: CallPlan) {
     typedText,
     voiceState,
     choiceAssistOpen,
+    turnLoading,
+    speaking,
   ]);
 
+  const expressions = useMemo(
+    () =>
+      plan.targets.map((item) => ({
+        answerEn: item.answerEn,
+        promptKo: item.promptKo,
+        sourceType: (item.answerEn.trim().includes(" ") ? "sentence" : "word") as "word" | "sentence",
+      })),
+    [plan.targets],
+  );
+
+  async function requestTurn(turnIndex: number, history: ConversationTurnRecord[]): Promise<ConversationTurn | null> {
+    if (!services.generateTurn || expressions.length === 0) return null;
+    try {
+      const generated = await withTimeout(
+        services.generateTurn({ expressions, history, turnIndex }),
+        TURN_TIMEOUT_MS,
+        null,
+      );
+      return generated ? toConversationTurn(generated, turnIndex) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function showTurn(index: number, turn: ConversationTurn) {
+    setShownTurns((current) => ({ ...current, [index]: turn }));
+    setFreeTalkTurnIndex(index);
+    setChoiceAssistOpen(false);
+    setCoachLine(turn.questionEn);
+  }
+
+  function stopRecordingQuietly() {
+    if (voiceState === "listening") void services.voice?.stop().catch(() => undefined);
+  }
+
   function resetCall() {
+    generation.current += 1;
+    firstTurn.current = null;
+    stopRecordingQuietly();
     setPhase("home");
     setTargetIndex(0);
     setVoiceState("idle");
+    setVoiceError(null);
     setHeardText("");
     setTypedText("");
     setHintOpen(false);
     setFreeTalkTurnIndex(0);
+    setShownTurns({});
+    setTurnLoading(false);
+    setSpeaking(false);
     setConversationTurns([]);
     setChoiceAssistOpen(false);
     setFinishReason("completed");
@@ -114,33 +217,81 @@ export function useCallSession(plan: CallPlan) {
   function answerIncomingCall() {
     setCallStartedAt(new Date().toISOString());
     setPhase("connecting");
+    // 복습하는 동안 첫 대화 질문을 미리 만들어 둔다.
+    firstTurn.current = requestTurn(0, []);
+    void firstTurn.current.then((turn) => {
+      if (turn) services.prepareSpeech?.(turn.questionEn);
+    });
     connectTimer.current = setTimeout(() => setPhase("review"), CONNECT_PREVIEW_MS);
   }
 
   function cancelConnecting() {
     if (connectTimer.current) clearTimeout(connectTimer.current);
     connectTimer.current = null;
+    generation.current += 1;
+    firstTurn.current = null;
     setPhase("home");
+  }
+
+  async function startListening() {
+    setVoiceError(null);
+    setHeardText("");
+    if (!services.voice) {
+      setVoiceState("listening");
+      return;
+    }
+    setVoiceState("preparing");
+    try {
+      await services.voice.start();
+      setVoiceState("listening");
+    } catch {
+      // 마이크 권한이 없거나 쓸 수 없으면 글자로 답하게 한다.
+      setVoiceState("idle");
+      setInputMode("text");
+      setVoiceError("마이크를 쓸 수 없어요. 글자로 답해 주세요.");
+    }
+  }
+
+  async function finishListening() {
+    // The choices panel would cover the "이렇게 들었어" card.
+    setChoiceAssistOpen(false);
+    if (!services.voice) {
+      const previewText = phase === "free-talk" ? freeTalkTurn.previewVoiceAnswer : target?.answerEn ?? "";
+      setHeardText(previewText);
+      setVoiceState("review");
+      return;
+    }
+    const current = generation.current;
+    setVoiceState("transcribing");
+    try {
+      const uri = await services.voice.stop();
+      const text = uri ? (await services.voice.transcribe(uri)).trim() : "";
+      if (current !== generation.current) return;
+      if (!text) {
+        setVoiceState("idle");
+        setVoiceError("잘 들리지 않았어요. 한 번 더 말해 볼까요?");
+        return;
+      }
+      setHeardText(text);
+      setVoiceState("review");
+    } catch (error) {
+      console.warn("[voice] 음성 인식 실패", error);
+      if (current !== generation.current) return;
+      setVoiceState("idle");
+      setVoiceError("말한 내용을 알아듣지 못했어요. 다시 말하거나 글자로 답해 주세요.");
+    }
   }
 
   function beginOrStopVoice() {
     if (voiceState === "idle") {
-      setVoiceState("listening");
-      setHeardText("");
+      void startListening();
       return;
     }
     if (voiceState === "listening") {
-      const previewText =
-        phase === "free-talk"
-          ? freeTalkTurn.previewVoiceAnswer
-          : target?.answerEn ?? "";
-      setHeardText(previewText);
-      setVoiceState("review");
-      // The choices panel would cover the "이렇게 들었어" card.
-      setChoiceAssistOpen(false);
+      void finishListening();
       return;
     }
-    submitAnswer(heardText);
+    if (voiceState === "review") submitAnswer(heardText);
   }
 
   function submitTypedAnswer() {
@@ -149,41 +300,42 @@ export function useCallSession(plan: CallPlan) {
     submitAnswer(value);
   }
 
+  async function advanceFreeTalk(history: ConversationTurnRecord[]) {
+    const nextTurnIndex = freeTalkTurnIndex + 1;
+    const fallback = plan.freeTalk.turns[nextTurnIndex];
+    if (nextTurnIndex >= plan.freeTalk.maxTurns || !fallback) {
+      setFinishReason("completed");
+      setPhase("complete");
+      return;
+    }
+    const current = generation.current;
+    setTurnLoading(true);
+    const generated = await requestTurn(nextTurnIndex, history);
+    if (current !== generation.current) return;
+    setTurnLoading(false);
+    showTurn(nextTurnIndex, generated ?? fallback);
+  }
+
   function submitAnswer(value: string) {
     if (!value.trim()) return;
     setHintOpen(false);
     setHeardText("");
     setTypedText("");
     setVoiceState("idle");
+    setVoiceError(null);
 
     if (phase === "free-talk") {
-      setConversationTurns((current) => [...current, { questionEn: freeTalkTurn.questionEn, answer: value }]);
-
-      if (
-        freeTalkTurnIndex + 1 >= plan.freeTalk.maxTurns ||
-        freeTalkTurnIndex + 1 >= plan.freeTalk.turns.length
-      ) {
-        setFinishReason("completed");
-        setPhase("complete");
-        return;
-      }
-
-      const nextTurnIndex = freeTalkTurnIndex + 1;
-      const nextTurn = plan.freeTalk.turns[nextTurnIndex];
-      if (!nextTurn) {
-        setFinishReason("completed");
-        setPhase("complete");
-        return;
-      }
-      setFreeTalkTurnIndex(nextTurnIndex);
-      setChoiceAssistOpen(false);
-      setCoachLine(nextTurn.questionEn);
+      const history = [...conversationTurns, { questionEn: freeTalkTurn.questionEn, answer: value }];
+      setConversationTurns(history);
+      void advanceFreeTalk(history);
       return;
     }
 
     const normalize = (text: string) => text.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
     const correct = normalize(value) === normalize(target?.answerEn ?? "");
-    setReviewFeedback({ kind: correct ? "correct" : "retry", answer: value });
+    const message = correct ? undefined : pickRetryMessage(lastRetryMessage.current);
+    if (message) lastRetryMessage.current = message;
+    setReviewFeedback({ kind: correct ? "correct" : "retry", answer: value, ...(message ? { message } : {}) });
     setReviewOutcomes((current) =>
       current[targetIndex] ? current : { ...current, [targetIndex]: correct ? "correct" : "retry" },
     );
@@ -191,13 +343,24 @@ export function useCallSession(plan: CallPlan) {
     setCoachLine(correct ? "좋아요! 아주 자연스러워요." : "괜찮아요. 같이 다시 볼까요?");
   }
 
+  async function enterFreeTalk() {
+    const current = generation.current;
+    setPhase("free-talk");
+    setFreeTalkTurnIndex(0);
+    setChoiceAssistOpen(false);
+    setTurnLoading(true);
+    const prepared = firstTurn.current
+      ? await withTimeout(firstTurn.current, FIRST_TURN_WAIT_MS, null)
+      : null;
+    if (current !== generation.current) return;
+    setTurnLoading(false);
+    showTurn(0, prepared ?? plan.freeTalk.turns[0]!);
+  }
+
   function continueReview() {
     setReviewFeedback(null);
     if (targetIndex + 1 >= plan.targets.length) {
-      setCoachLine(plan.freeTalk.turns[0]!.questionEn);
-      setFreeTalkTurnIndex(0);
-      setChoiceAssistOpen(false);
-      setPhase("free-talk");
+      void enterFreeTalk();
       return;
     }
 
@@ -210,6 +373,7 @@ export function useCallSession(plan: CallPlan) {
     inputMode,
     captionsOn,
     voiceState,
+    voiceError,
     heardText,
     typedText,
     hintOpen,
@@ -226,6 +390,8 @@ export function useCallSession(plan: CallPlan) {
     isCallSurface,
     target,
     freeTalkTurn,
+    turnLoading,
+    speaking,
     progressLabel,
     reviewedCount: Object.keys(reviewOutcomes).length,
     idleSecondsLeft,
@@ -237,30 +403,36 @@ export function useCallSession(plan: CallPlan) {
     cancelConnecting,
     isLastTarget: targetIndex + 1 >= plan.targets.length,
     changeInputMode: (mode: InputMode) => {
+      stopRecordingQuietly();
       setInputMode(mode);
       setVoiceState("idle");
+      setVoiceError(null);
       setHeardText("");
     },
     toggleCaptions: () => setCaptionsOn((current) => !current),
     toggleHint: () => setHintOpen((current) => !current),
     changeTypedText: setTypedText,
+    setSpeaking,
     beginOrStopVoice,
     submitTypedAnswer,
     continueReview,
     retryReview: () => {
       setReviewFeedback(null);
       setVoiceState("idle");
+      setVoiceError(null);
       setHeardText("");
       setTypedText("");
       setCoachLine("천천히 다시 말해 볼까요?");
     },
     retryVoice: () => {
-      setHeardText("");
-      setVoiceState("listening");
+      void startListening();
     },
     chooseAnswer: submitAnswer,
     toggleChoiceAssist: () => setChoiceAssistOpen((current) => !current),
     endCall: () => {
+      generation.current += 1;
+      stopRecordingQuietly();
+      setTurnLoading(false);
       setFinishReason("stopped");
       setPhase("complete");
     },

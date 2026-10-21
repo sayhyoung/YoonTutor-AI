@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isReportStoreConfigured, listRecentReportsForStudents } from "@/lib/call-review/report-store";
+import { getSchedules } from "@/lib/call-review/schedule-store";
 import { loadOwnStudents, requireTeacher } from "@/lib/call-review/teacher-auth";
 import { buildClassStats, buildTeacherRows } from "@/lib/call-review/teacher-overview";
 import { StudyApiError } from "@/lib/study-api/client";
@@ -28,10 +29,12 @@ export async function GET() {
 
   const reportsConfigured = isReportStoreConfigured();
   let reports: Awaited<ReturnType<typeof listRecentReportsForStudents>> = [];
+  let schedules: Awaited<ReturnType<typeof getSchedules>> = new Map();
   let reportsError = false;
   if (reportsConfigured && students.length > 0) {
+    const ids = students.map((student) => student.customerNo);
     try {
-      reports = await listRecentReportsForStudents(students.map((student) => student.customerNo));
+      [reports, schedules] = await Promise.all([listRecentReportsForStudents(ids), getSchedules(ids)]);
     } catch {
       reportsError = true;
     }
@@ -40,7 +43,7 @@ export async function GET() {
   return NextResponse.json(
     {
       teacher: { displayName: gate.session.displayName ?? null },
-      students: buildTeacherRows(students, reports),
+      students: buildTeacherRows(students, reports, schedules),
       classStats: buildClassStats(reports),
       reportsConfigured,
       reportsError,

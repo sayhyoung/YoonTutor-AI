@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { analyzeReports, coachSummary } from "./analytics";
 import { DailyBarsLegend, OUTCOME_SEGMENTS } from "./report-parts";
 import { Donut, Kpi, StackedBars, TrendLine } from "./charts";
+import { ScheduleEditor } from "./schedule-editor";
 import type { CallOutcome, FinishReason, StudentReportResponse, TeacherStudentRow } from "./types";
 
 export const FINISH_LABELS: Record<FinishReason, string> = {
@@ -15,7 +16,7 @@ export const FINISH_LABELS: Record<FinishReason, string> = {
 
 const OUTCOME_LABELS: Record<CallOutcome, string> = {
   correct: "복습함",
-  retry: "다시 보기",
+  retry: "복습 필요",
   skipped: "못 했어요",
 };
 
@@ -109,6 +110,14 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
               <strong>관리 전화 총평</strong>
               <p>{coachSummary(student.customerName, analytics)}</p>
             </div>
+          </section>
+
+          <section className="report-panel schedule-panel" aria-labelledby="schedule-panel-title">
+            <div className="report-panel-head">
+              <h2 id="schedule-panel-title">관리 전화 일정</h2>
+              <p>담당 교사가 정하고, 학습자 앱에는 읽기 전용으로 표시돼요.</p>
+            </div>
+            <ScheduleEditor customerNo={student.customerNo} studentName={student.customerName} />
           </section>
 
           <div className="report-grid">

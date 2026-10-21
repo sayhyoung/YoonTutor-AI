@@ -2,15 +2,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import {
   AccessibilityInfo,
   Animated,
+  BackHandler,
   Easing,
   Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text as NativeText,
@@ -42,14 +43,25 @@ import {
   login,
   logout,
   tokenStorage,
+  unregisterPushDevice,
 } from "./src/callReviewApi";
 import { color, font, radius, space } from "./src/theme";
 import { befly, callAvatar } from "./src/befly";
 import { Icon, type IconName } from "./src/icons";
+import { LearningStatusSection } from "./src/LearningStatusSection";
+import {
+  currentPushToken,
+  getPushToken,
+  onIncomingCallNotification,
+  savePushToken,
+  syncCallNotifications,
+} from "./src/callNotifications";
+import { prefetchSpeech, type RemoteSpeechSource, speak, stopSpeaking, useVoiceCapture } from "./src/voice";
 import Svg, { Circle, Path } from "react-native-svg";
 import {
   type FinishReason,
   type ReviewFeedback,
+  type SessionServices,
   type ReviewOutcome,
   type VoiceState,
   useCallSession,
@@ -61,11 +73,28 @@ function Text({ style, ...props }: TextProps) {
   const weight = Number(flattened?.fontWeight ?? 400);
   const family = flattened?.fontFamily ??
     (weight >= 700 ? font.display : weight >= 600 ? font.semibold : weight >= 500 ? font.medium : font.body);
-  return <NativeText {...props} style={[{ fontFamily: family }, style]} />;
+  // Android는 굵기별로 따로 등록한 글꼴에 fontWeight를 함께 주면 시스템 글꼴(삼성 One UI 등)로 바꿔 그린다.
+  // 굵기는 이미 글꼴 이름에 들어 있으므로 Android에서는 fontWeight를 지운다.
+  return <NativeText {...props} style={[{ fontFamily: family }, style, Platform.OS === "android" && androidPlainWeight]} />;
 }
 
+const androidPlainWeight = { fontWeight: "normal" } as const;
 
+
+// Android는 화면 가장자리까지 그리므로(edge-to-edge) 상태바·하단 내비게이션 여백을
+// safe-area-context로 받아야 버튼이 시스템 바에 가리지 않는다.
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}
+
+// 키보드가 열려도 입력란이 보이도록 내용을 밀어 올린다(edge-to-edge Android도 padding 필요).
+const keyboardBehavior = Platform.OS === "web" ? undefined : "padding";
+
+function AppContent() {
   const [fontsLoaded] = useFonts({
     BricolageGrotesque_500Medium: require("@expo-google-fonts/bricolage-grotesque/500Medium/BricolageGrotesque_500Medium.ttf"),
     BricolageGrotesque_700Bold: require("@expo-google-fonts/bricolage-grotesque/700Bold/BricolageGrotesque_700Bold.ttf"),
@@ -105,6 +134,10 @@ function DataApp({
       onLogout={onLogout}
       onSaveReport={repository.saveReport?.bind(repository)}
       onRefresh={reload}
+      generateTurn={repository.generateTurn?.bind(repository)}
+      transcribe={repository.transcribe?.bind(repository)}
+      registerPush={repository.registerPush?.bind(repository)}
+      speechSource={repository.speechSource?.bind(repository)}
     />
   );
 }
@@ -168,7 +201,12 @@ function AuthenticatedApp() {
       onLogout={() => {
         const current = tokenRef.current;
         signOut(null);
-        if (current) void logout(current);
+        if (current) {
+          // 로그아웃한 기기로는 더 이상 전화 알림을 보내지 않는다.
+          const pushToken = currentPushToken();
+          void (pushToken ? unregisterPushDevice(current, pushToken) : Promise.resolve()).finally(() => logout(current));
+          void syncCallNotifications(null).catch(() => undefined);
+        }
       }}
     />
   );
@@ -206,7 +244,8 @@ function LoginScreen({
     <View style={styles.appRoot}>
     <SafeAreaView style={[styles.safe, Platform.OS === "web" && styles.safeWeb]}>
       <StatusBar style="dark" />
-      <KeyboardAvoidingView style={styles.loginScreen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView style={styles.loginKeyboard} behavior={keyboardBehavior}>
+        <ScrollView contentContainerStyle={styles.loginScreen} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.loginIntro}>
           <Image source={befly.home} style={styles.loginAvatar} accessibilityLabel="베플리 선생님" />
           <Text style={[styles.brandEyebrow, { color: color.warningInk }]}>윤선생 AI 전화관리</Text>
@@ -262,6 +301,7 @@ function LoginScreen({
         >
           <Text style={styles.loginButtonText}>{submitting ? "로그인하는 중…" : "로그인"}</Text>
         </Pressable>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
     </View>
@@ -271,6 +311,11 @@ function LoginScreen({
 type SaveStatus = "idle" | "saving" | "saved" | "failed";
 
 // 통화 상태를 서버에 보낼 결과 형식으로 바꾼다. 판정 전에 끝난 표현은 skipped.
+function reviewPromptText(promptKo: string): string {
+  // 문장 표현은 이미 마침표로 끝나므로 중복 문장부호를 지운다("출신이에요.. 영어로" 방지).
+  return `${promptKo.trim().replace(/[.!?。]+$/, "")}. 영어로 말해 볼까요?`;
+}
+
 function buildReportPayload(
   plan: CallPlan,
   session: ReturnType<typeof useCallSession>,
@@ -302,13 +347,117 @@ function CallReviewApp({
   onLogout,
   onSaveReport,
   onRefresh,
+  generateTurn,
+  transcribe,
+  registerPush,
+  speechSource,
 }: {
   data: CallReviewSnapshot;
   onLogout?: () => void;
   onSaveReport?: (report: CallReportPayload) => Promise<void>;
   onRefresh?: () => void;
+  generateTurn?: SessionServices["generateTurn"];
+  transcribe?: (uri: string) => Promise<string>;
+  registerPush?: (pushToken: string) => Promise<boolean>;
+  speechSource?: RemoteSpeechSource;
 }) {
-  const session = useCallSession(data.plan);
+  const capture = useVoiceCapture();
+  const services = useMemo<SessionServices>(
+    () => ({
+      generateTurn,
+      voice: transcribe ? { start: capture.start, stop: capture.stop, transcribe } : undefined,
+      prepareSpeech: (questionEn) => prefetchSpeech(questionEn, "en-US", speechSource),
+    }),
+    [capture, generateTurn, speechSource, transcribe],
+  );
+  const session = useCallSession(data.plan, services);
+  const { setSpeaking } = session;
+  // 음성 가이드(문항 자동 읽기). 기본은 켬, 통화 화면의 스피커 버튼으로 끈다. 다시 듣기 버튼은 꺼져 있어도 읽는다.
+  const [voiceGuideOn, setVoiceGuideOn] = useState(true);
+  // 마이페이지에서 연 지난 통화 리포트. Android 뒤로 가기로 닫는다.
+  const [openedHistory, setOpenedHistory] = useState<CallHistoryEntry | null>(null);
+  useEffect(() => {
+    if (!openedHistory) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      setOpenedHistory(null);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [openedHistory]);
+
+  // 전화가 오면 복습 문항 음성을 미리 받아 둔다. 그래야 문항이 뜨자마자 읽는다.
+  const preparingCall = session.phase === "incoming" || session.phase === "connecting";
+  useEffect(() => {
+    if (!preparingCall || !voiceGuideOn) return;
+    for (const target of data.plan.targets) prefetchSpeech(reviewPromptText(target.promptKo), "ko-KR", speechSource);
+  }, [data.plan.targets, preparingCall, speechSource, voiceGuideOn]);
+
+  // 짧은 대화 질문은 화면에 뜨면 영어로 읽어 준다. 무응답 타이머는 읽기가 끝난 뒤 센다.
+  const questionToRead = session.phase === "free-talk" && !session.turnLoading ? session.coachLine : null;
+  useEffect(() => {
+    if (!questionToRead || !voiceGuideOn) return;
+    speak(questionToRead, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
+  }, [questionToRead, session.freeTalkTurn.id, setSpeaking, speechSource, voiceGuideOn]);
+
+  // 복습 단계도 표현이 바뀔 때마다 한국어 문제를 바로 읽어 준다.
+  const reviewPrompt = session.phase === "review" && session.target ? reviewPromptText(session.target.promptKo) : null;
+  useEffect(() => {
+    if (!reviewPrompt || !voiceGuideOn) return;
+    speak(reviewPrompt, "ko-KR", () => setSpeaking(true), () => setSpeaking(false), speechSource);
+  }, [reviewPrompt, session.target, setSpeaking, speechSource, voiceGuideOn]);
+
+  const toggleVoiceGuide = () => {
+    if (voiceGuideOn) {
+      stopSpeaking();
+      setSpeaking(false);
+    }
+    setVoiceGuideOn(!voiceGuideOn);
+  };
+
+  // 통화를 벗어나거나 학생이 말하기 시작하면 읽기를 멈춘다.
+  useEffect(() => {
+    if (!session.isCallSurface || session.voiceState === "listening") {
+      stopSpeaking();
+      setSpeaking(false);
+    }
+  }, [session.isCallSurface, session.voiceState, setSpeaking]);
+
+  const replay = () => {
+    if (session.phase === "free-talk") {
+      speak(session.coachLine, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
+    } else if (reviewPrompt) {
+      speak(reviewPrompt, "ko-KR", () => setSpeaking(true), () => setSpeaking(false), speechSource);
+    }
+  };
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
+  // 교사가 정한 일정으로 알림을 맞춘다. 서버 푸시에 기기가 등록되면 서버가 보내고,
+  // 아니면(EAS 프로젝트 미설정·권한 없음·등록 실패) 기기 자체 알림을 매주 예약한다.
+  useEffect(() => {
+    if (data.callSchedule === undefined) return;
+    let cancelled = false;
+    void (async () => {
+      const pushToken = registerPush ? await getPushToken() : null;
+      const usePush = pushToken && registerPush ? await registerPush(pushToken) : false;
+      if (pushToken) await savePushToken(pushToken);
+      if (!cancelled) await syncCallNotifications(data.callSchedule, { usePush });
+    })().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [data.callSchedule, registerPush]);
+
+  // 전화 알림을 누르거나 앱 사용 중 전화 시각이 되면, 홈에 있을 때만 수신 화면을 띄운다.
+  useEffect(
+    () =>
+      onIncomingCallNotification(() => {
+        const current = sessionRef.current;
+        if (current.phase === "home" && data.plan.targets.length > 0) current.showIncomingCall();
+      }),
+    [data.plan.targets.length],
+  );
+
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const pendingReport = useRef<CallReportPayload | null>(null);
 
@@ -360,7 +509,21 @@ function CallReviewApp({
       >
         <StatusBar style={darkMode ? "light" : "dark"} />
         {session.phase === "home" && (
-          session.homeSection === "home" ? (
+          openedHistory?.report ? (
+            <ReportScreen
+              darkMode={darkMode}
+              onToggleAppearance={toggleAppearance}
+              dateLabel={openedHistory.completedAtLabel}
+              finishReason={openedHistory.report.finishReason}
+              outcomes={Object.fromEntries(openedHistory.report.targets.map((target, index) => [index, target.outcome]))}
+              reviewedCount={openedHistory.report.reviewedCount}
+              targets={openedHistory.report.targets}
+              conversation={openedHistory.report.conversation}
+              saveStatus={null}
+              onRetrySave={() => {}}
+              onDone={() => setOpenedHistory(null)}
+            />
+          ) : session.homeSection === "home" ? (
             <HomeScreen
               darkMode={darkMode}
               onToggleAppearance={toggleAppearance}
@@ -380,6 +543,7 @@ function CallReviewApp({
               onSetTheme={setThemePreference}
               onBack={session.closeMyPage}
               onLogout={onLogout}
+              onOpenReport={setOpenedHistory}
             />
           )
         )}
@@ -453,6 +617,11 @@ function CallReviewApp({
             onChooseAnswer={session.chooseAnswer}
             onToggleChoiceAssist={session.toggleChoiceAssist}
             onEnd={session.endCall}
+            onReplay={replay}
+            voiceGuideOn={voiceGuideOn}
+            onToggleVoiceGuide={toggleVoiceGuide}
+            turnLoading={session.turnLoading}
+            voiceError={session.voiceError}
             idleStopSeconds={data.plan.freeTalk.idleStopSeconds}
             idleSecondsLeft={session.idleSecondsLeft}
           />
@@ -465,7 +634,7 @@ function CallReviewApp({
             outcomes={session.reviewOutcomes}
             reviewedCount={session.reviewedCount}
             targets={data.plan.targets}
-            conversationReplies={session.conversationReplies}
+            conversation={session.conversationTurns}
             saveStatus={onSaveReport ? saveStatus : null}
             onRetrySave={() => void sendReport()}
             onDone={finishCall}
@@ -592,11 +761,13 @@ function MyPageScreen({
   onSetTheme,
   onBack,
   onLogout,
+  onOpenReport,
 }: {
   darkMode: boolean;
   onToggleAppearance: () => void;
   history: CallHistoryEntry[];
-  schedule: TeacherScheduleSettings;
+  onOpenReport: (entry: CallHistoryEntry) => void;
+  schedule: TeacherScheduleSettings | null;
   themePreference: "light" | "dark" | "system";
   onSetTheme: (preference: "light" | "dark" | "system") => void;
   onBack: () => void;
@@ -622,17 +793,23 @@ function MyPageScreen({
         </Pressable>
         <Text style={[styles.myPageTitle, darkMode && darkAppStyles.strongText]}>마이페이지</Text>
       </View>
+
+      <LearningStatusSection history={history} darkMode={darkMode} />
       <View style={[styles.scheduleCard, darkMode && darkAppStyles.card]}>
         <View style={styles.scheduleTopline}>
           <Text style={[styles.mySectionTitle,darkMode && darkAppStyles.strongText]}>전화 일정</Text>
           <View style={[styles.myTeacherBadge,darkMode && darkAppStyles.mutedCard]}><Icon name="lock" size={13} strokeWidth={2.2} color={darkMode ? color.mutedInverse : color.muted} /><Text style={[styles.myTeacherBadgeText,darkMode && darkAppStyles.mutedText]}>선생님이 설정</Text></View>
         </View>
+        {schedule ? (<>
         <View style={styles.myWeekdays} accessible accessibilityLabel={`전화 오는 요일: ${schedule.weekdays.join(", ")}`}>{["월","화","수","목","금","토","일"].map((day) => {
           const active = schedule.weekdays.includes(day);
           return <View key={day} style={[styles.myWeekday,active && styles.myWeekdayActive,darkMode && (active ? darkAppStyles.activeChip : darkAppStyles.mutedCard)]}><Text style={[styles.myWeekdayText,active && styles.myWeekdayTextActive,darkMode && (active ? darkAppStyles.activeChipText : darkAppStyles.mutedText)]}>{day}</Text></View>;
         })}</View>
         <View style={styles.myScheduleDetails}><View><Text style={[styles.myDetailLabel,darkMode && darkAppStyles.mutedText]}>시간</Text><Text style={[styles.myDetailValue,darkMode && darkAppStyles.strongText]}>{formatClock(schedule.time)}</Text></View><View><Text style={[styles.myDetailLabel,darkMode && darkAppStyles.mutedText]}>횟수</Text><Text style={[styles.myDetailValue,darkMode && darkAppStyles.strongText]}>주 {schedule.callsPerWeek}회</Text></View></View>
-        <Text style={[styles.myScheduleHelp,darkMode && darkAppStyles.mutedText]}>일정을 바꾸고 싶으면 담당 선생님께 말씀해 주세요. 통화 {schedule.reminderMinutesBefore}분 전에 알려드려요.</Text>
+        <Text style={[styles.myScheduleHelp,darkMode && darkAppStyles.mutedText]}>일정을 바꾸고 싶으면 담당 선생님께 말씀해 주세요.{schedule.reminderMinutesBefore > 0 ? ` 통화 ${schedule.reminderMinutesBefore}분 전에 알려드려요.` : ""}</Text>
+        </>) : (
+          <Text style={[styles.myScheduleHelp,darkMode && darkAppStyles.mutedText]}>아직 선생님이 전화 일정을 정하지 않았어요. 일정이 정해지면 여기와 홈에 표시돼요.</Text>
+        )}
       </View>
 
       <View style={styles.myThemeSection}><Text style={[styles.mySectionTitle,darkMode && darkAppStyles.strongText]}>통화 화면</Text><View style={[styles.myThemeSelector,darkMode && darkAppStyles.mutedCard]}>{(["light","dark","system"] as const).map((preference,index) => <Pressable key={preference} accessibilityRole="radio" accessibilityState={{selected:themePreference===preference}} onPress={() => onSetTheme(preference)} style={[styles.myThemeChoice,themePreference === preference && styles.myThemeChoiceActive,darkMode && themePreference===preference && darkAppStyles.card]}><Text style={[styles.myThemeChoiceText,themePreference===preference && styles.myThemeChoiceTextActive,darkMode && darkAppStyles.strongText]}>{["밝게","어둡게","기기 설정"][index]}</Text></Pressable>)}</View></View>
@@ -644,12 +821,20 @@ function MyPageScreen({
           <Text style={[styles.emptyHistoryTitle, darkMode && darkAppStyles.strongText]}>아직 전화관리 기록이 없어요</Text>
           <Text style={[styles.emptyHistoryBody, darkMode && darkAppStyles.mutedText]}>첫 통화를 마치면 여기에 모아 볼 수 있어요.</Text>
         </View>}
-        {history.map((entry) => (
-          <View key={entry.id} style={[styles.myHistoryRow, darkMode && darkAppStyles.bottomBorder]}>
+        {history.slice(0, 10).map((entry) => (
+          <Pressable
+            key={entry.id}
+            disabled={!entry.report}
+            accessibilityRole="button"
+            accessibilityLabel={`${entry.completedAtLabel} 통화 리포트 보기`}
+            onPress={() => onOpenReport(entry)}
+            style={({ pressed }) => [styles.myHistoryRow, darkMode && darkAppStyles.bottomBorder, pressed && styles.utilityPressed]}
+          >
             <View style={styles.myHistoryDate}><Text style={[styles.myHistoryDay,darkMode && darkAppStyles.strongText]}>{entry.completedAtLabel.match(/(\d+)일/)?.[1] ?? "—"}</Text><Text style={[styles.myHistoryMonth,darkMode && darkAppStyles.mutedText]}>{entry.completedAtLabel.match(/(\d+)월/)?.[1] ?? ""}월</Text></View>
             <View style={styles.myHistoryCopy}><Text style={[styles.myHistorySummary,darkMode && darkAppStyles.strongText]}>{entry.focusLabel}</Text><Text style={[styles.myHistoryDetail,darkMode && darkAppStyles.mutedText]}>{entry.expressions.join(" · ")}</Text></View>
             <View style={[styles.myHistoryTag, entry.resultLabel === "직접 종료" && { backgroundColor: color.primarySoft }, entry.resultLabel === "응답 없음" && { backgroundColor: color.surfaceMuted }]}><Text style={[styles.myHistoryTagText, entry.resultLabel === "직접 종료" && { color: color.primaryStrong }, entry.resultLabel === "응답 없음" && { color: color.muted }]}>{entry.resultLabel}</Text></View>
-          </View>
+            {entry.report && <Icon name="chevron-right" size={18} color={darkMode ? color.mutedInverse : color.muted} />}
+          </Pressable>
         ))}
       </View>
       {onLogout ? (
@@ -964,6 +1149,11 @@ type CallScreenProps = {
   onEnd: () => void;
   idleStopSeconds: number;
   idleSecondsLeft: number;
+  onReplay: () => void;
+  voiceGuideOn: boolean;
+  onToggleVoiceGuide: () => void;
+  turnLoading: boolean;
+  voiceError: string | null;
 };
 
 // Gentle no-response notice appears for the final seconds before the call ends.
@@ -992,17 +1182,29 @@ function reviewGuide(props: CallScreenProps) {
 function CallScreen(props: CallScreenProps) {
   const { width, height } = useWindowDimensions();
   const compact = width < 350 || height < 700;
-  const wide = width >= 350;
+  // 상단 버튼이 셋(음성 가이드·화면 밝기·종료)이라 보통 폰 폭에서는 종료를 아이콘만 보인다.
+  const wide = width >= 440;
   const light = !props.darkMode;
   const isChat = props.phase === "free-talk";
   const t = light
     ? { ink: color.ink, ink2: color.muted, line: color.line, action: color.primary, actionInk: color.primaryStrong, actionSoft: color.primarySoft, surface2: color.surfaceMuted, beflyInk: color.warningInk, beflySoft: color.beflySoft, ok: color.success, okInk: "#17673F", okSoft: color.successSoft, live: "#1E9E63", end: color.danger }
     : { ink: color.inkInverse, ink2: color.mutedInverse, line: color.lineInverse, action: color.actionDark, actionInk: color.actionInkDark, actionSoft: color.actionSoftDark, surface2: color.callPulseOuter, beflyInk: "#EBC9A6", beflySoft: color.callPulseMiddle, ok: color.successDark, okInk: "#7FDCAE", okSoft: "#16302A", end: "#D94545", live: "#3CCB86" };
   const listening = props.voiceState === "listening";
+  const transcribing = props.voiceState === "transcribing";
+  const preparing = props.voiceState === "preparing";
   const feedback = !isChat ? props.reviewFeedback : null;
   const auxOpen = isChat ? props.choiceAssistOpen : props.hintOpen;
   const onAux = isChat ? props.onToggleChoiceAssist : props.onToggleHint;
-  const micLabel = listening ? "다 말했어요" : "눌러서 말하기";
+  const micLabel = listening
+    ? "다 말했어요"
+    : transcribing
+      ? "알아듣는 중…"
+      : preparing
+        ? "마이크 준비 중…"
+        : props.turnLoading
+          ? "잠깐만요…"
+          : "눌러서 말하기";
+  const micBusy = transcribing || preparing || props.turnLoading;
   const step = Number(props.progressLabel.match(/\d+/)?.[0] ?? 1);
   const segmentColor = (index: number) =>
     index < step - 1 || (index === step - 1 && feedback) ? t.action : index === step - 1 ? t.ink2 : t.line;
@@ -1010,7 +1212,7 @@ function CallScreen(props: CallScreenProps) {
   return (
     <KeyboardAvoidingView
       style={[styles.callScreen, light && lightCallStyles.surface]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={keyboardBehavior}
     >
       <View style={[styles.callTopbar, compact && styles.callTopbarCompact]}>
         <Image
@@ -1019,13 +1221,23 @@ function CallScreen(props: CallScreenProps) {
           accessibilityLabel="베플리 선생님"
         />
         <View style={styles.callIdentity}>
-          <Text style={[styles.callName, light && lightCallStyles.strongText]}>베플리 선생님</Text>
+          <Text numberOfLines={1} style={[styles.callName, light && lightCallStyles.strongText]}>베플리 선생님</Text>
           <View style={styles.callStatusRow}>
             <View style={[styles.callLiveDot, { backgroundColor: t.live }]} />
-            <Text style={[styles.callProgress, light && lightCallStyles.mutedText]}>통화 중 · {isChat ? "짧은 대화" : "표현 복습"}</Text>
+            <Text numberOfLines={1} style={[styles.callProgress, light && lightCallStyles.mutedText]}>통화 중 · {isChat ? "짧은 대화" : "표현 복습"}</Text>
           </View>
         </View>
         <View style={styles.callTopbarActions}>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityLabel="음성 가이드"
+            accessibilityHint={props.voiceGuideOn ? "문항을 소리 내어 읽지 않게 해요" : "문항을 소리 내어 읽어 줘요"}
+            accessibilityState={{ checked: props.voiceGuideOn }}
+            onPress={props.onToggleVoiceGuide}
+            style={({ pressed }) => [styles.utilityButton, light && lightCallStyles.utilityButton, pressed && styles.utilityPressed]}
+          >
+            <Icon name={props.voiceGuideOn ? "replay" : "sound-off"} size={20} color={props.voiceGuideOn ? t.ink : t.ink2} />
+          </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={props.darkMode ? "밝은 화면으로 보기" : "어두운 화면으로 보기"}
@@ -1097,14 +1309,18 @@ function CallScreen(props: CallScreenProps) {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="질문 다시 듣기"
-                onPress={() => {}}
+                onPress={props.onReplay}
                 style={({ pressed }) => [styles.replayButton, { backgroundColor: t.surface2 }, pressed && styles.utilityPressed]}
               >
                 <Icon name="replay" size={20} color={t.ink} />
               </Pressable>
             </View>
-            <Text style={[styles.questionEnglish, compact && styles.questionEnglishCompact, light && lightCallStyles.strongText]}>{props.coachLine}</Text>
-            {props.captionsOn && props.questionMeaningKo ? (
+            {props.turnLoading ? (
+              <Text style={[styles.questionLoading, { color: t.ink2 }]} accessibilityLiveRegion="polite">베플리가 질문을 생각하고 있어요…</Text>
+            ) : (
+              <Text style={[styles.questionEnglish, compact && styles.questionEnglishCompact, light && lightCallStyles.strongText]}>{props.coachLine}</Text>
+            )}
+            {props.captionsOn && props.questionMeaningKo && !props.turnLoading ? (
               <View style={[styles.questionMeaning, light && lightCallStyles.topBorder]}>
                 <Text style={[styles.questionMeaningLabel, { color: t.actionInk }]}>뜻</Text>
                 <Text style={[styles.questionMeaningText, light && lightCallStyles.mutedText]}>{props.questionMeaningKo}</Text>
@@ -1116,7 +1332,7 @@ function CallScreen(props: CallScreenProps) {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="베플리의 안내 다시 듣기"
-              onPress={() => {}}
+              onPress={props.onReplay}
               style={({ pressed }) => [styles.replayButton, { backgroundColor: t.surface2 }, pressed && styles.utilityPressed]}
             >
               <Icon name="replay" size={20} color={t.ink} />
@@ -1145,6 +1361,21 @@ function CallScreen(props: CallScreenProps) {
           <View style={styles.listeningRow} accessibilityLiveRegion="polite">
             <Signal barColor={t.action} />
             <Text style={[styles.listeningText, { color: t.actionInk }]}>듣고 있어요</Text>
+          </View>
+        ) : null}
+
+        {transcribing || preparing ? (
+          <View style={styles.listeningRow} accessibilityLiveRegion="polite">
+            <Text style={[styles.listeningText, { color: t.actionInk }]}>
+              {preparing ? "마이크를 준비하고 있어요… 권한을 묻는 창이 뜨면 허용해 주세요." : "말한 내용을 알아듣는 중이에요…"}
+            </Text>
+          </View>
+        ) : null}
+
+        {props.voiceError ? (
+          <View style={[styles.voiceErrorCard, { backgroundColor: t.surface2 }]} accessibilityLiveRegion="assertive">
+            <Icon name="mic-off" size={20} color={t.ink2} />
+            <Text style={[styles.voiceErrorText, { color: t.ink }]}>{props.voiceError}</Text>
           </View>
         ) : null}
 
@@ -1177,7 +1408,7 @@ function CallScreen(props: CallScreenProps) {
               <Image source={befly.review.retry} style={styles.reviewFeedbackAvatar} accessible={false} />
               <View style={styles.reviewFeedbackTitleRow}>
                 <Icon name="retry" size={20} strokeWidth={2.2} color={t.beflyInk} />
-                <Text style={[styles.reviewFeedbackTitle, { color: t.beflyInk }]}>거의 다 왔어요</Text>
+                <Text style={[styles.reviewFeedbackTitle, { color: t.beflyInk }]}>{feedback.message ?? "거의 다 왔어요"}</Text>
               </View>
             </View>
             <View style={[styles.reviewAnswerBox, { backgroundColor: t.surface2 }]}>
@@ -1283,12 +1514,15 @@ function CallScreen(props: CallScreenProps) {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={micLabel}
+                accessibilityState={{ disabled: micBusy, busy: transcribing || preparing }}
+                disabled={micBusy}
                 onPress={props.onVoiceAction}
                 style={({ pressed }) => [
                   styles.voiceButton,
                   compact && styles.voiceButtonCompact,
                   { backgroundColor: pressed ? (light ? color.primaryStrong : color.actionDark) : t.action },
                   listening && styles.voiceButtonListening,
+                  micBusy && styles.voiceButtonBusy,
                   pressed && { transform: [{ scale: 0.94 }] },
                 ]}
               >
@@ -1380,7 +1614,7 @@ function Signal({ barColor }: { barColor: string }) {
 
 const REPORT_TAGS = {
   correct: { label: "복습함", ink: "#17673F", bg: color.successSoft, darkInk: "#7FDCAE", darkBg: "#16302A" },
-  retry: { label: "다시 보기", ink: color.warningInk, bg: color.beflySoft, darkInk: "#EBC9A6", darkBg: color.callPulseMiddle },
+  retry: { label: "복습 필요", ink: color.warningInk, bg: color.beflySoft, darkInk: "#EBC9A6", darkBg: color.callPulseMiddle },
   skipped: { label: "못 했어요", ink: color.muted, bg: color.surfaceMuted, darkInk: color.mutedInverse, darkBg: color.callPulseOuter },
 } as const;
 
@@ -1391,22 +1625,26 @@ function ReportScreen({
   outcomes,
   reviewedCount,
   targets,
-  conversationReplies,
+  conversation,
   saveStatus,
   onRetrySave,
   onDone,
+  dateLabel,
 }: {
   darkMode: boolean;
   onToggleAppearance: () => void;
   finishReason: FinishReason;
-  outcomes: Record<number, ReviewOutcome>;
+  outcomes: Record<number, ReviewOutcome | "skipped">;
   reviewedCount: number;
-  targets: CallPlan["targets"];
-  conversationReplies: string[];
+  targets: { id: string; promptKo: string; answerEn: string; learnerAnswer?: string }[];
+  conversation: { questionEn: string; answer: string }[];
   saveStatus: SaveStatus | null;
   onRetrySave: () => void;
   onDone: () => void;
+  // 있으면 마이페이지에서 연 지난 통화 리포트(날짜 표시, "목록으로" 버튼).
+  dateLabel?: string;
 }) {
+  const past = Boolean(dateLabel);
   const reportCopy =
     finishReason === "no-response"
       ? {
@@ -1422,6 +1660,7 @@ function ReportScreen({
             kicker: "통화 완료",
             title: "오늘 통화 끝!\n잘 해냈어요",
           };
+  const title = past ? `${dateLabel} 통화 리포트` : reportCopy.title;
 
   const againTargets = targets.filter((_, index) => outcomes[index] === "retry");
   const coachComment =
@@ -1431,13 +1670,15 @@ function ReportScreen({
         ? "중간에 멈춰도 괜찮아요. 오늘 말해 본 표현만으로도 한 걸음 나아갔어요."
         : againTargets.length > 0
           ? `끝까지 잘 해냈어요. ${againTargets[0]!.answerEn}는 다음 통화에서 한 번 더 같이 말해 봐요.`
-          : "오늘 표현을 모두 정확하게 말했어요. 다음 통화도 이렇게 가볍게 해 봐요.";
+          : past
+            ? "이날 표현을 모두 정확하게 말했어요."
+            : "오늘 표현을 모두 정확하게 말했어요. 다음 통화도 이렇게 가볍게 해 봐요.";
 
   return (
     <View style={styles.reportScreen}>
       <ScrollView contentContainerStyle={styles.reportContent} showsVerticalScrollIndicator={false}>
         <View style={styles.resultChipRow}><View style={[styles.resultChip, finishReason === "stopped" && styles.resultChipStopped, finishReason === "no-response" && styles.resultChipIdle]}><Text style={[styles.resultChipText, finishReason === "stopped" && styles.resultChipTextStopped, finishReason === "no-response" && styles.resultChipTextIdle]}>{reportCopy.kicker}</Text></View><AppearanceToggle darkMode={darkMode} onPress={onToggleAppearance} compact /></View>
-        <Text style={[styles.reportTitle, darkMode && darkAppStyles.strongText]}>{reportCopy.title}</Text>
+        <Text style={[styles.reportTitle, darkMode && darkAppStyles.strongText]}>{title}</Text>
         {saveStatus && saveStatus !== "idle" ? (
           <View style={[styles.saveStatus, darkMode && darkAppStyles.card]} accessibilityLiveRegion="polite">
             <Text style={[styles.saveStatusText, darkMode && darkAppStyles.mutedText, saveStatus === "failed" && styles.saveStatusFailed]}>
@@ -1458,12 +1699,32 @@ function ReportScreen({
         <View style={[styles.reportExpressionCard,darkMode && darkAppStyles.card]} accessibilityLabel="오늘의 표현">
           {targets.map((target,index) => {
             const tag = REPORT_TAGS[outcomes[index] ?? "skipped"];
-            return <View key={target.id} style={[styles.reportExpressionRow,index < targets.length - 1 && styles.reportExpressionDivider,darkMode && darkAppStyles.bottomBorder]}><View style={styles.reportExpressionCopy}><Text style={[styles.reportExpressionEn,darkMode && darkAppStyles.strongText]}>{target.answerEn}</Text><Text style={[styles.reportExpressionKo,darkMode && darkAppStyles.mutedText]}>{target.promptKo}</Text></View><View style={[styles.reportExpressionTag,{backgroundColor: darkMode ? tag.darkBg : tag.bg}]}><Text style={[styles.reportExpressionTagText,{color: darkMode ? tag.darkInk : tag.ink}]}>{tag.label}</Text></View></View>;
+            return <View key={target.id} style={[styles.reportExpressionRow,index < targets.length - 1 && styles.reportExpressionDivider,darkMode && darkAppStyles.bottomBorder]}><View style={styles.reportExpressionCopy}><Text style={[styles.reportExpressionEn,darkMode && darkAppStyles.strongText]}>{target.answerEn}</Text><Text style={[styles.reportExpressionKo,darkMode && darkAppStyles.mutedText]}>{target.promptKo}</Text>{target.learnerAnswer && outcomes[index] === "retry" ? <Text style={[styles.reportExpressionKo,darkMode && darkAppStyles.mutedText]}>내 답: {target.learnerAnswer}</Text> : null}</View><View style={[styles.reportExpressionTag,{backgroundColor: darkMode ? tag.darkBg : tag.bg}]}><Text style={[styles.reportExpressionTagText,{color: darkMode ? tag.darkInk : tag.ink}]}>{tag.label}</Text></View></View>;
           })}
         </View>
-        {conversationReplies.length > 0 && <View style={styles.reportConversation}><Text style={[styles.reportConversationTitle,darkMode && darkAppStyles.strongText]}>대화에서 내가 한 말</Text><View style={styles.reportReplyList}>{conversationReplies.map((reply,index) => <View key={`${reply}-${index}`} style={styles.reportReplyChip}><Text style={styles.reportReplyText}>{reply}</Text></View>)}</View></View>}
+        {conversation.length > 0 && (
+          <View style={styles.reportConversation}>
+            <Text style={[styles.reportConversationTitle, darkMode && darkAppStyles.strongText]}>베플리와 나눈 대화</Text>
+            {conversation.map((turn, index) => (
+              <View key={`${index}-${turn.questionEn}`} style={styles.chatTurn}>
+                <View style={styles.chatBeflyRow}>
+                  <Image source={befly.home} style={styles.chatAvatar} accessibilityLabel="베플리" />
+                  <View style={[styles.chatBeflyBubble, darkMode && darkAppStyles.card]}>
+                    <Text style={[styles.chatSpeaker, { color: darkMode ? color.beflyDark : color.befly }]}>베플리</Text>
+                    <Text style={[styles.chatText, darkMode && darkAppStyles.strongText]}>{turn.questionEn}</Text>
+                  </View>
+                </View>
+                <View style={styles.chatMeRow}>
+                  <View style={styles.reportReplyChip}>
+                    <Text style={styles.reportReplyText}>{turn.answer}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
-      <View style={[styles.reportBottom,darkMode && darkAppStyles.surface]}><Pressable accessibilityRole="button" onPress={onDone} style={({pressed}) => [styles.reportHomeButton,pressed && styles.buttonPressed]}><Text style={styles.reportHomeButtonText}>홈으로</Text></Pressable></View>
+      <View style={[styles.reportBottom,darkMode && darkAppStyles.surface]}><Pressable accessibilityRole="button" onPress={onDone} style={({pressed}) => [styles.reportHomeButton,pressed && styles.buttonPressed]}><Text style={styles.reportHomeButtonText}>{past ? "목록으로" : "홈으로"}</Text></Pressable></View>
     </View>
   );
 }
@@ -1550,10 +1811,15 @@ const styles = StyleSheet.create({
   saveStatusFailed: { color: color.danger },
   saveRetry: { minHeight: 44, borderRadius: 22, backgroundColor: color.primary, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
   saveRetryText: { color: color.surface, fontSize: 14, fontWeight: "700" },
+  questionLoading: { fontSize: 17, lineHeight: 26, fontWeight: "600", paddingVertical: 8 },
+  voiceErrorCard: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12 },
+  voiceErrorText: { flex: 1, fontSize: 14, lineHeight: 20 },
+  voiceButtonBusy: { opacity: 0.55 },
   homeAnswerButtonDisabled: { backgroundColor: "#8A8F9C" },
   logoutButton: { minHeight: 52, borderRadius: 26, backgroundColor: color.surface, alignItems: "center", justifyContent: "center" },
   logoutButtonText: { color: color.muted, fontSize: 15, fontWeight: "600" },
-  loginScreen: { flex: 1, paddingHorizontal: 24, paddingTop: 48, paddingBottom: 32, gap: 24 },
+  loginKeyboard: { flex: 1 },
+  loginScreen: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 48, paddingBottom: 32, gap: 24 },
   loginIntro: { gap: 10 },
   loginAvatar: { width: 72, height: 72, borderRadius: radius.pill, backgroundColor: color.beflySoft, marginBottom: 6 },
   loginTitle: { color: color.ink, fontSize: 26, lineHeight: 35, fontWeight: "700", letterSpacing: -0.5 },
@@ -1608,9 +1874,15 @@ const styles = StyleSheet.create({
   reportExpressionTagDone: { backgroundColor: color.successSoft },
   reportExpressionTagRepeat: { backgroundColor: color.beflySoft },
   reportExpressionTagText: { fontSize: 12, fontWeight: "600" },
-  reportConversation: { gap: 8 },
+  reportConversation: { gap: 12 },
   reportConversationTitle: { color: color.ink, fontSize: 15, fontWeight: "700" },
-  reportReplyList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chatTurn: { gap: 8 },
+  chatBeflyRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, paddingRight: 40 },
+  chatAvatar: { width: 32, height: 32, borderRadius: 16 },
+  chatBeflyBubble: { flexShrink: 1, backgroundColor: color.surface, borderWidth: 1, borderColor: color.line, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomRightRadius: 16, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 10, gap: 2 },
+  chatSpeaker: { fontFamily: font.semibold, fontSize: 11 },
+  chatText: { color: color.ink, fontFamily: font.english, fontSize: 15, lineHeight: 21 },
+  chatMeRow: { alignItems: "flex-end", paddingLeft: 56 },
   reportReplyChip: { backgroundColor: color.ink, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomLeftRadius: 16, borderBottomRightRadius: 4, paddingHorizontal: 14, paddingVertical: 8 },
   reportReplyText: { color: color.surface, fontFamily: font.english, fontSize: 15 },
   reportBottom: { backgroundColor: color.paper, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 30 },
@@ -1852,7 +2124,7 @@ const styles = StyleSheet.create({
   reviewFeedbackCorrect: { backgroundColor: color.successSoft },
   reviewFeedbackRetry: { backgroundColor: color.callHintLight },
   reviewFeedbackAvatar: { width: 68, height: 68, borderRadius: radius.pill },
-  reviewFeedbackTitle: { color: color.ink, fontSize: 18, fontWeight: "700" },
+  reviewFeedbackTitle: { flexShrink: 1, color: color.ink, fontSize: 18, fontWeight: "700" },
   reviewFeedbackCaption: { color: color.muted, fontSize: 13 },
   reviewFeedbackAnswer: { color: color.ink, fontFamily: font.englishBold, fontSize: 20, lineHeight: 26 },
   callTopbarCompact: { paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: space.sm },

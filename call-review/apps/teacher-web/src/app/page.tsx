@@ -5,6 +5,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 import { percent } from "./analytics";
 import { DailyBars, Donut, Kpi } from "./charts";
 import { DailyBarsLegend, OUTCOME_SEGMENTS } from "./report-parts";
+import { ScheduleEditor } from "./schedule-editor";
 import { BM_LABELS, StudentReport, formatDateTime } from "./student-report";
 import type { ClassStats, TeacherCallStatus, TeacherStudentRow, TeacherStudentsResponse } from "./types";
 
@@ -125,23 +126,45 @@ export default function TeacherDashboard() {
             {overview ? <ClassOverview stats={overview.classStats} /> : null}
             <StudentTable filter={filter} onFilter={setFilter} onSelect={setSelected} students={students} />
 
-            <section className="schedule-section" id="settings" aria-labelledby="schedule-title">
-              <div className="schedule-heading">
-                <div>
-                  <h2 id="schedule-title">전화 일정 설정</h2>
-                  <p>담당 교사가 학습자의 전화 요일과 빈도를 정합니다.</p>
-                </div>
-                <span className="authority-badge">교사 권한</span>
-              </div>
-              <div className="empty-analysis">
-                <strong>일정 API 연동 전이에요</strong>
-                <p>전화 일정 저장 API가 준비되면 이곳에서 요일·시간·빈도를 설정할 수 있어요. 지금은 학습자 앱에 샘플 일정이 표시됩니다.</p>
-              </div>
-            </section>
+            <ScheduleSettings onSaved={() => void loadOverview()} students={students} />
           </>
         )}
       </section>
     </main>
+  );
+}
+
+function ScheduleSettings({ students, onSaved }: { students: TeacherStudentRow[]; onSaved: () => void }) {
+  const [customerNo, setCustomerNo] = useState("");
+  const current = students.find((student) => student.customerNo === customerNo) ?? students[0];
+  return (
+    <section className="schedule-section" id="settings" aria-labelledby="schedule-title">
+      <div className="schedule-heading">
+        <div>
+          <h2 id="schedule-title">전화 일정 설정</h2>
+          <p>담당 교사가 학습자별 전화 요일·시간·사전 알림을 정합니다.</p>
+        </div>
+        <span className="authority-badge">교사 권한</span>
+      </div>
+      {current ? (
+        <>
+          <label className="field-group schedule-student">
+            <span>학습자</span>
+            <select onChange={(event) => setCustomerNo(event.target.value)} value={current.customerNo}>
+              {students.map((student) => (
+                <option key={student.customerNo} value={student.customerNo}>
+                  {student.customerName}
+                  {student.schedule?.active ? ` · ${student.schedule.weekdays.join("·")} ${student.schedule.time}` : " · 일정 없음"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <ScheduleEditor customerNo={current.customerNo} key={current.customerNo} onSaved={onSaved} studentName={current.customerName} />
+        </>
+      ) : (
+        <p className="chart-empty">담당 학습자가 없어요.</p>
+      )}
+    </section>
   );
 }
 
@@ -156,6 +179,7 @@ function OverviewHero({
 }) {
   const recent = students.filter((student) => student.lastCall && isWithinDays(student.lastCall.endedAt, 7)).length;
   const retry = students.filter((student) => student.status === "재통화 필요").length;
+  const missed = students.filter((student) => student.status === "부재중").length;
   const none = students.filter((student) => student.status === "기록 없음").length;
   const participation = percent(students.length - none, students.length);
 
@@ -173,7 +197,7 @@ function OverviewHero({
         <Kpi label="담당 학습자" value={students.length} unit="명" detail="study-api 담당 회원" />
         <Kpi label="통화 참여율" value={participation ?? "—"} unit={participation !== null ? "%" : undefined} detail={`한 번 이상 통화 ${students.length - none}명`} tone="good" />
         <Kpi label="최근 7일 통화" value={recent} unit="명" detail="마지막 통화 기준" tone="accent" />
-        <Kpi label="재통화 필요" value={retry} unit="명" detail="응답 없이 종료" tone={retry > 0 ? "warn" : "default"} />
+        <Kpi label="관리 필요" value={retry + missed} unit="명" detail={`부재중 ${missed} · 응답 없이 종료 ${retry}`} tone={retry + missed > 0 ? "warn" : "default"} />
       </div>
     </header>
   );
@@ -314,7 +338,7 @@ function StudentTable({
           <p>‘리포트’를 누르면 학습자별 학습현황 리포트를 볼 수 있어요.</p>
         </div>
         <div className="filter-row" role="group" aria-label="상태 필터">
-          {(["전체", "완료", "재통화 필요", "기록 없음"] as Filter[]).map((item) => (
+          {(["전체", "완료", "부재중", "재통화 필요", "기록 없음"] as Filter[]).map((item) => (
             <button
               aria-pressed={filter === item}
               className={`filter-button${filter === item ? " active" : ""}`}
@@ -340,6 +364,7 @@ function StudentTable({
               <tr>
                 <th>학습자</th>
                 <th>상태</th>
+                <th>다음 통화</th>
                 <th>마지막 통화</th>
                 <th>최근 정답률</th>
                 <th>통화 수</th>
@@ -361,7 +386,9 @@ function StudentTable({
                       <span className="student-cell">
                         <span className="avatar-chip" aria-hidden="true">{student.customerName.slice(0, 1)}</span>
                         <span>
-                          <strong>{student.customerName}</strong>
+                          <button className="name-link" onClick={() => onSelect(student)} type="button">
+                            {student.customerName}
+                          </button>
                           <span className="cell-meta">
                             {[student.schoolYear ? `${student.schoolYear}학년` : null, ...student.bmNames.map((bm) => BM_LABELS[bm] ?? bm)]
                               .filter(Boolean)
@@ -371,6 +398,9 @@ function StudentTable({
                       </span>
                     </td>
                     <td data-label="상태"><StatusBadge status={student.status} /></td>
+                    <td data-label="다음 통화">
+                      {student.schedule?.nextCallLabel ?? <span className="cell-meta">{student.schedule ? "쉬는 중" : "일정 없음"}</span>}
+                    </td>
                     <td data-label="마지막 통화">{student.lastCall ? formatDateTime(student.lastCall.endedAt) : "—"}</td>
                     <td data-label="최근 정답률">
                       {accuracy !== null ? (
@@ -405,6 +435,7 @@ function StudentTable({
 }
 
 function StatusBadge({ status }: { status: TeacherCallStatus }) {
-  const statusClass = status === "완료" ? "complete" : status === "재통화 필요" ? "retry" : "none";
+  const statusClass =
+    status === "완료" ? "complete" : status === "재통화 필요" ? "retry" : status === "부재중" ? "missed" : "none";
   return <span className={`status-badge ${statusClass}`}>{status}</span>;
 }

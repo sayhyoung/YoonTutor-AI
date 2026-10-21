@@ -2,7 +2,22 @@
 
 export type CallOutcome = "correct" | "retry" | "skipped";
 export type FinishReason = "completed" | "stopped" | "no-response";
-export type TeacherCallStatus = "완료" | "재통화 필요" | "기록 없음";
+export type TeacherCallStatus = "완료" | "재통화 필요" | "부재중" | "기록 없음";
+
+export const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+
+export type ScheduleView = {
+  weekdays: Weekday[];
+  time: string;
+  reminderMinutesBefore: number;
+  active: boolean;
+  callsPerWeek: number;
+  updatedAt: string;
+  updatedByName: string | null;
+  nextCallAt: string | null;
+  nextCallLabel: string | null;
+};
 
 export type CallReportSummary = {
   reportId: string;
@@ -32,6 +47,7 @@ export type TeacherStudentRow = {
   status: TeacherCallStatus;
   callCount: number;
   lastCall: CallReportSummary | null;
+  schedule: ScheduleView | null;
 };
 
 export type TeacherStudentsResponse = {

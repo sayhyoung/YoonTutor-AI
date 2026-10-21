@@ -195,12 +195,30 @@ export type TeacherCallRow = {
   followUpLabel: string;
 };
 
+// 저장된 지난 통화 결과. 마이페이지에서 눌러 그날의 리포트를 다시 본다.
+export type PastCallReport = {
+  endedAt: string;
+  finishReason: "completed" | "stopped" | "no-response";
+  reviewedCount: number;
+  targets: {
+    id: string;
+    sourceLabel: string;
+    promptKo: string;
+    answerEn: string;
+    outcome: "correct" | "retry" | "skipped";
+    learnerAnswer?: string;
+  }[];
+  // 짧은 대화: 베플리 질문과 내 대답(리포트에서 대화 형식으로 다시 본다).
+  conversation: { questionEn: string; answer: string }[];
+};
+
 export type CallHistoryEntry = {
   id: string;
   completedAtLabel: string;
   focusLabel: string;
   resultLabel: string;
   expressions: string[];
+  report?: PastCallReport;
 };
 
 export type TeacherScheduleSettings = {

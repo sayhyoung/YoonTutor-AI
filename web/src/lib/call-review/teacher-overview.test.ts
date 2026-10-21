@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildClassStats, buildTeacherRows, statusOf } from "./teacher-overview";
+import { buildClassStats, buildTeacherRows, missedLatestCall, statusOf } from "./teacher-overview";
 import type { StoredCallReport } from "./report-schema";
 
 function report(studentId: string, endedAt: string, finishReason: StoredCallReport["finishReason"]): StoredCallReport {
@@ -74,5 +74,37 @@ describe("class stats", () => {
     expect(stats.topMissed[0]).toMatchObject({ answerEn: "close", students: 2, misses: 2 });
     expect(stats.topMissed[1]).toMatchObject({ students: 2, misses: 2 });
     expect(stats.topMissed[0]).not.toHaveProperty("studentIds");
+  });
+});
+
+describe("missed scheduled calls", () => {
+  // 화·목 19:30 KST, 일정은 미리 만들어 둠. 2026-10-22(목) 19:30 KST = 10:30 UTC
+  const schedule = {
+    schemaVersion: 1 as const,
+    customerNo: "1",
+    teacherNo: "t",
+    weekdays: ["화" as const, "목" as const],
+    time: "19:30",
+    reminderMinutesBefore: 10,
+    active: true,
+    updatedAt: "2026-10-01T00:00:00.000Z",
+    updatedByName: null,
+  };
+
+  it("marks a student as missed after the grace period without a call", () => {
+    const now = new Date("2026-10-22T12:00:00.000Z"); // 21:00 KST
+    expect(missedLatestCall(schedule, [], now)).toBe(true);
+    const [row] = buildTeacherRows([student("1", "가")], [], new Map([["1", schedule]]), now);
+    expect(row.status).toBe("부재중");
+    expect(row.schedule?.nextCallLabel).toBe("10월 27일(화) 오후 7:30");
+  });
+
+  it("does not mark missed within the grace period, after a call, or for a new schedule", () => {
+    const soon = new Date("2026-10-22T11:00:00.000Z"); // 20:00 KST
+    expect(missedLatestCall(schedule, [], soon)).toBe(false);
+    const later = new Date("2026-10-22T12:00:00.000Z");
+    expect(missedLatestCall(schedule, [{ endedAt: "2026-10-22T10:20:00.000Z" }], later)).toBe(false);
+    expect(missedLatestCall({ ...schedule, updatedAt: "2026-10-22T11:30:00.000Z" }, [], later)).toBe(false);
+    expect(missedLatestCall({ ...schedule, active: false }, [], later)).toBe(false);
   });
 });

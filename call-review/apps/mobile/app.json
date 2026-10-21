@@ -4,22 +4,69 @@
     "slug": "yoon-ai-call-review",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/icon/icon.png",
     "scheme": "yooncall",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yoonsaeng.aicallreview"
+      "bundleIdentifier": "com.yoonsaeng.aicallreview",
+      "icon": {
+        "light": "./assets/icon/icon.png",
+        "dark": "./assets/icon/icon-dark.png",
+        "tinted": "./assets/icon/icon-tinted.png"
+      }
     },
     "android": {
       "package": "com.yoonsaeng.aicallreview",
       "adaptiveIcon": {
-        "backgroundColor": "#171522"
+        "foregroundImage": "./assets/icon/adaptive-foreground.png",
+        "monochromeImage": "./assets/icon/monochrome.png",
+        "backgroundColor": "#12151C"
       },
-      "edgeToEdgeEnabled": true
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/icon/web-favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon/notification-icon.png",
+          "color": "#7B4A2E"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "베플리 선생님과 영어로 말하려면 마이크가 필요해요. 녹음한 소리는 글자로 바꾼 뒤 저장하지 않아요."
+        }
+      ],
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icon/splash-icon.png",
+          "imageWidth": 200,
+          "backgroundColor": "#F6F3EE",
+          "dark": {
+            "image": "./assets/icon/splash-icon-dark.png",
+            "backgroundColor": "#12151C"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "977424f2-6fe2-4cdd-a6ee-88125dcd0b12"
+      }
+    },
+    "owner": "sweetsam"
   }
 }

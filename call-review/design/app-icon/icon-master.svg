@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs>
+ <radialGradient id="hood" cx="42%" cy="32%" r="72%"><stop offset="0" stop-color="#986044"/><stop offset="1" stop-color="#7B4A2E"/></radialGradient>
+ <radialGradient id="face" cx="45%" cy="30%" r="80%"><stop offset="0" stop-color="#FFF6EA"/><stop offset="1" stop-color="#F3D9BE"/></radialGradient>
+ <linearGradient id="hair" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE166"/><stop offset="1" stop-color="#F5C842"/></linearGradient>
+ </defs><rect width="1024" height="1024" fill="#12151C"/><circle cx="512" cy="512" r="393" fill="#F6F3EE" stroke="#2F55D4" stroke-width="16"/><g transform="translate(512 512) scale(0.91) translate(-512 -512)"><g id="mascot">
+ <!-- call headset arch -->
+ <path d="M223 510 C185 291 300 183 512 181 C724 183 839 291 801 510" fill="none" stroke="#D7DDE5" stroke-width="57" stroke-linecap="round"/>
+ <path d="M223 510 C185 291 300 183 512 181 C724 183 839 291 801 510" fill="none" stroke="#222936" stroke-width="39" stroke-linecap="round"/>
+ <!-- ears and hood -->
+ <circle cx="331" cy="320" r="111" fill="#7B4A2E" stroke="#5A321F" stroke-width="12"/>
+ <circle cx="693" cy="320" r="111" fill="#7B4A2E" stroke="#5A321F" stroke-width="12"/>
+ <ellipse cx="512" cy="542" rx="305" ry="306" fill="url(#hood)" stroke="#5A321F" stroke-width="17"/>
+ <!-- face -->
+ <ellipse cx="512" cy="550" rx="246" ry="227" fill="url(#face)"/>
+ <!-- yellow swept fringe -->
+ <path d="M282 441 C300 367 349 357 385 385 C436 325 533 314 620 342 C685 361 736 406 726 448 C715 499 656 496 596 510 C483 536 362 505 304 474 C287 465 276 455 282 441Z" fill="url(#hair)" stroke="#DCA92C" stroke-width="9" stroke-linejoin="round"/>
+ <!-- eyes, cheeks, smile -->
+ <circle cx="412" cy="579" r="25" fill="#271B18"/>
+ <circle cx="612" cy="579" r="25" fill="#271B18"/>
+ <circle cx="402" cy="569" r="7" fill="#FFFFFF"/>
+ <circle cx="602" cy="569" r="7" fill="#FFFFFF"/>
+ <ellipse cx="344" cy="643" rx="45" ry="29" fill="#EFA3A0" opacity=".9"/>
+ <ellipse cx="680" cy="643" rx="45" ry="29" fill="#EFA3A0" opacity=".9"/>
+ <path d="M459 648 C478 679 546 679 565 648" fill="none" stroke="#39221B" stroke-width="19" stroke-linecap="round"/>
+ <!-- silver and black ear cups -->
+ <rect x="187" y="475" width="73" height="176" rx="35" fill="#C9D1DA" stroke="#222936" stroke-width="12"/>
+ <rect x="198" y="497" width="52" height="133" rx="26" fill="#252B36"/>
+ <rect x="764" y="475" width="73" height="176" rx="35" fill="#C9D1DA" stroke="#222936" stroke-width="12"/>
+ <rect x="774" y="497" width="52" height="133" rx="26" fill="#252B36"/>
+ <!-- boom microphone -->
+ <path d="M805 630 C796 684 750 711 682 702" fill="none" stroke="#252B36" stroke-width="24" stroke-linecap="round"/>
+ <rect x="644" y="682" width="73" height="42" rx="21" fill="#252B36"/>
+ </g></g></svg>

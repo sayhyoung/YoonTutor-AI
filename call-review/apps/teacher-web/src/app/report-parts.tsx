@@ -5,7 +5,7 @@ import type { CallOutcome } from "./types";
 export function OUTCOME_SEGMENTS(counts: Record<CallOutcome, number>): Segment[] {
   return [
     { key: "correct", label: "복습함", value: counts.correct, tone: "correct" },
-    { key: "retry", label: "다시 보기", value: counts.retry, tone: "retry" },
+    { key: "retry", label: "복습 필요", value: counts.retry, tone: "retry" },
     { key: "skipped", label: "못 했어요", value: counts.skipped, tone: "skipped" },
   ];
 }

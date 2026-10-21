@@ -20,7 +20,9 @@ export type IconName =
   | "clock"
   | "lock"
   | "person"
-  | "back";
+  | "back"
+  | "sound-off"
+  | "chevron-right";
 
 export function Icon({
   name,
@@ -104,6 +106,8 @@ export function Icon({
         </>
       )}
       {name === "back" && <Path d="M15 5l-7 7 7 7" {...stroke} />}
+      {name === "sound-off" && <Path d="M4 9v6h4l5 4V5L8 9H4zM16.5 9.5l5 5M21.5 9.5l-5 5" {...stroke} />}
+      {name === "chevron-right" && <Path d="M9 5l7 7-7 7" {...stroke} />}
     </Svg>
   );
 }

@@ -118,6 +118,20 @@ export const previewHistory: CallHistoryEntry[] = [
     focusLabel: "과거형 문장",
     resultLabel: "표현 3개 복습",
     expressions: ["finished", "homework", "Let me check."],
+    report: {
+      endedAt: "2026-09-18T19:10:00+09:00",
+      finishReason: "completed",
+      reviewedCount: 3,
+      targets: [
+        { id: "h1-1", sourceLabel: "단어 복습", promptKo: "끝냈다", answerEn: "finished", outcome: "correct" },
+        { id: "h1-2", sourceLabel: "단어 복습", promptKo: "숙제", answerEn: "homework", outcome: "retry", learnerAnswer: "home work" },
+        { id: "h1-3", sourceLabel: "문장 복습", promptKo: "확인해 볼게요.", answerEn: "Let me check.", outcome: "correct" },
+      ],
+      conversation: [
+        { questionEn: "Did you finish your homework today?", answer: "I finished my homework." },
+        { questionEn: "What did you do after school?", answer: "I played soccer." },
+      ],
+    },
   },
   {
     id: "history-2",

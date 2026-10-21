@@ -38,13 +38,15 @@ export type OpenAiInputMessage = { role: "developer" | "user" | "assistant"; con
 export async function callOpenAiMessages(
   input: OpenAiInputMessage[],
   maxOutputTokens = 700,
+  model?: string,
 ): Promise<string> {
-  return callOpenAiResponses(input, maxOutputTokens);
+  return callOpenAiResponses(input, maxOutputTokens, model);
 }
 
 async function callOpenAiResponses(
   input: string | OpenAiInputMessage[],
   maxOutputTokens: number,
+  model?: string,
 ): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -53,7 +55,7 @@ async function callOpenAiResponses(
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL ?? "gpt-5.2",
+      model: model ?? process.env.OPENAI_MODEL ?? "gpt-5.2",
       input,
       max_output_tokens: maxOutputTokens,
     }),
