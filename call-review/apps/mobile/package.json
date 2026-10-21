@@ -16,6 +16,7 @@
     "@yoon-call/shared": "*",
     "expo": "~57.0.10",
     "expo-font": "~14.0.11",
+    "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",

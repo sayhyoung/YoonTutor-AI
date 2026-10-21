@@ -53,7 +53,13 @@ CallReport 저장
 
 복습 화면의 정답/다시 해보기 카드는 현재 프리뷰에서 영문 대소문자·구두점·공백을 정규화해 비교한다. 관사·축약형·유사 표현 허용 범위는 아직 정하지 않았으므로 실제 학습 판정 규칙으로 사용하면 안 된다. 짧은 대화에는 이 정오답 판정을 적용하지 않는다.
 
-결과 화면은 세션이 기록한 표현별 첫 판정을 그대로 보여준다. 처음에 틀린 표현은 다시 맞혀도 `다시 보기`로 남고, 판정 전에 통화가 끝난 표현은 `못 했어요`로 표시한다. 서버 `CallReport` 저장이 붙으면 같은 판정 기록을 전송해야 한다.
+결과 화면은 세션이 기록한 표현별 첫 판정을 그대로 보여준다. 처음에 틀린 표현은 다시 맞혀도 `다시 보기`로 남고, 판정 전에 통화가 끝난 표현은 `못 했어요`로 표시한다. 같은 판정을 통화 결과로 저장한다.
+
+### 통화 결과 저장
+
+통화가 `complete`가 되는 순간 앱이 `POST /api/call-review/reports`로 결과를 한 번 보낸다. 본문에는 통화마다 새로 만든 `reportId`, 시작·종료 시각, 종료 사유, 표현별 판정(`correct`·`retry`·`skipped`, 틀린 경우 첫 답), 대화 질문과 답이 들어간다. 학생 번호와 이름은 본문이 아니라 Bearer 토큰에서 채우고, 복습·다시 볼 표현 수는 서버가 판정에서 다시 계산한다. 저장 실패 시 결과 화면에서 같은 `reportId`로 다시 시도하며, 서버는 `{학생번호}_{reportId}` 문서를 `create`로만 써서 중복 저장하지 않는다.
+
+저장소는 Firestore `callReports` 컬렉션이고 BFF가 `firebase-admin`으로만 접근한다(클라이언트 규칙은 전부 거부). 로컬은 `FIRESTORE_EMULATOR_HOST`가 있을 때 에뮬레이터에만 쓰고, 실제 Firestore는 `CALL_REVIEW_FIRESTORE=enabled`일 때만 쓴다. 둘 다 없으면 저장 API는 503을 돌려주고 앱은 저장 실패로 표시한다. 학생 앱 마이페이지의 지난 통화 기록은 `GET /api/call-review/reports`로 본인 결과만 읽는다. 운영 배포 전에 `firestore.indexes.json`의 `callReports`(studentId, endedAt) 색인과 규칙을 배포해야 한다.
 
 ## 학습 데이터 변환
 
@@ -62,6 +68,12 @@ CallReport 저장
 로그인 성공 시 BFF는 Study API 토큰과 별도로 학생·교사 식별정보를 HMAC 서명된 `httpOnly` 세션 쿠키에 저장한다. 모바일용 학습 데이터 엔드포인트는 클라이언트가 전달한 회원번호를 신뢰하지 않고 이 세션의 주체를 사용한다. 세션 서명 키가 설정되지 않은 환경에서는 전화관리 실데이터 엔드포인트를 활성화하지 않는다.
 
 `GET /api/call-review/learning-items`는 서명 세션에서 학생 식별정보를 읽어 단어·문장 오답만 조회한다. 요청 쿼리에는 조회 기간만 허용하고 회원번호는 받지 않으며, 응답은 `private, no-store`로 캐시를 금지한다. 기존 웹 POC의 `/api/study/wrong-answers`와 조회·정규화 로직은 공통 서비스로 공유하되, 기존 웹 POC의 평가 조회 범위는 유지한다.
+
+### 모바일 Bearer 토큰
+
+네이티브 앱과 웹 프리뷰는 BFF와 출처(origin)가 달라 쿠키 세션을 쓰지 않는다. `POST /api/call-review/mobile/session`이 study-api 학생 로그인을 대행하고, 학생 식별정보와 study-api 토큰 쌍을 `CALL_REVIEW_SESSION_SECRET`에서 파생한 키로 AES-256-GCM 봉인한 Bearer 토큰을 돌려준다. 앱은 토큰 내용을 읽을 수 없으며 iOS/Android 보안 저장소(웹 프리뷰는 localStorage)에 보관한다. `GET /api/call-review/learning-items`는 Bearer 토큰이 있으면 그 주체로 조회하고, study-api 토큰이 만료되면 refresh 후 새 토큰을 `renewedToken`으로 돌려준다. `DELETE /api/call-review/mobile/session`은 study-api refresh 토큰을 무효화한다. 개발 환경 CORS는 `localhost` 전체를 허용하고, 운영에서는 `CALL_REVIEW_MOBILE_ORIGINS`로 허용 출처를 지정한다.
+
+앱은 `EXPO_PUBLIC_CALL_REVIEW_API_BASE_URL`이 설정되면 로그인 후 실제 오답으로 통화를 구성하고, 없으면 샘플 데이터 프리뷰로 동작한다. 실제 오답은 한국어 뜻을 복습 표현으로 쓰고, 자유대화는 AI 질문 생성 전까지 `buildTemplateFreeTalk`의 표현별 결정론적 질문을 쓴다. 전화 일정 API가 없어 일정은 샘플을 쓰고, 지난 통화 기록은 저장 API 전까지 비워 둔다. 프리뷰의 음성 입력은 STT가 없어 정답 문장을 인식 결과로 채운다.
 
 ## 모바일 배포 방향
 

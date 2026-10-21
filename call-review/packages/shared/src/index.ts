@@ -127,6 +127,55 @@ export function buildCallPlanFromLearningItems({
   };
 }
 
+const IDLE_STOP_SECONDS = 20;
+
+function isWord(answerEn: string): boolean {
+  return !answerEn.trim().includes(" ");
+}
+
+// AI 질문 생성 전까지 쓰는 결정론적 자유대화 템플릿.
+// 복습 표현마다 질문 하나를 만들어, 오늘 표현을 근거로 대화한다는 원칙을 지킨다.
+export function buildTemplateFreeTalk(targets: LearningTarget[]): FreeTalkPlan {
+  const turns: ConversationTurn[] = targets.map((target, index) => {
+    const expression = target.answerEn.trim().replace(/[.!?]+$/, "");
+    const id = `talk-${index + 1}`;
+    if (isWord(expression)) {
+      return {
+        id,
+        relatedExpression: expression,
+        questionEn: `Can you make a short sentence with "${expression}"?`,
+        questionMeaningKo: `"${expression}"를 넣어서 짧은 문장을 말해 볼래?`,
+        answerHint: `단어 하나만 말해도 괜찮아요. "${expression}"부터 말해 봐요.`,
+        previewVoiceAnswer: `I know the word ${expression}.`,
+        choices: [
+          { id: `${id}-a`, answerEn: `I know the word ${expression}.`, meaningKo: `나는 ${expression}라는 단어를 알아.` },
+          { id: `${id}-b`, answerEn: `${expression[0]!.toUpperCase()}${expression.slice(1)}.`, meaningKo: "단어만 말해도 좋아요." },
+          { id: `${id}-c`, answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
+        ],
+      };
+    }
+    return {
+      id,
+      relatedExpression: expression,
+      questionEn: `When can you say "${expression}"?`,
+      questionMeaningKo: `"${expression}"는 언제 말할 수 있을까?`,
+      answerHint: "I can say it at…로 시작해 봐요.",
+      previewVoiceAnswer: "I can say it at school.",
+      choices: [
+        { id: `${id}-a`, answerEn: "I can say it at school.", meaningKo: "학교에서 말할 수 있어." },
+        { id: `${id}-b`, answerEn: "I can say it at home.", meaningKo: "집에서 말할 수 있어." },
+        { id: `${id}-c`, answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
+      ],
+    };
+  });
+
+  return {
+    maxTurns: Math.max(1, turns.length),
+    idleStopSeconds: IDLE_STOP_SECONDS,
+    turns,
+  };
+}
+
 export type CallReport = {
   callId: string;
   studentId: string;

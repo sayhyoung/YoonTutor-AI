@@ -1,5 +1,5 @@
 /* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import {
@@ -30,9 +30,19 @@ import type {
 } from "@yoon-call/shared";
 
 import {
+  type CallReviewRepository,
   type CallReviewSnapshot,
+  createApiCallReviewRepository,
   previewCallReviewRepository,
 } from "./src/callReviewRepository";
+import {
+  ApiError,
+  type CallReportPayload,
+  callReviewApiBaseUrl,
+  login,
+  logout,
+  tokenStorage,
+} from "./src/callReviewApi";
 import { color, font, radius, space } from "./src/theme";
 import { befly, callAvatar } from "./src/befly";
 import { Icon, type IconName } from "./src/icons";
@@ -64,19 +74,271 @@ export default function App() {
     IBMPlexSansKR_600SemiBold: require("@expo-google-fonts/ibm-plex-sans-kr/600SemiBold/IBMPlexSansKR_600SemiBold.ttf"),
     IBMPlexSansKR_700Bold: require("@expo-google-fonts/ibm-plex-sans-kr/700Bold/IBMPlexSansKR_700Bold.ttf"),
   });
-  const { data, error, reload } = useCallReviewData(
-    previewCallReviewRepository,
-  );
+  if (!fontsLoaded) {
+    return <BootstrapScreen error={false} onRetry={() => {}} />;
+  }
 
-  if (!fontsLoaded || !data) {
+  // 서버 주소가 설정되면 실회원 로그인, 아니면 샘플 데이터 프리뷰.
+  return callReviewApiBaseUrl ? (
+    <AuthenticatedApp />
+  ) : (
+    <DataApp repository={previewCallReviewRepository} />
+  );
+}
+
+function DataApp({
+  repository,
+  onLogout,
+}: {
+  repository: CallReviewRepository;
+  onLogout?: () => void;
+}) {
+  const { data, error, reload } = useCallReviewData(repository);
+
+  if (!data) {
     return <BootstrapScreen error={error} onRetry={reload} />;
   }
 
-  return <CallReviewApp data={data} />;
+  return (
+    <CallReviewApp
+      data={data}
+      onLogout={onLogout}
+      onSaveReport={repository.saveReport?.bind(repository)}
+      onRefresh={reload}
+    />
+  );
 }
 
-function CallReviewApp({ data }: { data: CallReviewSnapshot }) {
+function AuthenticatedApp() {
+  // undefined: 저장된 토큰 확인 중, null: 로그인 필요.
+  const [token, setToken] = useState<string | null | undefined>(undefined);
+  const [notice, setNotice] = useState<string | null>(null);
+  // 갱신된 토큰은 화면을 다시 불러오지 않도록 ref로만 교체한다.
+  const tokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    void tokenStorage.get().then((stored) => {
+      tokenRef.current = stored;
+      setToken(stored);
+    });
+  }, []);
+
+  const signOut = useCallback((message: string | null) => {
+    tokenRef.current = null;
+    void tokenStorage.clear();
+    setNotice(message);
+    setToken(null);
+  }, []);
+
+  const repository = useMemo(
+    () =>
+      createApiCallReviewRepository({
+        getToken: () => tokenRef.current,
+        saveToken: (next) => {
+          tokenRef.current = next;
+          void tokenStorage.set(next);
+        },
+        onUnauthorized: () => signOut("로그인이 만료됐어요. 다시 로그인해 주세요."),
+      }),
+    // 새로 로그인하면(token 변경) 저장소를 새로 만들어 학습 데이터를 다시 불러온다.
+    [signOut, token],
+  );
+
+  if (token === undefined) {
+    return <BootstrapScreen error={false} onRetry={() => {}} />;
+  }
+
+  if (!token) {
+    return (
+      <LoginScreen
+        notice={notice}
+        onLoggedIn={(next) => {
+          tokenRef.current = next;
+          void tokenStorage.set(next);
+          setNotice(null);
+          setToken(next);
+        }}
+      />
+    );
+  }
+
+  return (
+    <DataApp
+      repository={repository}
+      onLogout={() => {
+        const current = tokenRef.current;
+        signOut(null);
+        if (current) void logout(current);
+      }}
+    />
+  );
+}
+
+function LoginScreen({
+  notice,
+  onLoggedIn,
+}: {
+  notice: string | null;
+  onLoggedIn: (token: string) => void;
+}) {
+  const [userId, setUserId] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canSubmit = userId.trim().length > 0 && password.length > 0 && !submitting;
+
+  async function submit() {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await login(userId.trim(), password);
+      setPassword("");
+      onLoggedIn(result.token);
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "로그인에 실패했어요.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <View style={styles.appRoot}>
+    <SafeAreaView style={[styles.safe, Platform.OS === "web" && styles.safeWeb]}>
+      <StatusBar style="dark" />
+      <KeyboardAvoidingView style={styles.loginScreen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <View style={styles.loginIntro}>
+          <Image source={befly.home} style={styles.loginAvatar} accessibilityLabel="베플리 선생님" />
+          <Text style={[styles.brandEyebrow, { color: color.warningInk }]}>윤선생 AI 전화관리</Text>
+          <Text style={styles.loginTitle}>베플리와 통화하려면{"\n"}먼저 로그인해요</Text>
+          <Text style={styles.loginBody}>윤선생 학습 아이디로 로그인하면 지난 학습에서 헷갈렸던 표현으로 통화를 준비해요.</Text>
+        </View>
+        {notice ? <Text style={styles.loginNotice} accessibilityLiveRegion="polite">{notice}</Text> : null}
+        <View style={styles.loginForm}>
+          <View style={styles.loginField}>
+            <Text style={styles.loginLabel} nativeID="login-id-label">아이디</Text>
+            <TextInput
+              accessibilityLabel="아이디"
+              accessibilityLabelledBy="login-id-label"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="username"
+              textContentType="username"
+              value={userId}
+              onChangeText={setUserId}
+              returnKeyType="next"
+              style={styles.loginInput}
+              placeholder="학습 아이디"
+              placeholderTextColor={color.muted}
+            />
+          </View>
+          <View style={styles.loginField}>
+            <Text style={styles.loginLabel} nativeID="login-pw-label">비밀번호</Text>
+            <TextInput
+              accessibilityLabel="비밀번호"
+              accessibilityLabelledBy="login-pw-label"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="password"
+              textContentType="password"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              onSubmitEditing={() => void submit()}
+              returnKeyType="go"
+              style={styles.loginInput}
+              placeholder="비밀번호"
+              placeholderTextColor={color.muted}
+            />
+          </View>
+          {error ? <Text style={styles.loginError} accessibilityLiveRegion="assertive">{error}</Text> : null}
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canSubmit, busy: submitting }}
+          disabled={!canSubmit}
+          onPress={() => void submit()}
+          style={({ pressed }) => [styles.loginButton, !canSubmit && styles.loginButtonDisabled, pressed && styles.buttonPressed]}
+        >
+          <Text style={styles.loginButtonText}>{submitting ? "로그인하는 중…" : "로그인"}</Text>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+    </View>
+  );
+}
+
+type SaveStatus = "idle" | "saving" | "saved" | "failed";
+
+// 통화 상태를 서버에 보낼 결과 형식으로 바꾼다. 판정 전에 끝난 표현은 skipped.
+function buildReportPayload(
+  plan: CallPlan,
+  session: ReturnType<typeof useCallSession>,
+  endedAt: string,
+): CallReportPayload {
+  return {
+    reportId: session.callId,
+    startedAt: session.callStartedAt ?? endedAt,
+    endedAt,
+    finishReason: session.finishReason,
+    targets: plan.targets.map((target, index) => {
+      const outcome = session.reviewOutcomes[index] ?? "skipped";
+      const learnerAnswer = outcome === "retry" ? session.firstAnswers[index] : undefined;
+      return {
+        targetId: target.id,
+        sourceLabel: target.sourceLabel,
+        promptKo: target.promptKo,
+        answerEn: target.answerEn,
+        outcome,
+        ...(learnerAnswer ? { learnerAnswer } : {}),
+      };
+    }),
+    conversation: session.conversationTurns,
+  };
+}
+
+function CallReviewApp({
+  data,
+  onLogout,
+  onSaveReport,
+  onRefresh,
+}: {
+  data: CallReviewSnapshot;
+  onLogout?: () => void;
+  onSaveReport?: (report: CallReportPayload) => Promise<void>;
+  onRefresh?: () => void;
+}) {
   const session = useCallSession(data.plan);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const pendingReport = useRef<CallReportPayload | null>(null);
+
+  const sendReport = useCallback(async () => {
+    const report = pendingReport.current;
+    if (!report || !onSaveReport) return;
+    setSaveStatus("saving");
+    try {
+      await onSaveReport(report);
+      setSaveStatus("saved");
+    } catch {
+      setSaveStatus("failed");
+    }
+  }, [onSaveReport]);
+
+  // 통화가 끝나는 순간 한 번 저장한다. 같은 reportId로 재시도해도 서버가 중복 저장하지 않는다.
+  useEffect(() => {
+    if (session.phase !== "complete" || !onSaveReport || pendingReport.current) return;
+    pendingReport.current = buildReportPayload(data.plan, session, new Date().toISOString());
+    void sendReport();
+  }, [data.plan, onSaveReport, sendReport, session]);
+
+  const finishCall = () => {
+    const saved = saveStatus === "saved";
+    pendingReport.current = null;
+    setSaveStatus("idle");
+    session.resetCall();
+    // 저장된 통화가 마이페이지 기록에 보이도록 다시 불러온다.
+    if (saved) onRefresh?.();
+  };
   const systemScheme = useColorScheme();
   const [themePreference, setThemePreference] = useState<"light" | "dark" | "system">("light");
   const darkMode = themePreference === "dark" || (themePreference === "system" && systemScheme === "dark");
@@ -117,6 +379,7 @@ function CallReviewApp({ data }: { data: CallReviewSnapshot }) {
               themePreference={themePreference}
               onSetTheme={setThemePreference}
               onBack={session.closeMyPage}
+              onLogout={onLogout}
             />
           )
         )}
@@ -203,7 +466,9 @@ function CallReviewApp({ data }: { data: CallReviewSnapshot }) {
             reviewedCount={session.reviewedCount}
             targets={data.plan.targets}
             conversationReplies={session.conversationReplies}
-            onDone={session.resetCall}
+            saveStatus={onSaveReport ? saveStatus : null}
+            onRetrySave={() => void sendReport()}
+            onDone={finishCall}
           />
         )}
       </SafeAreaView>
@@ -302,10 +567,10 @@ function HomeScreen({
           <View style={[styles.homeStatCard, darkMode && darkAppStyles.card]}><Text style={[styles.homeStatLabel,darkMode && darkAppStyles.mutedText]}>단어</Text><Text style={[styles.homeStatNumber,darkMode && darkAppStyles.strongText]}>{wordCount}<Text style={[styles.homeStatUnit,darkMode && darkAppStyles.strongText]}>개</Text></Text></View>
           <View style={[styles.homeStatCard, darkMode && darkAppStyles.card]}><Text style={[styles.homeStatLabel,darkMode && darkAppStyles.mutedText]}>문장</Text><Text style={[styles.homeStatNumber,darkMode && darkAppStyles.strongText]}>{Math.max(0, reviewCount - wordCount)}<Text style={[styles.homeStatUnit,darkMode && darkAppStyles.strongText]}>개</Text></Text></View>
         </View>
-        <Text style={[styles.homeReviewDescription,darkMode && darkAppStyles.mutedText]}>표현 {reviewCount}개를 복습하고, 베플리의 영어 질문에 짧게 대답하면 끝나요.</Text>
+        <Text style={[styles.homeReviewDescription,darkMode && darkAppStyles.mutedText]}>{reviewCount > 0 ? `표현 ${reviewCount}개를 복습하고, 베플리의 영어 질문에 짧게 대답하면 끝나요.` : "최근 학습에서 다시 볼 단어·문장이 없어요. 새로 학습하면 여기에 모여요."}</Text>
       </View>
     </ScrollView>
-    <View style={[styles.homeBottom, darkMode && darkAppStyles.surface]}><Pressable accessibilityRole="button" onPress={onStart} style={({pressed}) => [styles.homeAnswerButton,pressed && styles.buttonPressed]}><Icon name="phone" size={22} color={color.surface} strokeWidth={2.2} /><Text style={styles.homeAnswerButtonText}>지금 전화받기</Text></Pressable></View>
+    <View style={[styles.homeBottom, darkMode && darkAppStyles.surface]}><Pressable accessibilityRole="button" accessibilityState={{ disabled: reviewCount === 0 }} disabled={reviewCount === 0} onPress={onStart} style={({pressed}) => [styles.homeAnswerButton,reviewCount === 0 && styles.homeAnswerButtonDisabled,pressed && styles.buttonPressed]}><Icon name="phone" size={22} color={color.surface} strokeWidth={2.2} /><Text style={styles.homeAnswerButtonText}>{reviewCount > 0 ? "지금 전화받기" : "오늘은 복습할 표현이 없어요"}</Text></Pressable></View>
     </View>
   );
 }
@@ -326,6 +591,7 @@ function MyPageScreen({
   themePreference,
   onSetTheme,
   onBack,
+  onLogout,
 }: {
   darkMode: boolean;
   onToggleAppearance: () => void;
@@ -334,6 +600,7 @@ function MyPageScreen({
   themePreference: "light" | "dark" | "system";
   onSetTheme: (preference: "light" | "dark" | "system") => void;
   onBack: () => void;
+  onLogout?: () => void;
 }) {
   return (
     <ScrollView
@@ -381,10 +648,19 @@ function MyPageScreen({
           <View key={entry.id} style={[styles.myHistoryRow, darkMode && darkAppStyles.bottomBorder]}>
             <View style={styles.myHistoryDate}><Text style={[styles.myHistoryDay,darkMode && darkAppStyles.strongText]}>{entry.completedAtLabel.match(/(\d+)일/)?.[1] ?? "—"}</Text><Text style={[styles.myHistoryMonth,darkMode && darkAppStyles.mutedText]}>{entry.completedAtLabel.match(/(\d+)월/)?.[1] ?? ""}월</Text></View>
             <View style={styles.myHistoryCopy}><Text style={[styles.myHistorySummary,darkMode && darkAppStyles.strongText]}>{entry.focusLabel}</Text><Text style={[styles.myHistoryDetail,darkMode && darkAppStyles.mutedText]}>{entry.expressions.join(" · ")}</Text></View>
-            <View style={styles.myHistoryTag}><Text style={styles.myHistoryTagText}>{entry.resultLabel}</Text></View>
+            <View style={[styles.myHistoryTag, entry.resultLabel === "직접 종료" && { backgroundColor: color.primarySoft }, entry.resultLabel === "응답 없음" && { backgroundColor: color.surfaceMuted }]}><Text style={[styles.myHistoryTagText, entry.resultLabel === "직접 종료" && { color: color.primaryStrong }, entry.resultLabel === "응답 없음" && { color: color.muted }]}>{entry.resultLabel}</Text></View>
           </View>
         ))}
       </View>
+      {onLogout ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onLogout}
+          style={({ pressed }) => [styles.logoutButton, darkMode && darkAppStyles.card, pressed && styles.buttonPressed]}
+        >
+          <Text style={[styles.logoutButtonText, darkMode && darkAppStyles.mutedText]}>로그아웃</Text>
+        </Pressable>
+      ) : null}
     </ScrollView>
   );
 }
@@ -1116,6 +1392,8 @@ function ReportScreen({
   reviewedCount,
   targets,
   conversationReplies,
+  saveStatus,
+  onRetrySave,
   onDone,
 }: {
   darkMode: boolean;
@@ -1125,6 +1403,8 @@ function ReportScreen({
   reviewedCount: number;
   targets: CallPlan["targets"];
   conversationReplies: string[];
+  saveStatus: SaveStatus | null;
+  onRetrySave: () => void;
   onDone: () => void;
 }) {
   const reportCopy =
@@ -1158,6 +1438,18 @@ function ReportScreen({
       <ScrollView contentContainerStyle={styles.reportContent} showsVerticalScrollIndicator={false}>
         <View style={styles.resultChipRow}><View style={[styles.resultChip, finishReason === "stopped" && styles.resultChipStopped, finishReason === "no-response" && styles.resultChipIdle]}><Text style={[styles.resultChipText, finishReason === "stopped" && styles.resultChipTextStopped, finishReason === "no-response" && styles.resultChipTextIdle]}>{reportCopy.kicker}</Text></View><AppearanceToggle darkMode={darkMode} onPress={onToggleAppearance} compact /></View>
         <Text style={[styles.reportTitle, darkMode && darkAppStyles.strongText]}>{reportCopy.title}</Text>
+        {saveStatus && saveStatus !== "idle" ? (
+          <View style={[styles.saveStatus, darkMode && darkAppStyles.card]} accessibilityLiveRegion="polite">
+            <Text style={[styles.saveStatusText, darkMode && darkAppStyles.mutedText, saveStatus === "failed" && styles.saveStatusFailed]}>
+              {saveStatus === "saving" ? "통화 기록을 저장하고 있어요…" : saveStatus === "saved" ? "선생님이 볼 수 있게 통화 기록을 저장했어요." : "통화 기록을 저장하지 못했어요."}
+            </Text>
+            {saveStatus === "failed" ? (
+              <Pressable accessibilityRole="button" onPress={onRetrySave} style={({ pressed }) => [styles.saveRetry, pressed && styles.buttonPressed]}>
+                <Text style={styles.saveRetryText}>다시 시도</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
         <View style={styles.reportCoachRow}><Image source={befly.result[finishReason]} style={styles.reportAvatar} accessibilityLabel="베플리 선생님" /><View style={[styles.reportSpeechBubble,darkMode && darkAppStyles.card]}><Text style={[styles.reportSpeechText,darkMode && darkAppStyles.strongText]}>{coachComment}</Text></View></View>
         <View style={styles.reportStatRow}>
           <View style={[styles.reportStatCard,darkMode && darkAppStyles.card]}><Text style={[styles.reportStatLabel,darkMode && darkAppStyles.mutedText]}>복습한 표현</Text><Text style={[styles.reportStatNumber,darkMode && darkAppStyles.strongText]}>{reviewedCount}<Text style={[styles.reportStatSuffix,darkMode && darkAppStyles.strongText]}> / {targets.length}</Text></Text></View>
@@ -1253,6 +1545,28 @@ const styles = StyleSheet.create({
   homeScreen: { flex: 1 },
   homeBottom: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 30, backgroundColor: color.paper },
   homeAnswerButton: { height: 60, borderRadius: 30, backgroundColor: "#1E8A5A", flexDirection: "row", gap: 10, alignItems: "center", justifyContent: "center" },
+  saveStatus: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 16, backgroundColor: color.surface, paddingHorizontal: 14, paddingVertical: 10 },
+  saveStatusText: { flex: 1, color: color.muted, fontSize: 14, lineHeight: 20 },
+  saveStatusFailed: { color: color.danger },
+  saveRetry: { minHeight: 44, borderRadius: 22, backgroundColor: color.primary, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
+  saveRetryText: { color: color.surface, fontSize: 14, fontWeight: "700" },
+  homeAnswerButtonDisabled: { backgroundColor: "#8A8F9C" },
+  logoutButton: { minHeight: 52, borderRadius: 26, backgroundColor: color.surface, alignItems: "center", justifyContent: "center" },
+  logoutButtonText: { color: color.muted, fontSize: 15, fontWeight: "600" },
+  loginScreen: { flex: 1, paddingHorizontal: 24, paddingTop: 48, paddingBottom: 32, gap: 24 },
+  loginIntro: { gap: 10 },
+  loginAvatar: { width: 72, height: 72, borderRadius: radius.pill, backgroundColor: color.beflySoft, marginBottom: 6 },
+  loginTitle: { color: color.ink, fontSize: 26, lineHeight: 35, fontWeight: "700", letterSpacing: -0.5 },
+  loginBody: { color: color.muted, fontSize: 15, lineHeight: 23 },
+  loginNotice: { color: color.warningInk, backgroundColor: color.callHintLight, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, lineHeight: 21 },
+  loginForm: { gap: 16 },
+  loginField: { gap: 6 },
+  loginLabel: { color: color.ink, fontSize: 14, fontWeight: "600" },
+  loginInput: { minHeight: 52, borderRadius: radius.md, borderWidth: 1, borderColor: color.line, backgroundColor: color.surface, paddingHorizontal: 16, color: color.ink, fontSize: 16, fontFamily: font.body },
+  loginError: { color: color.danger, fontSize: 14, lineHeight: 21 },
+  loginButton: { height: 56, borderRadius: 28, backgroundColor: color.primary, alignItems: "center", justifyContent: "center", marginTop: "auto" },
+  loginButtonDisabled: { backgroundColor: "#A7AAB3" },
+  loginButtonText: { color: color.surface, fontSize: 17, fontWeight: "700" },
   homeAnswerButtonText: { color: color.surface, fontSize: 17, fontWeight: "700" },
   homeCardMuted: { color: "#C9CCD4", fontSize: 14, lineHeight: 22 },
   homeReadyStrip: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 14, backgroundColor: "#30343E", paddingHorizontal: 12, paddingVertical: 10 },

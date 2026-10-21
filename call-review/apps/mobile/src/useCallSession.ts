@@ -7,7 +7,14 @@ export type FinishReason = "completed" | "stopped" | "no-response";
 export type ReviewFeedback = { kind: "correct" | "retry"; answer: string };
 export type ReviewOutcome = ReviewFeedback["kind"];
 
+export type ConversationTurnRecord = { questionEn: string; answer: string };
+
 type HomeSection = "home" | "my-page";
+
+// 통화마다 새로 만드는 결과 저장용 멱등 키(재전송 시 중복 저장 방지).
+function newCallId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 const INTRO_LINE =
   "안녕! 오늘은 지난 학습에서 헷갈렸던 표현 세 개만 같이 확인해보자.";
@@ -26,7 +33,7 @@ export function useCallSession(plan: CallPlan) {
   const [typedText, setTypedText] = useState("");
   const [hintOpen, setHintOpen] = useState(false);
   const [freeTalkTurnIndex, setFreeTalkTurnIndex] = useState(0);
-  const [conversationReplies, setConversationReplies] = useState<string[]>([]);
+  const [conversationTurns, setConversationTurns] = useState<ConversationTurnRecord[]>([]);
   const [choiceAssistOpen, setChoiceAssistOpen] = useState(false);
   const [finishReason, setFinishReason] =
     useState<FinishReason>("completed");
@@ -34,6 +41,9 @@ export function useCallSession(plan: CallPlan) {
   const [reviewFeedback, setReviewFeedback] = useState<ReviewFeedback | null>(null);
   // First attempt wins: an item missed once stays on the "다시 보기" list.
   const [reviewOutcomes, setReviewOutcomes] = useState<Record<number, ReviewOutcome>>({});
+  const [firstAnswers, setFirstAnswers] = useState<Record<number, string>>({});
+  const [callId, setCallId] = useState(newCallId);
+  const [callStartedAt, setCallStartedAt] = useState<string | null>(null);
   const [idleSecondsLeft, setIdleSecondsLeft] = useState(plan.freeTalk.idleStopSeconds);
   const connectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -88,17 +98,21 @@ export function useCallSession(plan: CallPlan) {
     setTypedText("");
     setHintOpen(false);
     setFreeTalkTurnIndex(0);
-    setConversationReplies([]);
+    setConversationTurns([]);
     setChoiceAssistOpen(false);
     setFinishReason("completed");
     setHomeSection("home");
     setCoachLine(INTRO_LINE);
     setReviewFeedback(null);
     setReviewOutcomes({});
+    setFirstAnswers({});
+    setCallId(newCallId());
+    setCallStartedAt(null);
     setIdleSecondsLeft(plan.freeTalk.idleStopSeconds);
   }
 
   function answerIncomingCall() {
+    setCallStartedAt(new Date().toISOString());
     setPhase("connecting");
     connectTimer.current = setTimeout(() => setPhase("review"), CONNECT_PREVIEW_MS);
   }
@@ -143,7 +157,7 @@ export function useCallSession(plan: CallPlan) {
     setVoiceState("idle");
 
     if (phase === "free-talk") {
-      setConversationReplies((current) => [...current, value]);
+      setConversationTurns((current) => [...current, { questionEn: freeTalkTurn.questionEn, answer: value }]);
 
       if (
         freeTalkTurnIndex + 1 >= plan.freeTalk.maxTurns ||
@@ -173,6 +187,7 @@ export function useCallSession(plan: CallPlan) {
     setReviewOutcomes((current) =>
       current[targetIndex] ? current : { ...current, [targetIndex]: correct ? "correct" : "retry" },
     );
+    setFirstAnswers((current) => (targetIndex in current ? current : { ...current, [targetIndex]: value }));
     setCoachLine(correct ? "좋아요! 아주 자연스러워요." : "괜찮아요. 같이 다시 볼까요?");
   }
 
@@ -198,7 +213,11 @@ export function useCallSession(plan: CallPlan) {
     heardText,
     typedText,
     hintOpen,
-    conversationReplies,
+    conversationReplies: conversationTurns.map((turn) => turn.answer),
+    conversationTurns,
+    callId,
+    callStartedAt,
+    firstAnswers,
     choiceAssistOpen,
     finishReason,
     coachLine,

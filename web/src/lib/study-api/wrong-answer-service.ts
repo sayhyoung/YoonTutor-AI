@@ -11,6 +11,8 @@ export type WrongAnswerQuery = {
   from?: string | null;
   to?: string | null;
   sources?: "all" | "word-sentence";
+  // 기본은 쿠키 토큰 호출. 모바일 Bearer 토큰 요청은 자체 fetcher를 넘긴다.
+  fetcher?: <T>(path: string) => Promise<T>;
 };
 
 export type WrongAnswerResult = {
@@ -91,6 +93,7 @@ export async function loadWrongAnswerItems({
   from,
   to,
   sources = "all",
+  fetcher = authedStudyFetch,
 }: WrongAnswerQuery): Promise<WrongAnswerResult> {
   const { studyStartDate, studyEndDate } = resolveDateRange(from, to);
   const query = `studyStartDate=${encodeURIComponent(
@@ -109,7 +112,7 @@ export async function loadWrongAnswerItems({
   // refresh token rotation 경합을 피하기 위해 두 조회는 순차 실행한다.
   for (const path of endpoints) {
     try {
-      const data = await authedStudyFetch<StudyQueryData>(path);
+      const data = await fetcher<StudyQueryData>(path);
       if (data) {
         const mapped = mapStudyResultsToLearningItems(data, customerNo);
         items.push(

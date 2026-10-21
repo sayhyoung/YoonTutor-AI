@@ -86,5 +86,10 @@ service cloud.firestore {
       allow read: if signedIn() && (resource.data.uid == request.auth.uid || isTeacher());
       allow write: if isTeacher();
     }
+
+    // 전화관리 통화 결과: BFF(firebase-admin)만 읽고 쓴다. 클라이언트 직접 접근은 막는다.
+    match /callReports/{reportId} {
+      allow read, write: if false;
+    }
   }
 }
