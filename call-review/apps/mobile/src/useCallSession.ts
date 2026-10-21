@@ -122,6 +122,8 @@ export function useCallSession(plan: CallPlan) {
           : target?.answerEn ?? "";
       setHeardText(previewText);
       setVoiceState("review");
+      // The choices panel would cover the "이렇게 들었어" card.
+      setChoiceAssistOpen(false);
       return;
     }
     submitAnswer(heardText);
