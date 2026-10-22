@@ -5,12 +5,12 @@
   "scripts": {
     "dev": "next dev -p 3100",
     "build": "next build",
-    "start": "next start -p 3100",
+    "start": "next start -p ${PORT:-3100}",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },
   "dependencies": {
-    "@yoon-call/shared": "*",
+    "@yoon-call/shared": "file:../../packages/shared",
     "next": "latest",
     "react": "19.2.3",
     "react-dom": "19.2.3"

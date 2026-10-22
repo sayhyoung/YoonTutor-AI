@@ -67,9 +67,18 @@ gcloud scheduler jobs create http call-review-dispatch \
 
 ## 6. 교사 화면(`call-review/apps/teacher-web`)
 
-- 교사용 LMS에 들어갈 별도 웹이다. `/api/*`를 BFF로 넘기므로(`CALL_REVIEW_BFF_URL`) 같은 출처에서 httpOnly 쿠키로 로그인한다.
-- 배포 후보: 두 번째 App Hosting 백엔드. 이 앱은 npm workspace(`@yoon-call/shared`)를 쓰므로 루트 디렉터리를 `call-review`로 두고 teacher-web만 빌드·실행하도록 구성해야 한다(현재 `call-review/package.json`의 `build:teacher`). App Hosting의 workspace 지원 방식은 배포 시 확인이 필요하다.
-- 환경변수: `CALL_REVIEW_BFF_URL=https://yoon-tutor-web--eduai-tutor-62825.asia-east1.hosted.app`
+교사용 LMS에 들어갈 별도 웹이다. `/api/*`를 BFF로 넘기므로(`CALL_REVIEW_BFF_URL`, 빌드 때 정해짐) 같은 출처에서 httpOnly 쿠키로 로그인한다.
+
+- 공유 패키지는 `file:../../packages/shared`로 참조하고 `next.config.ts`의 빌드 루트를 `call-review`로 둔다. 그래서 App Hosting 루트 폴더를 `call-review/apps/teacher-web`로 잡아도 빌드된다(저장소 전체를 받아 오므로 상위 폴더도 읽힌다).
+- 설정은 `apps/teacher-web/apphosting.yaml`(최소 인스턴스 0, BFF 주소).
+- 백엔드 만들기(GitHub 연결이 필요해서 대화형으로 실행):
+
+```bash
+cd web
+./node_modules/.bin/firebase apphosting:backends:create --project eduai-tutor-62825
+```
+
+  - 백엔드 이름 `call-review-teacher`, 리전 `asia-east1`, 저장소 `sayhyoung/YoonTutor-AI`, 루트 폴더 `call-review/apps/teacher-web`, 배포 브랜치 `main`, 자동 배포 사용.
 - LMS 연결: 처음에는 LMS 메뉴에서 교사 화면 URL로 이동(교사가 한 번 더 로그인). LMS 계정으로 바로 들어오는 SSO는 담당 부서와 별도 협의.
 
 ## 7. 운영 전 확인

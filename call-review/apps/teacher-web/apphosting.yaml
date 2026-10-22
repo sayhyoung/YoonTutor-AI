@@ -1,0 +1,15 @@
+# 교사 화면(App Hosting 백엔드 call-review-teacher). /api/*는 전화관리 BFF로 넘긴다(next.config.ts rewrites).
+runConfig:
+  minInstances: 0
+  maxInstances: 4
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  # rewrites는 빌드 때 정해지므로 BUILD에도 필요하다.
+  - variable: CALL_REVIEW_BFF_URL
+    value: https://yoon-tutor-web--eduai-tutor-62825.asia-east1.hosted.app
+    availability:
+      - BUILD
+      - RUNTIME
