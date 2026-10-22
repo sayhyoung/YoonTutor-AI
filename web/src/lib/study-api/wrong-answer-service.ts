@@ -139,14 +139,19 @@ export async function loadWrongAnswerItems({
 
   if (items.length === 0 && lastError) throw lastError;
 
-  // 여러 학습 API에서 같은 오답(영역+정답)이 오면 처음 것만 남긴다.
-  const seen = new Set<string>();
-  const unique = items.filter((item) => {
+  // 여러 학습 API에서 같은 오답(영역+정답)이 오면 가장 최근에 학습한 것을 남긴다.
+  const byKey = new Map<string, number>();
+  const unique: LearningItem[] = [];
+  for (const item of items) {
     const key = `${item.sourceType}::${item.answerEn.toLowerCase().replace(/[.?!,]/g, "").replace(/\s+/g, " ").trim()}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    const index = byKey.get(key);
+    if (index === undefined) {
+      byKey.set(key, unique.length);
+      unique.push(item);
+    } else if (item.wrongAt > unique[index]!.wrongAt) {
+      unique[index] = item;
+    }
+  }
 
   await fillKoreanMeanings(unique);
   const order: Record<string, number> = { word: 0, sentence: 1, assessment: 2 };

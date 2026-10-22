@@ -105,15 +105,20 @@ export function mapStudyResultsToLearningItems(
     // 오답 판정 근거가 없어 현재 매핑에서 제외. 스키마 확정 시 보강.
   }
 
-  // 정답 텍스트가 비어있는 항목 제외 + 같은 오답(영역+정답) 중복 제거(첫 항목 유지).
-  const seen = new Set<string>();
+  // 정답 텍스트가 비어있는 항목 제외 + 같은 오답(영역+정답) 중복 제거.
+  // 여러 차시에서 틀렸다면 가장 최근에 학습한 차시를 남긴다(전화관리 출제가 최근 학습 시각을 본다).
+  const byKey = new Map<string, number>();
   const deduped: LearningItem[] = [];
   for (const item of items) {
     if (item.answerEn.trim().length === 0) continue;
     const k = normKey(item.sourceType, item.answerEn);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    deduped.push(item);
+    const index = byKey.get(k);
+    if (index === undefined) {
+      byKey.set(k, deduped.length);
+      deduped.push(item);
+    } else if (item.wrongAt > deduped[index]!.wrongAt) {
+      deduped[index] = item;
+    }
   }
   return deduped;
 }

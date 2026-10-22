@@ -84,4 +84,18 @@ describe("loadWrongAnswerItems", () => {
 
     expect(result.items.length).toBeGreaterThan(0);
   });
+
+  it("keeps the most recent lesson when the same expression was wrong in several lessons", async () => {
+    fetchStudy.mockReset();
+    fetchStudy.mockResolvedValue({
+      customerNo: "<CUSTOMER_NO>",
+      studyResults: [
+        { studyDateTime: "2026-06-29T13:18:00", lessonName: "01A", sentenceResults: [{ isCorrect: false, correctAnswer: "He is from China." }] },
+        { studyDateTime: "2026-07-02T09:00:00", lessonName: "02A", sentenceResults: [{ isCorrect: false, correctAnswer: "He is from China" }] },
+      ],
+    });
+    const result = await loadWrongAnswerItems({ customerNo: "<CUSTOMER_NO>", sources: "word-sentence", bms: ["HOME"] });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]!.wrongAt).toBe("2026-07-02T09:00:00");
+  });
 });

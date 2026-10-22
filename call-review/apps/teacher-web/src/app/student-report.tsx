@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { kstToIso, selectCallItems } from "@yoon-call/shared";
+
 import { analyzeReports, coachSummary } from "./analytics";
 import { DailyBarsLegend, OUTCOME_SEGMENTS } from "./report-parts";
 import { Donut, Kpi, StackedBars, TrendLine } from "./charts";
@@ -15,7 +17,7 @@ export const FINISH_LABELS: Record<FinishReason, string> = {
 };
 
 const OUTCOME_LABELS: Record<CallOutcome, string> = {
-  correct: "복습함",
+  correct: "완료함",
   retry: "복습 필요",
   skipped: "못 했어요",
 };
@@ -64,6 +66,38 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
     () => [...(data?.reports ?? [])].sort((a, b) => b.endedAt.localeCompare(a.endedAt)),
     [data],
   );
+  // 다음 통화 예정 표현: 학생 앱과 같은 출제 규칙(새 차시 오답 → 복습 필요 → 돌아가며 다시 보기, 최대 10개).
+  const planned = useMemo(() => {
+    if (!data?.upcoming) return null;
+    const candidates = data.upcoming.items.flatMap((item) =>
+      item.sourceType === "word" || item.sourceType === "sentence"
+        ? [
+            {
+              id: item.id,
+              studentId: student.customerNo,
+              sourceType: item.sourceType,
+              sourceLabel: item.sourceType === "word" ? "단어 복습" : "문장 복습",
+              promptKo: item.meaningKo ?? item.unitName,
+              answerEn: item.answerEn,
+              lessonLabel: item.unitName,
+              ...(kstToIso(item.wrongAt) ? { studiedAt: kstToIso(item.wrongAt) } : {}),
+            },
+          ]
+        : [],
+    );
+    const practiced = (data.reports ?? []).flatMap((report) =>
+      report.targets.map((target) => ({ answerEn: target.answerEn, outcome: target.outcome, practicedAt: report.endedAt })),
+    );
+    return selectCallItems(candidates, practiced);
+  }, [data, student.customerNo]);
+  const plannedNote =
+    planned?.mode === "new"
+      ? "새로 학습한 차시의 오답"
+      : planned?.mode === "review"
+        ? "새 학습이 없어 복습이 필요한 표현"
+        : planned?.mode === "rotation"
+          ? "모두 맞혀서 돌아가며 다시 보는 표현"
+          : "";
   const meta = [
     student.schoolYear ? `${student.schoolYear}학년` : null,
     ...student.bmNames.map((bm) => BM_LABELS[bm] ?? bm),
@@ -195,24 +229,24 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
               <div className="report-panel-head">
                 <h2>다음 통화 예정 표현</h2>
                 <p>
-                  {data.upcoming
-                    ? `최근 학습 오답 ${data.upcoming.total}개 · ${data.upcoming.studyStartDate} ~ ${data.upcoming.studyEndDate}`
+                  {planned
+                    ? `${plannedNote} ${planned.items.length}개 · 학습 오답 ${data.upcoming?.total ?? 0}개 중`
                     : "학습 데이터를 불러오지 못했어요"}
                 </p>
               </div>
-              {data.upcoming && data.upcoming.items.length > 0 ? (
+              {planned && planned.items.length > 0 ? (
                 <ul className="upcoming-list">
-                  {data.upcoming.items.map((item) => (
+                  {planned.items.map((item) => (
                     <li key={item.id}>
                       <span className={`source-chip ${item.sourceType}`}>{item.sourceType === "word" ? "단어" : "문장"}</span>
                       <div>
                         <span className="missed-en" lang="en">{item.answerEn}</span>
-                        <span className="missed-ko">{item.meaningKo ?? item.unitName}</span>
+                        <span className="missed-ko">{item.promptKo}</span>
                       </div>
                     </li>
                   ))}
                 </ul>
-              ) : data.upcoming ? (
+              ) : planned ? (
                 <p className="chart-empty">조회 기간에 틀린 단어·문장이 없어요.</p>
               ) : null}
             </section>

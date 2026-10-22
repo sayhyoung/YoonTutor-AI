@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Koko } from "@/components/koko";
 import { demoSessions, demoStudent } from "@/lib/mock-data";
-import { type CallReviewPractice, getCallReviewPractice } from "@/lib/learning/external-api-provider";
+import { type CallReviewPractice, type CallReviewSession, getCallReviewPractice } from "@/lib/learning/external-api-provider";
 import { getLearningSource, getWrongAnswerItems } from "@/lib/learning/provider";
 import { calculateSessionScore, scoreStatus } from "@/lib/quiz-engine";
 import { buildVisibleSessions } from "@/lib/session-utils";
@@ -1343,9 +1343,11 @@ type TeacherCustomerRow = { customerNo: string; customerName: string; schoolYear
 function TeacherMembers({
   selected,
   onSelect,
+  onPractice,
 }: {
   selected: string | null;
   onSelect: (no: string, name: string) => void;
+  onPractice: (practice: CallReviewPractice | null) => void;
 }) {
   const [customers, setCustomers] = useState<TeacherCustomerRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1377,8 +1379,12 @@ function TeacherMembers({
     onSelect(no, name);
     setMemberLoading(true);
     setPractice(null);
+    onPractice(null);
     getCallReviewPractice(no)
-      .then((result) => setPractice(result))
+      .then((result) => {
+        setPractice(result);
+        onPractice(result);
+      })
       .catch(() => setPractice(null))
       .finally(() => setMemberLoading(false));
   }
@@ -1461,7 +1467,7 @@ function TeacherMembers({
                       </p>
                     </div>
                     <span className={`result-status ${it.outcome === "correct" ? "perfect" : "not"}`}>
-                      {it.outcome === "correct" ? "정답" : it.outcome === "retry" ? "오답" : "못 했어요"}
+                      {it.outcome === "correct" ? "완료함" : it.outcome === "retry" ? "오답" : "못 했어요"}
                     </span>
                   </div>
                 ))}
@@ -1478,6 +1484,10 @@ function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
   const isExternal = getLearningSource() === "external-api";
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedName, setSelectedName] = useState<string>("");
+  // 실교사(external): 선택한 회원의 전화관리 통화 결과. 재복습 필요 문항을 여기서 뽑는다.
+  const [practice, setPractice] = useState<CallReviewPractice | null>(null);
+  const callReview = (practice?.items ?? []).filter((item) => item.outcome !== "correct");
+  const callSessions = practice?.sessions ?? [];
 
   const average =
     sessions.length > 0
@@ -1502,6 +1512,7 @@ function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
             setSelected(no);
             setSelectedName(name);
           }}
+          onPractice={setPractice}
         />
       ) : null}
 
@@ -1551,74 +1562,159 @@ function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
         </div>
       ) : (
         <>
-          <div className="panel">
-            <div className="panel-header">
-              <div>
-                <h3 className="panel-title">{label}세션 점수</h3>
-                <p className="panel-note">세션별 점수</p>
+          {isExternal ? (
+            <>
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h3 className="panel-title">{label}통화별 정답률</h3>
+                    <p className="panel-note">전화관리 통화에서 한 번에 맞힌 표현 비율(넘긴 표현은 틀린 것으로 셈)</p>
+                  </div>
+                </div>
+                <div className="section-body">
+                  <CallScoreBars sessions={callSessions} />
+                </div>
               </div>
-            </div>
-            <div className="section-body">
-              <SessionScoreBars sessions={scope} />
-            </div>
-          </div>
 
-          <div className="panel">
-            <div className="panel-header">
-              <div>
-                <h3 className="panel-title">{label}최근 학습 세션</h3>
-                <p className="panel-note">완료한 복습 세션</p>
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h3 className="panel-title">{label}최근 관리 통화</h3>
+                    <p className="panel-note">전화관리 앱에서 진행한 통화</p>
+                  </div>
+                </div>
+                <div className="section-body">
+                  {callSessions.length === 0 ? (
+                    <div className="empty-state">아직 전화관리 통화가 없습니다.</div>
+                  ) : (
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>통화일</th>
+                          <th>완료</th>
+                          <th>정답률</th>
+                          <th>종료</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {callSessions.map((session) => (
+                          <tr key={session.reportId}>
+                            <td>{formatDate(session.endedAt)}</td>
+                            <td>{session.correct}/{session.total}</td>
+                            <td>{session.score}%</td>
+                            <td>{CALL_FINISH_LABELS[session.finishReason]}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h3 className="panel-title">{label}통화별 학습 상세</h3>
+                    <p className="panel-note">각 통화에서 낸 단어·문장과 결과</p>
+                  </div>
+                </div>
+                <div className="section-body">
+                  <CallDetails sessions={callSessions} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h3 className="panel-title">{label}세션 점수</h3>
+                  <p className="panel-note">세션별 점수</p>
+                </div>
+              </div>
+              <div className="section-body">
+                <SessionScoreBars sessions={scope} />
               </div>
             </div>
-            <div className="section-body">
-              {scope.length === 0 ? (
-                <div className="empty-state">완료된 세션이 없습니다.</div>
-              ) : (
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>학생</th>
-                      <th>완료</th>
-                      <th>점수</th>
-                      <th>학습일</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scope.map((session) => (
-                      <tr key={session.id}>
-                        <td>{session.studentName}</td>
-                        <td>{session.completedItems}/{session.totalItems}</td>
-                        <td>{session.score}점</td>
-                        <td>{formatDate(session.completedAt ?? session.createdAt)}</td>
+
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h3 className="panel-title">{label}최근 학습 세션</h3>
+                  <p className="panel-note">완료한 복습 세션</p>
+                </div>
+              </div>
+              <div className="section-body">
+                {scope.length === 0 ? (
+                  <div className="empty-state">완료된 세션이 없습니다.</div>
+                ) : (
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>학생</th>
+                        <th>완료</th>
+                        <th>점수</th>
+                        <th>학습일</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-
-          <div className="panel">
-            <div className="panel-header">
-              <div>
-                <h3 className="panel-title">{label}세션별 학습 상세</h3>
-                <p className="panel-note">각 세션에서 학습한 단어·문장 전체 내역</p>
+                    </thead>
+                    <tbody>
+                      {scope.map((session) => (
+                        <tr key={session.id}>
+                          <td>{session.studentName}</td>
+                          <td>{session.completedItems}/{session.totalItems}</td>
+                          <td>{session.score}점</td>
+                          <td>{formatDate(session.completedAt ?? session.createdAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
-            <div className="section-body">
-              <SessionDetails sessions={scope} />
+
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h3 className="panel-title">{label}세션별 학습 상세</h3>
+                  <p className="panel-note">각 세션에서 학습한 단어·문장 전체 내역</p>
+                </div>
+              </div>
+              <div className="section-body">
+                <SessionDetails sessions={scope} />
+              </div>
             </div>
-          </div>
+            </>
+          )}
 
           <div className="panel">
             <div className="panel-header">
               <div>
                 <h3 className="panel-title">{label}재복습 필요 문항</h3>
-                <p className="panel-note">Not mastered 결과만 모아 확인</p>
+                <p className="panel-note">
+                  {isExternal ? "전화관리 통화에서 틀리거나 넘긴 표현(가장 최근 결과 기준)" : "Not mastered 결과만 모아 확인"}
+                </p>
               </div>
             </div>
             <div className="section-body item-list">
-              {scopeReview.length === 0 ? (
+              {isExternal ? (
+                callReview.length === 0 ? (
+                  <div className="empty-state">재복습 필요 문항이 없습니다.</div>
+                ) : (
+                  callReview.map((item) => (
+                    <div className="item-row" key={item.answerEn}>
+                      <span className="item-badge">{item.sourceType === "word" ? "단어" : "문장"}</span>
+                      <div>
+                        <p className="item-title">{item.answerEn}</p>
+                        <p className="item-sub">
+                          {item.promptKo}
+                          {item.outcome === "retry" && item.learnerAnswer ? ` · 학생 답: ${item.learnerAnswer}` : ""}
+                        </p>
+                      </div>
+                      <span className="result-status not">{item.outcome === "retry" ? "오답" : "못 했어요"}</span>
+                    </div>
+                  ))
+                )
+              ) : scopeReview.length === 0 ? (
                 <div className="empty-state">재복습 필요 문항이 없습니다.</div>
               ) : (
                 scopeReview.map((item, i) => (
@@ -1637,6 +1733,88 @@ function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
         </>
       )}
     </section>
+  );
+}
+
+const CALL_FINISH_LABELS: Record<CallReviewSession["finishReason"], string> = {
+  completed: "정상 완료",
+  stopped: "직접 종료",
+  "no-response": "응답 없음",
+};
+
+const CALL_OUTCOME_LABELS = { correct: "완료함", retry: "오답", skipped: "못 했어요" } as const;
+
+// 교사용(실연동): 전화관리 통화별 정답률 막대.
+function CallScoreBars({ sessions }: { sessions: CallReviewSession[] }) {
+  if (sessions.length === 0) {
+    return <div className="empty-state">아직 전화관리 통화가 없습니다.</div>;
+  }
+  return (
+    <div className="session-bars">
+      {sessions.slice(0, 6).map((session) => (
+        <div className="session-bar-row" key={session.reportId}>
+          <div>
+            <strong>{CALL_FINISH_LABELS[session.finishReason]}</strong>
+            <span>{formatDate(session.endedAt)}</span>
+          </div>
+          <div className="session-bar-track">
+            <span style={{ width: `${session.score}%` }} />
+          </div>
+          <b>{session.score}%</b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 교사용(실연동): 통화별로 낸 단어·문장과 결과.
+function CallDetails({ sessions }: { sessions: CallReviewSession[] }) {
+  if (sessions.length === 0) {
+    return <div className="empty-state">표시할 통화가 없습니다.</div>;
+  }
+  return (
+    <div className="session-details">
+      {sessions.map((session) => (
+        <div className="session-detail-block" key={session.reportId}>
+          <div className="session-detail-head">
+            <strong>{CALL_FINISH_LABELS[session.finishReason]}</strong>
+            <span>{formatDate(session.endedAt)}</span>
+            <span>
+              정답률 {session.score}% · {session.correct}/{session.total}
+              {session.conversationTurns > 0 ? ` · 대화 ${session.conversationTurns}번` : ""}
+            </span>
+          </div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>영역</th>
+                <th>표현</th>
+                <th>결과</th>
+                <th>학생 답</th>
+              </tr>
+            </thead>
+            <tbody>
+              {session.targets.map((target, index) => (
+                <tr key={`${session.reportId}-${index}`}>
+                  <td>{target.sourceType === "word" ? "단어" : "문장"}</td>
+                  <td>
+                    {target.answerEn}
+                    <br />
+                    <span className="item-sub">{target.promptKo}</span>
+                  </td>
+                  <td>
+                    <span className={`result-status ${target.outcome === "correct" ? "perfect" : "not"}`}>
+                      {CALL_OUTCOME_LABELS[target.outcome]}
+                    </span>
+                  </td>
+                  <td>{target.outcome === "retry" ? target.learnerAnswer ?? "-" : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
   );
 }
 

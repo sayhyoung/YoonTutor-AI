@@ -41,7 +41,8 @@ export async function GET(_request: Request, context: { params: Promise<{ custom
     .then((result) => ({
       studyStartDate: result.studyStartDate,
       studyEndDate: result.studyEndDate,
-      items: result.items.slice(0, 12).map((item) => ({
+      // 교사 화면이 학생 앱과 같은 규칙으로 다음 통화 문항을 고르도록 후보를 모두 보낸다.
+      items: result.items.slice(0, 100).map((item) => ({
         id: item.id,
         sourceType: item.sourceType,
         answerEn: item.answerEn,

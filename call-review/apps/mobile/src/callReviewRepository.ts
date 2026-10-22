@@ -5,7 +5,7 @@ import type {
   LearningHistoryItem,
   TeacherScheduleSettings,
 } from "@yoon-call/shared";
-import { buildCallPlanFromLearningItems, buildTemplateFreeTalk } from "@yoon-call/shared";
+import { buildCallPlanFromLearningItems, buildTemplateFreeTalk, kstToIso } from "@yoon-call/shared";
 
 import {
   type ApiLearningItem,
@@ -111,6 +111,8 @@ export function toLearningHistoryItems(items: ApiLearningItem[]): LearningHistor
         sourceLabel: item.sourceType === "word" ? "단어 복습" : "문장 복습",
         promptKo: item.meaningKo?.trim() || item.promptKo,
         answerEn,
+        ...(item.unitName ? { lessonLabel: item.unitName } : {}),
+        ...(kstToIso(item.wrongAt) ? { studiedAt: kstToIso(item.wrongAt) } : {}),
       },
     ];
   });
@@ -151,16 +153,6 @@ export function createApiCallReviewRepository({
         const response = await fetchLearningItems(token);
         if (response.renewedToken) saveToken(response.renewedToken);
 
-        const items = toLearningHistoryItems(response.items);
-        const draft = buildCallPlanFromLearningItems({
-          id: `call-${response.studyEndDate}`,
-          studentId: items[0]?.studentId ?? "me",
-          scheduledAtLabel: "선생님이 정한 시간",
-          items,
-          freeTalk: { maxTurns: 1, idleStopSeconds: 20, turns: [] },
-        });
-        const plan: CallPlan = { ...draft, freeTalk: buildTemplateFreeTalk(draft.targets) };
-
         // 기록·일정 조회 실패가 통화 자체를 막지는 않는다.
         const current = getToken() ?? token;
         const [reports, scheduleResponse] = await Promise.all([
@@ -173,6 +165,20 @@ export function createApiCallReviewRepository({
             return { schedule: null };
           }),
         ]);
+
+        // 지난 통화에서 틀리거나 넘긴 표현을 먼저, 맞힌 표현은 뒤로 보내 문항을 고른다.
+        const items = toLearningHistoryItems(response.items);
+        const draft = buildCallPlanFromLearningItems({
+          id: `call-${response.studyEndDate}`,
+          studentId: items[0]?.studentId ?? "me",
+          scheduledAtLabel: "선생님이 정한 시간",
+          items,
+          freeTalk: { maxTurns: 1, idleStopSeconds: 20, turns: [] },
+          practiced: reports.reports.flatMap((report) =>
+            report.targets.map((target) => ({ answerEn: target.answerEn, outcome: target.outcome, practicedAt: report.endedAt })),
+          ),
+        });
+        const plan: CallPlan = { ...draft, freeTalk: buildTemplateFreeTalk(draft.targets) };
         const callSchedule = scheduleResponse.schedule;
         const schedule = callSchedule?.active ? toScheduleSettings(callSchedule) : null;
 

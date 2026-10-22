@@ -47,7 +47,7 @@ const DARK: Palette = {
   accent: color.actionDark,
 };
 
-const OUTCOME_LABEL: Record<Outcome, string> = { correct: "정확해요", retry: "복습 필요", skipped: "못 했어요" };
+const OUTCOME_LABEL: Record<Outcome, string> = { correct: "완료함", retry: "복습 필요", skipped: "못 했어요" };
 const OUTCOMES: Outcome[] = ["correct", "retry", "skipped"];
 
 export function LearningStatusSection({ history, darkMode }: { history: CallHistoryEntry[]; darkMode: boolean }) {

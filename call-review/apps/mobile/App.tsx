@@ -1613,7 +1613,7 @@ function Signal({ barColor }: { barColor: string }) {
 }
 
 const REPORT_TAGS = {
-  correct: { label: "복습함", ink: "#17673F", bg: color.successSoft, darkInk: "#7FDCAE", darkBg: "#16302A" },
+  correct: { label: "완료함", ink: "#17673F", bg: color.successSoft, darkInk: "#7FDCAE", darkBg: "#16302A" },
   retry: { label: "복습 필요", ink: color.warningInk, bg: color.beflySoft, darkInk: "#EBC9A6", darkBg: color.callPulseMiddle },
   skipped: { label: "못 했어요", ink: color.muted, bg: color.surfaceMuted, darkInk: color.mutedInverse, darkBg: color.callPulseOuter },
 } as const;
@@ -1669,7 +1669,7 @@ function ReportScreen({
       : finishReason === "stopped"
         ? "중간에 멈춰도 괜찮아요. 오늘 말해 본 표현만으로도 한 걸음 나아갔어요."
         : againTargets.length > 0
-          ? `끝까지 잘 해냈어요. ${againTargets[0]!.answerEn}는 다음 통화에서 한 번 더 같이 말해 봐요.`
+          ? `끝까지 잘 해냈어요. ${againTargets[0]!.answerEn}는 복습할 때 한 번 더 같이 말해 봐요.`
           : past
             ? "이날 표현을 모두 정확하게 말했어요."
             : "오늘 표현을 모두 정확하게 말했어요. 다음 통화도 이렇게 가볍게 해 봐요.";

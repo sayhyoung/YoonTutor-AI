@@ -108,6 +108,9 @@ export type ApiLearningItem = {
   promptKo: string;
   answerEn: string;
   meaningKo?: string;
+  // 틀린 학습 차시 이름과 학습 시각(study-api studyDateTime, 한국 시간·시간대 표기 없음).
+  unitName?: string;
+  wrongAt?: string;
 };
 
 export type LearningItemsResponse = {

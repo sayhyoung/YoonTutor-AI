@@ -36,6 +36,25 @@ export type CallReviewPractice = {
     lastPracticedAt: string;
     times: number;
   }[];
+  // 통화별 결과(최근 통화부터). 정답률 = 한 번에 맞힌 표현 ÷ 낸 표현.
+  sessions?: CallReviewSession[];
+};
+
+export type CallReviewSession = {
+  reportId: string;
+  endedAt: string;
+  finishReason: "completed" | "stopped" | "no-response";
+  score: number;
+  correct: number;
+  total: number;
+  conversationTurns: number;
+  targets: {
+    answerEn: string;
+    promptKo: string;
+    sourceType: "word" | "sentence";
+    outcome: "correct" | "retry" | "skipped";
+    learnerAnswer?: string;
+  }[];
 };
 
 export async function getCallReviewPractice(customerNo: string): Promise<CallReviewPractice> {

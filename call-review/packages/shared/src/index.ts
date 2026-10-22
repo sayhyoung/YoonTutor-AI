@@ -18,6 +18,9 @@ export type LearningHistoryItem = {
   promptKo: string;
   answerEn: string;
   hint?: string;
+  // 이 표현을 틀린 학습 차시와 그 학습 시각(ISO). 같은 표현을 여러 차시에서 틀렸다면 가장 최근 것.
+  lessonLabel?: string;
+  studiedAt?: string;
 };
 
 export type LearningTarget = {
@@ -60,6 +63,13 @@ export type CallPlan = {
   freeTalk: FreeTalkPlan;
 };
 
+// 지난 통화에서 표현별로 낸 결과. 다음 통화 문항의 우선순위를 정하는 데 쓴다.
+export type PracticeRecord = {
+  answerEn: string;
+  outcome: "correct" | "retry" | "skipped";
+  practicedAt: string;
+};
+
 export type BuildCallPlanInput = {
   id: string;
   studentId: string;
@@ -68,15 +78,79 @@ export type BuildCallPlanInput = {
   freeTalk: FreeTalkPlan;
   estimatedMinutes?: number;
   maxTargets?: number;
+  practiced?: PracticeRecord[];
 };
-
-const SOURCE_PRIORITY: LearningSourceType[] = ["word", "sentence"];
 
 function defaultHint(sourceType: LearningSourceType): string {
   if (sourceType === "word") {
     return "첫소리를 떠올리며 영어 단어로 말해봐.";
   }
   return "핵심 동사와 시제를 먼저 확인해봐.";
+}
+
+function expressionKey(answerEn: string): string {
+  return answerEn.toLowerCase().replace(/[.?!,]/g, "").replace(/\s+/g, " ").trim();
+}
+
+// study-api 학습 시각(studyDateTime)은 시간대 없는 한국 시간이다. 통화 시각(UTC ISO)과 비교할 수 있게 바꾼다.
+export function kstToIso(value?: string | null): string | undefined {
+  const text = value?.trim().replace(" ", "T");
+  if (!text) return undefined;
+  const withZone = /(Z|[+-]\d{2}:?\d{2})$/.test(text) ? text : `${text.length === 10 ? `${text}T00:00:00` : text}+09:00`;
+  const date = new Date(withZone);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+export const MAX_CALL_TARGETS = 10;
+const ROTATION_TARGETS = 3;
+
+export type CallPlanSelection = {
+  // new: 지난 복습 이후 새로 학습한 차시의 오답 / review: 복습 필요(틀림·넘김) / rotation: 모두 맞혀 돌아가며 다시 보기
+  mode: "new" | "review" | "rotation" | "empty";
+  items: LearningHistoryItem[];
+};
+
+// 출제 규칙
+// 1. 새 학습 우선: 표현을 마지막으로 통화에서 연습한 뒤(또는 한 번도 연습 안 한 상태에서) 학습 차시에서 또 틀린 표현.
+//    최근 학습한 차시부터, 차시 안에서는 학습 순서대로. 여러 차시를 학습했으면 모두 내되 최대 10문항.
+// 2. 새 학습이 없으면 복습 필요: 가장 최근 통화 결과가 틀림(먼저)·넘김인 표현. 오래전에 연습한 것부터, 최대 10문항.
+// 3. 그것도 없으면(모두 맞힘) 가장 오래전에 연습한 표현 3개를 돌아가며 다시 본다.
+export function selectCallItems(
+  items: LearningHistoryItem[],
+  practiced: PracticeRecord[] = [],
+  maxTargets = MAX_CALL_TARGETS,
+): CallPlanSelection {
+  const latest = new Map<string, PracticeRecord>();
+  for (const record of practiced) {
+    const key = expressionKey(record.answerEn);
+    const seen = latest.get(key);
+    if (!seen || seen.practicedAt < record.practicedAt) latest.set(key, record);
+  }
+  const ranked = items.map((item, order) => ({ item, order, record: latest.get(expressionKey(item.answerEn)) }));
+
+  const fresh = ranked
+    .filter(({ item, record }) => !record || (item.studiedAt ?? "") > record.practicedAt)
+    .sort((a, b) => (b.item.studiedAt ?? "").localeCompare(a.item.studiedAt ?? "") || a.order - b.order);
+  if (fresh.length > 0) return { mode: "new", items: fresh.slice(0, maxTargets).map(({ item }) => item) };
+
+  const outcomeRank = { retry: 0, skipped: 1, correct: 2 } as const;
+  const review = ranked
+    .filter(({ record }) => record && record.outcome !== "correct")
+    .sort(
+      (a, b) =>
+        outcomeRank[a.record!.outcome] - outcomeRank[b.record!.outcome] ||
+        a.record!.practicedAt.localeCompare(b.record!.practicedAt) ||
+        a.order - b.order,
+    );
+  if (review.length > 0) return { mode: "review", items: review.slice(0, maxTargets).map(({ item }) => item) };
+
+  const rotation = [...ranked].sort(
+    (a, b) => (a.record?.practicedAt ?? "").localeCompare(b.record?.practicedAt ?? "") || a.order - b.order,
+  );
+  if (rotation.length > 0) {
+    return { mode: "rotation", items: rotation.slice(0, Math.min(ROTATION_TARGETS, maxTargets)).map(({ item }) => item) };
+  }
+  return { mode: "empty", items: [] };
 }
 
 export function buildCallPlanFromLearningItems({
@@ -86,29 +160,10 @@ export function buildCallPlanFromLearningItems({
   items,
   freeTalk,
   estimatedMinutes = 5,
-  maxTargets = 3,
+  maxTargets = MAX_CALL_TARGETS,
+  practiced = [],
 }: BuildCallPlanInput): CallPlan {
-  const selected: LearningHistoryItem[] = [];
-  const selectedIds = new Set<string>();
-
-  for (const sourceType of SOURCE_PRIORITY) {
-    const item = items.find(
-      (candidate) =>
-        candidate.sourceType === sourceType && !selectedIds.has(candidate.id),
-    );
-    if (item && selected.length < maxTargets) {
-      selected.push(item);
-      selectedIds.add(item.id);
-    }
-  }
-
-  for (const item of items) {
-    if (selected.length >= maxTargets) break;
-    if (!selectedIds.has(item.id)) {
-      selected.push(item);
-      selectedIds.add(item.id);
-    }
-  }
+  const selected = selectCallItems(items, practiced, maxTargets).items;
 
   return {
     id,

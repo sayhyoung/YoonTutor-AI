@@ -14,6 +14,24 @@ export type PracticedExpression = {
   times: number;
 };
 
+// 통화 한 번의 결과. 정답률은 낸 표현 중 한 번에 맞힌 비율(넘긴 표현은 틀린 것으로 센다).
+export type CallSession = {
+  reportId: string;
+  endedAt: string;
+  finishReason: StoredCallReport["finishReason"];
+  score: number;
+  correct: number;
+  total: number;
+  conversationTurns: number;
+  targets: {
+    answerEn: string;
+    promptKo: string;
+    sourceType: "word" | "sentence";
+    outcome: CallReportTarget["outcome"];
+    learnerAnswer?: string;
+  }[];
+};
+
 export type PracticeSummary = {
   calls: number;
   practiced: number;
@@ -22,7 +40,13 @@ export type PracticeSummary = {
   words: number;
   sentences: number;
   items: PracticedExpression[];
+  // 최근 통화부터.
+  sessions: CallSession[];
 };
+
+function sourceTypeOf(target: CallReportTarget): "word" | "sentence" {
+  return target.sourceLabel.includes("단어") ? "word" : "sentence";
+}
 
 function expressionKey(answerEn: string): string {
   return answerEn.toLowerCase().replace(/[.?!,]/g, "").replace(/\s+/g, " ").trim();
@@ -43,7 +67,7 @@ export function summarizePractice(reports: StoredCallReport[]): PracticeSummary 
       byExpression.set(key, {
         answerEn: target.answerEn,
         promptKo: target.promptKo,
-        sourceType: target.sourceLabel.includes("단어") ? "word" : "sentence",
+        sourceType: sourceTypeOf(target),
         outcome: target.outcome,
         ...(target.learnerAnswer ? { learnerAnswer: target.learnerAnswer } : {}),
         lastPracticedAt: report.endedAt,
@@ -61,5 +85,25 @@ export function summarizePractice(reports: StoredCallReport[]): PracticeSummary 
     words: items.filter((item) => item.sourceType === "word").length,
     sentences: items.filter((item) => item.sourceType === "sentence").length,
     items,
+    sessions: latestFirst.map((report) => {
+      const correct = report.targets.filter((target) => target.outcome === "correct").length;
+      const total = report.targets.length;
+      return {
+        reportId: report.reportId,
+        endedAt: report.endedAt,
+        finishReason: report.finishReason,
+        score: total > 0 ? Math.round((correct / total) * 100) : 0,
+        correct,
+        total,
+        conversationTurns: report.conversation.length,
+        targets: report.targets.map((target) => ({
+          answerEn: target.answerEn,
+          promptKo: target.promptKo,
+          sourceType: sourceTypeOf(target),
+          outcome: target.outcome,
+          ...(target.learnerAnswer ? { learnerAnswer: target.learnerAnswer } : {}),
+        })),
+      };
+    }),
   };
 }

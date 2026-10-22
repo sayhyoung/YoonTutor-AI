@@ -36,9 +36,13 @@ describe("summarizePractice", () => {
     expect(summary).toMatchObject({ calls: 2, practiced: 3, wrong: 1, skipped: 0, words: 2, sentences: 1 });
     const sleepy = summary.items.find((item) => item.answerEn.toLowerCase() === "sleepy");
     expect(sleepy).toMatchObject({ outcome: "retry", learnerAnswer: "Tired", times: 2 });
+    expect(summary.sessions.map((session) => [session.endedAt, session.correct, session.total, session.score])).toEqual([
+      ["2026-10-22T00:27:17.774Z", 2, 3, 67],
+      ["2026-10-21T10:00:00.000Z", 0, 1, 0],
+    ]);
   });
 
   it("returns zeros when there are no calls", () => {
-    expect(summarizePractice([])).toMatchObject({ calls: 0, practiced: 0, wrong: 0, items: [] });
+    expect(summarizePractice([])).toMatchObject({ calls: 0, practiced: 0, wrong: 0, items: [], sessions: [] });
   });
 });
