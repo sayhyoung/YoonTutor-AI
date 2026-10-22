@@ -16,3 +16,34 @@ export const externalLearningApiProvider: LearningProvider = {
     return data.items ?? [];
   },
 };
+
+
+// 교사 "회원 오답 현황": 학생이 전화관리 앱에서 실제로 푼 표현과 결과(저장된 통화 기록 기준).
+export type CallReviewPractice = {
+  configured: boolean;
+  calls?: number;
+  practiced?: number;
+  wrong?: number;
+  skipped?: number;
+  words?: number;
+  sentences?: number;
+  items?: {
+    answerEn: string;
+    promptKo: string;
+    sourceType: "word" | "sentence";
+    outcome: "correct" | "retry" | "skipped";
+    learnerAnswer?: string;
+    lastPracticedAt: string;
+    times: number;
+  }[];
+};
+
+export async function getCallReviewPractice(customerNo: string): Promise<CallReviewPractice> {
+  const res = await fetch(`/api/study/call-review-practice?customerNo=${encodeURIComponent(customerNo)}`, {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw new Error(`통화 학습 기록 조회 실패: ${res.status}`);
+  }
+  return (await res.json()) as CallReviewPractice;
+}

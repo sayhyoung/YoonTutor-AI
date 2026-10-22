@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Koko } from "@/components/koko";
 import { demoSessions, demoStudent } from "@/lib/mock-data";
+import { type CallReviewPractice, getCallReviewPractice } from "@/lib/learning/external-api-provider";
 import { getLearningSource, getWrongAnswerItems } from "@/lib/learning/provider";
 import { calculateSessionScore, scoreStatus } from "@/lib/quiz-engine";
 import { buildVisibleSessions } from "@/lib/session-utils";
@@ -1338,7 +1339,7 @@ function StatusText({ status }: { status?: MasteryStatus }) {
 type TeacherCustomerRow = { customerNo: string; customerName: string; schoolYear: number };
 
 // 교사 실연동: /api/teacher/customers로 담당 회원을 불러오고,
-// 회원 선택 시 그 회원의 오답 현황(/api/study/wrong-answers)을 조회해 보여준다.
+// 회원 선택 시 그 회원이 전화관리 앱에서 실제로 푼 표현과 오답(/api/study/call-review-practice)을 보여준다.
 function TeacherMembers({
   selected,
   onSelect,
@@ -1349,7 +1350,7 @@ function TeacherMembers({
   const [customers, setCustomers] = useState<TeacherCustomerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [memberItems, setMemberItems] = useState<LearningItem[]>([]);
+  const [practice, setPractice] = useState<CallReviewPractice | null>(null);
   const [memberLoading, setMemberLoading] = useState(false);
 
   useEffect(() => {
@@ -1375,15 +1376,15 @@ function TeacherMembers({
   function handleSelect(no: string, name: string) {
     onSelect(no, name);
     setMemberLoading(true);
-    setMemberItems([]);
-    getWrongAnswerItems(no)
-      .then((items) => setMemberItems(items))
-      .catch(() => setMemberItems([]))
+    setPractice(null);
+    getCallReviewPractice(no)
+      .then((result) => setPractice(result))
+      .catch(() => setPractice(null))
       .finally(() => setMemberLoading(false));
   }
 
   const selectedName = customers.find((c) => c.customerNo === selected)?.customerName ?? selected;
-  const countBy = (t: string) => memberItems.filter((i) => i.sourceType === t).length;
+  const practicedItems = practice?.items ?? [];
 
   return (
     <div className="dashboard-grid">
@@ -1421,7 +1422,7 @@ function TeacherMembers({
           <div>
             <h3 className="panel-title">회원 오답 현황</h3>
             <p className="panel-note">
-              {selected ? `${selectedName} 님의 최근 복습 대상 오답` : "왼쪽에서 회원을 선택해줘"}
+              {selected ? `${selectedName} 님이 전화관리 앱에서 학습한 표현` : "왼쪽에서 회원을 선택해줘"}
             </p>
           </div>
         </div>
@@ -1430,24 +1431,38 @@ function TeacherMembers({
             <div className="empty-state">회원을 선택하면 오답 현황이 표시돼.</div>
           ) : memberLoading ? (
             <div className="empty-state">불러오는 중…</div>
-          ) : memberItems.length === 0 ? (
-            <div className="empty-state">최근 조회 기간에 오답이 없어.</div>
+          ) : !practice ? (
+            <div className="empty-state">학습 기록을 불러오지 못했어.</div>
+          ) : !practice.configured ? (
+            <div className="empty-state">통화 기록 저장소가 연결되지 않았어.</div>
+          ) : practicedItems.length === 0 ? (
+            <div className="empty-state">아직 전화관리 앱에서 학습한 표현이 없어.</div>
           ) : (
             <>
-              <div className="metric-grid">
-                <Metric label="오답" value={`${memberItems.length}`} />
-                <Metric label="단어" value={`${countBy("word")}`} />
-                <Metric label="문장" value={`${countBy("sentence")}`} />
-                <Metric label="평가" value={`${countBy("assessment")}`} />
+              <div className="metric-grid four">
+                <Metric label="학습 표현" value={`${practice.practiced ?? 0}`} />
+                <Metric label="오답" value={`${practice.wrong ?? 0}`} />
+                <Metric label="단어" value={`${practice.words ?? 0}`} />
+                <Metric label="문장" value={`${practice.sentences ?? 0}`} />
               </div>
+              <p className="panel-note" style={{ marginTop: 8 }}>
+                통화 {practice.calls ?? 0}번 · 학습 표현 {practice.practiced ?? 0}개 중 오답 {practice.wrong ?? 0}개
+                {practice.skipped ? ` · 못 한 표현 ${practice.skipped}개` : ""}
+              </p>
               <div className="item-list" style={{ marginTop: 12 }}>
-                {memberItems.map((it) => (
-                  <div className="item-row" key={it.id}>
-                    <span className="item-badge">{it.sourceLabel}</span>
+                {practicedItems.map((it) => (
+                  <div className="item-row" key={it.answerEn}>
+                    <span className="item-badge">{it.sourceType === "word" ? "단어" : "문장"}</span>
                     <div>
                       <p className="item-title">{it.answerEn}</p>
-                      <p className="item-sub">{it.meaningKo ?? it.originalQuestion ?? it.unitName}</p>
+                      <p className="item-sub">
+                        {it.promptKo}
+                        {it.outcome === "retry" && it.learnerAnswer ? ` · 학생 답: ${it.learnerAnswer}` : ""}
+                      </p>
                     </div>
+                    <span className={`result-status ${it.outcome === "correct" ? "perfect" : "not"}`}>
+                      {it.outcome === "correct" ? "정답" : it.outcome === "retry" ? "오답" : "못 했어요"}
+                    </span>
                   </div>
                 ))}
               </div>
