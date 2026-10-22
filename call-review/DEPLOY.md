@@ -2,10 +2,15 @@
 
 `web/`(BFF)은 `main`에 푸시하면 App Hosting(`yoon-tutor-web`, asia-east1)으로 자동 배포된다. 아래 순서를 지키면 새 기능이 꺼진 채로 먼저 배포되고, 설정을 하나씩 켤 때마다 동작이 늘어난다. 시크릿 값은 문서·채팅·커밋에 적지 않는다.
 
-## 0. 현재 상태(설정 전)
+## 0. 진행 현황(2026-10-22)
 
-- `/api/call-review/*`는 세션 서명 키가 없으면 503을 돌려준다. 기존 웹 튜터에는 영향이 없다.
-- study-api는 아직 개발 DB(`https://test-study-api.yoons.or.kr`)다. 운영 API가 준비되면 `LEARNING_API_BASE_URL`만 바꾼다.
+- [x] Firestore 규칙·색인 배포(`callReports` 등 4개 컬렉션 클라이언트 차단, `callReports(studentId, endedAt)` 색인)
+- [x] Secret Manager: `CALL_REVIEW_SESSION_SECRET`, `CALL_REVIEW_CRON_SECRET`, `AZURE_SPEECH_KEY`, `CALL_REVIEW_GEMINI_API_KEY`(백엔드 `yoon-tutor-web` 접근 허용)
+  - 프로젝트에 이미 있는 `GEMINI_API_KEY` 시크릿은 Cloud Functions용이라 건드리지 않는다. 앱의 `GEMINI_API_KEY` 환경변수는 `CALL_REVIEW_GEMINI_API_KEY` 시크릿을 읽는다.
+- [x] `web/apphosting.yaml`에서 전화관리 설정 켬(main 반영 시 롤아웃)
+- [ ] 교사 화면 운영 배포(6번)
+- [ ] 서버 푸시 예약 작업(4번) → 만든 뒤 `CALL_REVIEW_PUSH_DISPATCH=enabled`. 그 전에는 앱이 기기 자체 알림을 쓴다.
+- [ ] 운영 BFF 주소로 앱 빌드(5번)
 
 ## 1. Firestore 규칙·색인 배포
 

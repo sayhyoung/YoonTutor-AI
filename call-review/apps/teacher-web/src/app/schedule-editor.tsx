@@ -180,7 +180,7 @@ export function ScheduleEditor({
           {saving ? "저장하는 중…" : "일정 저장"}
         </button>
         <span className={`schedule-status ${status?.tone ?? ""}`} role="status">
-          {status?.text ?? (invalid ? "전화 요일을 한 개 이상 골라 주세요." : "학습자는 이 일정을 앱에서 확인만 할 수 있어요.")}
+          {status?.text ?? (invalid ? "전화 요일을 한 개 이상 골라 주세요." : "학습자와 약속한 시간으로 저장해 주세요. 학습자 앱에는 '선생님과 약속한 시간'으로 표시돼요.")}
         </span>
       </div>
     </form>

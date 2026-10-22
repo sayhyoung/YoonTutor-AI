@@ -171,7 +171,7 @@ export function createApiCallReviewRepository({
         const draft = buildCallPlanFromLearningItems({
           id: `call-${response.studyEndDate}`,
           studentId: items[0]?.studentId ?? "me",
-          scheduledAtLabel: "선생님이 정한 시간",
+          scheduledAtLabel: "선생님과 약속한 시간",
           items,
           freeTalk: { maxTurns: 1, idleStopSeconds: 20, turns: [] },
           practiced: reports.reports.flatMap((report) =>

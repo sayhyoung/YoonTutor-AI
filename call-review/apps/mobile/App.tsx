@@ -726,7 +726,7 @@ function HomeScreen({
           <Image source={befly.home} style={styles.homeBeflyAvatar} accessibilityLabel="베플리 선생님" />
           <View><Text style={styles.homeCardMuted}>다음 관리 전화</Text><Text style={styles.homeBeflyName}>베플리 선생님</Text></View>
         </View>
-        <View><Text style={styles.nextCallTime}>{scheduledAtLabel}</Text><Text style={styles.homeCardMuted}>선생님이 정한 시간에 베플리가 전화해요</Text></View>
+        <View><Text style={styles.nextCallTime}>{scheduledAtLabel}</Text><Text style={styles.homeCardMuted}>선생님과 약속한 시간에 베플리가 전화해요</Text></View>
         <View style={styles.homeReadyStrip}><View style={styles.homeReadyDot}/><Text style={styles.homeReadyText}>통화 준비가 됐어요. 조용한 곳이면 더 좋아요.</Text></View>
       </View>
 
@@ -798,7 +798,7 @@ function MyPageScreen({
       <View style={[styles.scheduleCard, darkMode && darkAppStyles.card]}>
         <View style={styles.scheduleTopline}>
           <Text style={[styles.mySectionTitle,darkMode && darkAppStyles.strongText]}>전화 일정</Text>
-          <View style={[styles.myTeacherBadge,darkMode && darkAppStyles.mutedCard]}><Icon name="lock" size={13} strokeWidth={2.2} color={darkMode ? color.mutedInverse : color.muted} /><Text style={[styles.myTeacherBadgeText,darkMode && darkAppStyles.mutedText]}>선생님이 설정</Text></View>
+          <View style={[styles.myTeacherBadge,darkMode && darkAppStyles.mutedCard]}><Icon name="clock" size={13} strokeWidth={2.2} color={darkMode ? color.mutedInverse : color.muted} /><Text style={[styles.myTeacherBadgeText,darkMode && darkAppStyles.mutedText]}>선생님과 약속</Text></View>
         </View>
         {schedule ? (<>
         <View style={styles.myWeekdays} accessible accessibilityLabel={`전화 오는 요일: ${schedule.weekdays.join(", ")}`}>{["월","화","수","목","금","토","일"].map((day) => {
@@ -806,9 +806,9 @@ function MyPageScreen({
           return <View key={day} style={[styles.myWeekday,active && styles.myWeekdayActive,darkMode && (active ? darkAppStyles.activeChip : darkAppStyles.mutedCard)]}><Text style={[styles.myWeekdayText,active && styles.myWeekdayTextActive,darkMode && (active ? darkAppStyles.activeChipText : darkAppStyles.mutedText)]}>{day}</Text></View>;
         })}</View>
         <View style={styles.myScheduleDetails}><View><Text style={[styles.myDetailLabel,darkMode && darkAppStyles.mutedText]}>시간</Text><Text style={[styles.myDetailValue,darkMode && darkAppStyles.strongText]}>{formatClock(schedule.time)}</Text></View><View><Text style={[styles.myDetailLabel,darkMode && darkAppStyles.mutedText]}>횟수</Text><Text style={[styles.myDetailValue,darkMode && darkAppStyles.strongText]}>주 {schedule.callsPerWeek}회</Text></View></View>
-        <Text style={[styles.myScheduleHelp,darkMode && darkAppStyles.mutedText]}>일정을 바꾸고 싶으면 담당 선생님께 말씀해 주세요.{schedule.reminderMinutesBefore > 0 ? ` 통화 ${schedule.reminderMinutesBefore}분 전에 알려드려요.` : ""}</Text>
+        <Text style={[styles.myScheduleHelp,darkMode && darkAppStyles.mutedText]}>시간을 바꾸고 싶으면 선생님과 다시 이야기해 주세요.{schedule.reminderMinutesBefore > 0 ? ` 통화 ${schedule.reminderMinutesBefore}분 전에 알려드려요.` : ""}</Text>
         </>) : (
-          <Text style={[styles.myScheduleHelp,darkMode && darkAppStyles.mutedText]}>아직 선생님이 전화 일정을 정하지 않았어요. 일정이 정해지면 여기와 홈에 표시돼요.</Text>
+          <Text style={[styles.myScheduleHelp,darkMode && darkAppStyles.mutedText]}>아직 선생님과 전화 시간을 정하지 않았어요. 선생님과 시간을 정하면 여기와 홈에 표시돼요.</Text>
         )}
       </View>
 

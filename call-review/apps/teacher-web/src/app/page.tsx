@@ -142,7 +142,7 @@ function ScheduleSettings({ students, onSaved }: { students: TeacherStudentRow[]
       <div className="schedule-heading">
         <div>
           <h2 id="schedule-title">전화 일정 설정</h2>
-          <p>담당 교사가 학습자별 전화 요일·시간·사전 알림을 정합니다.</p>
+          <p>학습자와 약속한 전화 요일·시간과 사전 알림을 입력합니다.</p>
         </div>
         <span className="authority-badge">교사 권한</span>
       </div>

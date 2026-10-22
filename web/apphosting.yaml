@@ -59,16 +59,24 @@ env:
       - BUILD
       - RUNTIME
   # --- AI 전화관리(call-review) ---
-  # 아래 값은 Secret Manager에 시크릿을 만든 뒤 주석을 해제한다. 없는 시크릿을 참조하면 롤아웃이 실패한다.
-  # 순서: call-review/DEPLOY.md 참고.
-  # - variable: CALL_REVIEW_SESSION_SECRET   # 모바일 토큰·교사 세션 서명/암호화 키(32자 이상)
-  #   secret: CALL_REVIEW_SESSION_SECRET
-  # - variable: CALL_REVIEW_CRON_SECRET      # 푸시 예약 작업 호출 인증값(32자 이상)
-  #   secret: CALL_REVIEW_CRON_SECRET
-  # - variable: CALL_REVIEW_FIRESTORE        # 통화 결과·일정을 운영 Firestore에 저장
+  # 시크릿은 Secret Manager에 있다(값은 문서·커밋에 적지 않는다). 순서: call-review/DEPLOY.md.
+  - variable: CALL_REVIEW_SESSION_SECRET   # 모바일 토큰·교사 세션 서명/암호화 키
+    secret: CALL_REVIEW_SESSION_SECRET
+  - variable: CALL_REVIEW_CRON_SECRET      # 푸시 예약 작업 호출 인증값
+    secret: CALL_REVIEW_CRON_SECRET
+  - variable: CALL_REVIEW_FIRESTORE        # 통화 결과·일정을 운영 Firestore에 저장
+    value: enabled
+  - variable: STUDY_API_LOOKBACK_DAYS      # 오답 조회 기간(일). 기본 90일이면 지난 학기 차시가 빠진다.
+    value: "365"
+  - variable: AZURE_SPEECH_KEY             # 음성 인식(Azure Speech)
+    secret: AZURE_SPEECH_KEY
+  - variable: AZURE_SPEECH_REGION
+    value: koreacentral
+  - variable: GEMINI_API_KEY               # 읽어 주기(Gemini TTS). 기존 GEMINI_API_KEY 시크릿은 다른 서비스용이라 전용 시크릿을 쓴다.
+    secret: CALL_REVIEW_GEMINI_API_KEY
+  # 서버 푸시는 Cloud Scheduler 예약 작업을 만든 뒤에 켠다. 그 전에는 앱이 기기 자체 알림을 쓴다.
+  # - variable: CALL_REVIEW_PUSH_DISPATCH
   #   value: enabled
-  # - variable: CALL_REVIEW_MOBILE_ORIGINS   # 웹에서 모바일 API를 부를 출처(네이티브 앱은 불필요)
-  #   value: https://<teacher-or-preview-origin>
   # - variable: CALL_REVIEW_FREE_TALK_MODEL  # (선택) 짧은 대화 질문용 더 빠른 모델
   #   value: <model>
   # - variable: EXPO_ACCESS_TOKEN            # (선택) Expo 푸시 보안 설정을 켠 경우

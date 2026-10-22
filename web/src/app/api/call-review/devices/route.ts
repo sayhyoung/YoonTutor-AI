@@ -32,6 +32,11 @@ async function handle(request: Request, action: "register" | "unregister") {
   const student = readMobileToken(request);
   if (!student) return NextResponse.json({ error: "로그인이 필요해요." }, { status: 401, headers });
   if (!isServerStoreConfigured()) return NextResponse.json({ ok: false, configured: false }, { headers });
+  // 5분 예약 발송(Cloud Scheduler)을 켠 뒤에만 서버 푸시로 등록한다. 그 전에는 ok:false를 돌려주어
+  // 앱이 기기 자체 알림(매주 반복 예약)을 계속 쓰게 한다. 해제는 항상 받는다.
+  if (action === "register" && process.env.CALL_REVIEW_PUSH_DISPATCH !== "enabled") {
+    return NextResponse.json({ ok: false, configured: true, pushDispatch: false }, { headers });
+  }
   const body = await readBody(request);
   if (!body) return NextResponse.json({ error: "푸시 토큰이 올바르지 않아요." }, { status: 400, headers });
   try {
