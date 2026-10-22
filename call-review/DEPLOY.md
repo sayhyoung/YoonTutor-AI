@@ -8,7 +8,7 @@
 - [x] Secret Manager: `CALL_REVIEW_SESSION_SECRET`, `CALL_REVIEW_CRON_SECRET`, `AZURE_SPEECH_KEY`, `CALL_REVIEW_GEMINI_API_KEY`(백엔드 `yoon-tutor-web` 접근 허용)
   - 프로젝트에 이미 있는 `GEMINI_API_KEY` 시크릿은 Cloud Functions용이라 건드리지 않는다. 앱의 `GEMINI_API_KEY` 환경변수는 `CALL_REVIEW_GEMINI_API_KEY` 시크릿을 읽는다.
 - [x] `web/apphosting.yaml`에서 전화관리 설정 켬(main 반영 시 롤아웃)
-- [ ] 교사 화면 운영 배포(6번)
+- [x] 교사 화면 운영 배포(6번): 백엔드 `call-review-teacher`, https://call-review-teacher--eduai-tutor-62825.asia-east1.hosted.app
 - [ ] 서버 푸시 예약 작업(4번) → 만든 뒤 `CALL_REVIEW_PUSH_DISPATCH=enabled`. 그 전에는 앱이 기기 자체 알림을 쓴다.
 - [ ] 운영 BFF 주소로 앱 빌드(5번)
 
@@ -67,7 +67,7 @@ gcloud scheduler jobs create http call-review-dispatch \
 
 ## 6. 교사 화면(`call-review/apps/teacher-web`)
 
-교사용 LMS에 들어갈 별도 웹이다. `/api/*`를 BFF로 넘기므로(`CALL_REVIEW_BFF_URL`, 빌드 때 정해짐) 같은 출처에서 httpOnly 쿠키로 로그인한다.
+교사용 LMS에 들어갈 별도 웹이다. `/api/*`는 `src/app/api/[...path]/route.ts`가 서버에서 BFF(`CALL_REVIEW_BFF_URL`)로 중계하므로 같은 출처에서 httpOnly 쿠키로 로그인한다. next.config의 외부 주소 rewrite는 App Hosting에서 BFF에 닿지 못하고 구글 앞단 401이 나서 쓰지 않는다.
 
 - 교사 웹은 `call-review` npm workspace에 넣지 않고 자기 폴더에 따로 설치한다(`cd apps/teacher-web && npm install`). 공유 패키지는 `file:../../packages/shared`, 디자인 토큰은 `../../tokens.css`로 참조한다. App Hosting은 루트 폴더를 `call-review/apps/teacher-web`로 빌드하지만 저장소 전체를 받아 오므로 상위 폴더도 읽힌다.
 - 운영 빌드는 `next build --webpack`이고 빌드 루트(`outputFileTracingRoot`)를 이 폴더로 고정한다. 루트가 상위 폴더면 standalone 결과물이 `apps/teacher-web` 아래로 들어가, App Hosting Next.js 어댑터(일반 npm workspace는 모노레포로 보지 않음)가 결과물을 찾지 못해 빌드가 실패한다. 개발(`next dev`)은 Turbopack에 상위 폴더 루트를 준다.
