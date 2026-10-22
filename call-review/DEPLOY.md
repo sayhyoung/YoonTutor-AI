@@ -71,6 +71,7 @@ gcloud scheduler jobs create http call-review-dispatch \
 
 - 공유 패키지는 `file:../../packages/shared`로 참조하고 `next.config.ts`의 빌드 루트를 `call-review`로 둔다. 그래서 App Hosting 루트 폴더를 `call-review/apps/teacher-web`로 잡아도 빌드된다(저장소 전체를 받아 오므로 상위 폴더도 읽힌다).
 - 설정은 `apps/teacher-web/apphosting.yaml`(최소 인스턴스 0, BFF 주소).
+- App Hosting은 루트 폴더에 잠금 파일이 있어야 빌드한다. 그래서 `apps/teacher-web/package-lock.json`을 따로 둔다(실제 설치는 npm이 workspace 루트에서 한다). 교사 웹 의존성을 바꾸면 workspace 밖 임시 폴더에 `apps/teacher-web/package.json`과 `packages/shared`만 복사해 `npm install --package-lock-only`로 다시 만든다.
 - 백엔드 만들기(GitHub 연결이 필요해서 대화형으로 실행):
 
 ```bash
