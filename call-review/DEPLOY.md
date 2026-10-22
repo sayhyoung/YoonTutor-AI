@@ -69,9 +69,11 @@ gcloud scheduler jobs create http call-review-dispatch \
 
 교사용 LMS에 들어갈 별도 웹이다. `/api/*`를 BFF로 넘기므로(`CALL_REVIEW_BFF_URL`, 빌드 때 정해짐) 같은 출처에서 httpOnly 쿠키로 로그인한다.
 
-- 공유 패키지는 `file:../../packages/shared`로 참조하고 `next.config.ts`의 빌드 루트를 `call-review`로 둔다. 그래서 App Hosting 루트 폴더를 `call-review/apps/teacher-web`로 잡아도 빌드된다(저장소 전체를 받아 오므로 상위 폴더도 읽힌다).
+- 교사 웹은 `call-review` npm workspace에 넣지 않고 자기 폴더에 따로 설치한다(`cd apps/teacher-web && npm install`). 공유 패키지는 `file:../../packages/shared`, 디자인 토큰은 `../../tokens.css`로 참조한다. App Hosting은 루트 폴더를 `call-review/apps/teacher-web`로 빌드하지만 저장소 전체를 받아 오므로 상위 폴더도 읽힌다.
+- 운영 빌드는 `next build --webpack`이고 빌드 루트(`outputFileTracingRoot`)를 이 폴더로 고정한다. 루트가 상위 폴더면 standalone 결과물이 `apps/teacher-web` 아래로 들어가, App Hosting Next.js 어댑터(일반 npm workspace는 모노레포로 보지 않음)가 결과물을 찾지 못해 빌드가 실패한다. 개발(`next dev`)은 Turbopack에 상위 폴더 루트를 준다.
 - 설정은 `apps/teacher-web/apphosting.yaml`(최소 인스턴스 0, BFF 주소).
-- App Hosting은 루트 폴더에 잠금 파일이 있어야 빌드한다. 그래서 `apps/teacher-web/package-lock.json`을 따로 둔다(실제 설치는 npm이 workspace 루트에서 한다). 교사 웹 의존성을 바꾸면 workspace 밖 임시 폴더에 `apps/teacher-web/package.json`과 `packages/shared`만 복사해 `npm install --package-lock-only`로 다시 만든다.
+- App Hosting은 루트 폴더에 잠금 파일이 있어야 빌드한다. `apps/teacher-web/package-lock.json`을 커밋해 두고, 의존성을 바꾸면 그 폴더에서 `npm install`로 갱신한다.
+- 배포 전 확인: `cd apps/teacher-web && npm ci && npx --yes --package=@apphosting/adapter-nextjs apphosting-adapter-nextjs-build`가 성공하면 App Hosting 빌드도 통과한다.
 - 백엔드 만들기(GitHub 연결이 필요해서 대화형으로 실행):
 
 ```bash

@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "apps/*",
+    "apps/mobile",
     "packages/*"
   ],
   "scripts": {
     "dev:mobile": "npm run start --workspace @yoon-call/mobile",
-    "dev:teacher": "npm run dev --workspace @yoon-call/teacher-web",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "build:teacher": "npm run build --workspace @yoon-call/teacher-web",
-    "lint": "npm run lint --workspaces --if-present"
+    "dev:teacher": "npm --prefix apps/teacher-web run dev",
+    "typecheck": "npm run typecheck --workspaces --if-present && npm --prefix apps/teacher-web run typecheck",
+    "build:teacher": "npm --prefix apps/teacher-web run build",
+    "lint": "npm run lint --workspaces --if-present && npm --prefix apps/teacher-web run lint"
   }
 }
