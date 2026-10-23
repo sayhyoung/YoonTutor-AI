@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { kstToIso, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
+import { buildTemplateFreeTalk, FREE_TALK_TURNS, kstToIso, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
 
 function item(answerEn: string, sourceType: "word" | "sentence", studiedAt: string): LearningHistoryItem {
   return {
@@ -100,5 +100,14 @@ describe("kstToIso", () => {
     assert.equal(kstToIso("2026-06-29 14:17:05"), "2026-06-29T05:17:05.000Z");
     assert.equal(kstToIso("2026-06-29T13:18:00Z"), "2026-06-29T13:18:00.000Z");
     assert.equal(kstToIso(""), undefined);
+  });
+});
+
+describe("buildTemplateFreeTalk", () => {
+  it("keeps the short talk at three turns even when a call has many review questions", () => {
+    const targets = items.map((target) => ({ id: target.id, sourceLabel: target.sourceLabel, promptKo: target.promptKo, answerEn: target.answerEn, hint: "" }));
+    const plan = buildTemplateFreeTalk(targets);
+    assert.equal(plan.maxTurns, FREE_TALK_TURNS);
+    assert.equal(plan.turns.length, FREE_TALK_TURNS);
   });
 });

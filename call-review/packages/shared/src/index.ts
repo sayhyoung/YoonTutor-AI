@@ -190,8 +190,13 @@ function isWord(answerEn: string): boolean {
 
 // AI 질문 생성 전까지 쓰는 결정론적 자유대화 템플릿.
 // 복습 표현마다 질문 하나를 만들어, 오늘 표현을 근거로 대화한다는 원칙을 지킨다.
+// 짧은 대화는 복습 문항 수와 상관없이 3번. 서버(free-talk·결과 저장)도 이 횟수까지만 받는다.
+export const FREE_TALK_TURNS = 3;
+// AI 질문을 만들 때 보내는 표현 수(서버 free-talk 상한과 같다). 우선순위가 높은 문항부터 보낸다.
+export const FREE_TALK_EXPRESSIONS = 5;
+
 export function buildTemplateFreeTalk(targets: LearningTarget[]): FreeTalkPlan {
-  const turns: ConversationTurn[] = targets.map((target, index) => {
+  const turns: ConversationTurn[] = targets.slice(0, FREE_TALK_TURNS).map((target, index) => {
     const expression = target.answerEn.trim().replace(/[.!?]+$/, "");
     const id = `talk-${index + 1}`;
     if (isWord(expression)) {

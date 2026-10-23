@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { CallPhase, CallPlan, ConversationTurn, InputMode } from "@yoon-call/shared";
+import { FREE_TALK_EXPRESSIONS } from "@yoon-call/shared";
 
 import type { FreeTalkTurnRequest, GeneratedTurn } from "./callReviewApi";
 
@@ -153,7 +154,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
 
   const expressions = useMemo(
     () =>
-      plan.targets.map((item) => ({
+      plan.targets.slice(0, FREE_TALK_EXPRESSIONS).map((item) => ({
         answerEn: item.answerEn,
         promptKo: item.promptKo,
         sourceType: (item.answerEn.trim().includes(" ") ? "sentence" : "word") as "word" | "sentence",
