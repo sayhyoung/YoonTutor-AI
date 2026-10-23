@@ -12,9 +12,9 @@ env:
     value: gpt-5.2
   - variable: USE_MOCK_AI
     value: "false"
-  # study-api 외부 연동 URL(개발 DB — 운영 API 준비되면 이 값만 교체)
+  # study-api 운영 URL(운영 DB, 실제 회원 학습). 개발 DB는 https://test-study-api.yoons.or.kr
   - variable: LEARNING_API_BASE_URL
-    value: https://test-study-api.yoons.or.kr
+    value: https://study-api.yoons.com
   - variable: OPENAI_API_KEY
     secret: OPENAI_API_KEY
   # --- 빌드+런타임(클라이언트 인라인) ---
