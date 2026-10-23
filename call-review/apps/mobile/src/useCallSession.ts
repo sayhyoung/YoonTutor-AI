@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { CallPhase, CallPlan, ConversationTurn, InputMode } from "@yoon-call/shared";
-import { FREE_TALK_EXPRESSIONS } from "@yoon-call/shared";
+import { FREE_TALK_EXPRESSIONS, gradeReviewAnswer } from "@yoon-call/shared";
 
 import type { FreeTalkTurnRequest, GeneratedTurn } from "./callReviewApi";
 
@@ -39,6 +39,20 @@ export const RETRY_MESSAGES = [
 export function pickRetryMessage(previous?: string, random: () => number = Math.random): string {
   const choices = RETRY_MESSAGES.filter((message) => message !== previous);
   return choices[Math.floor(random() * choices.length)] ?? RETRY_MESSAGES[0];
+}
+
+// 축약형·대소문자·문장부호만 다르게 말했을 때(정답 처리) 고르는 멘트.
+export const CLOSE_MESSAGES = [
+  "네, 잘 알고 있네요",
+  "대체로 맞았어요",
+  "거의 완벽해요",
+  "좋아요, 맞았어요",
+  "뜻이 딱 맞아요",
+] as const;
+
+export function pickCloseMessage(previous?: string, random: () => number = Math.random): string {
+  const choices = CLOSE_MESSAGES.filter((message) => message !== previous);
+  return choices[Math.floor(random() * choices.length)] ?? CLOSE_MESSAGES[0];
 }
 
 type HomeSection = "home" | "my-page";
@@ -348,9 +362,14 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       return;
     }
 
-    const normalize = (text: string) => text.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
-    const correct = normalize(value) === normalize(target?.answerEn ?? "");
-    const message = correct ? undefined : pickRetryMessage(lastRetryMessage.current);
+    const grade = gradeReviewAnswer(value, target?.answerEn ?? "");
+    const correct = grade !== "wrong";
+    const message =
+      grade === "exact"
+        ? undefined
+        : grade === "close"
+          ? pickCloseMessage(lastRetryMessage.current)
+          : pickRetryMessage(lastRetryMessage.current);
     if (message) lastRetryMessage.current = message;
     setReviewFeedback({ kind: correct ? "correct" : "retry", answer: value, ...(message ? { message } : {}) });
     setReviewOutcomes((current) =>

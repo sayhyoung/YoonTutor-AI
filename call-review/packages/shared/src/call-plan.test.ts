@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildTemplateFreeTalk, FREE_TALK_TURNS, kstToIso, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
+import { buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
 
 function item(answerEn: string, sourceType: "word" | "sentence", studiedAt: string): LearningHistoryItem {
   return {
@@ -116,5 +116,29 @@ describe("buildTemplateFreeTalk", () => {
     const plan = buildTemplateFreeTalk(targets);
     assert.equal(plan.turns[0]!.questionEn, "Do you like movies?");
     assert.deepEqual(new Set(plan.turns.map((turn) => turn.relatedExpression)), new Set(["Do you like movies?"]));
+  });
+});
+
+describe("gradeReviewAnswer", () => {
+  it("treats the same sentence as exact, even without the final period or with a curly apostrophe", () => {
+    assert.equal(gradeReviewAnswer("He is from China.", "He is from China."), "exact");
+    assert.equal(gradeReviewAnswer("He is from China", "He is from China."), "exact");
+    assert.equal(gradeReviewAnswer("He’s from China.", "He's from China."), "exact");
+  });
+
+  it("accepts contractions, capital letters and punctuation differences as close", () => {
+    assert.equal(gradeReviewAnswer("He's from china.", "He is from China."), "close");
+    assert.equal(gradeReviewAnswer("he is from china", "He's from China."), "close");
+    assert.equal(gradeReviewAnswer("I'm tired", "I am tired."), "close");
+    assert.equal(gradeReviewAnswer("I don't like it.", "I do not like it."), "close");
+    assert.equal(gradeReviewAnswer("She can't swim.", "She cannot swim."), "close");
+    assert.equal(gradeReviewAnswer("Wow how fast", "Wow, how fast!"), "close");
+    assert.equal(gradeReviewAnswer("CLOSE", "close"), "close");
+  });
+
+  it("still marks different words wrong", () => {
+    assert.equal(gradeReviewAnswer("I am from China.", "He is from China."), "wrong");
+    assert.equal(gradeReviewAnswer("sleeping", "sleepy"), "wrong");
+    assert.equal(gradeReviewAnswer("", "close"), "wrong");
   });
 });

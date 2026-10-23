@@ -1401,7 +1401,7 @@ function CallScreen(props: CallScreenProps) {
                 <View style={[styles.reviewCheck, { backgroundColor: t.ok }]}>
                   <Icon name="check" size={16} strokeWidth={3} color={color.accentInk} />
                 </View>
-                <Text style={[styles.reviewFeedbackTitle, { color: t.okInk }]}>정확해요</Text>
+                <Text style={[styles.reviewFeedbackTitle, { color: t.okInk }]}>{feedback.message ?? "정확해요"}</Text>
               </View>
               <Text style={[styles.reviewFeedbackAnswer, { color: t.ink }]}>{props.answerEn}</Text>
             </View>

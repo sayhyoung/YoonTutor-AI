@@ -195,6 +195,42 @@ export const FREE_TALK_TURNS = 3;
 // AI 질문을 만들 때 보내는 표현 수(서버 free-talk 상한과 같다). 우선순위가 높은 문항부터 보낸다.
 export const FREE_TALK_EXPRESSIONS = 5;
 
+// 복습 문항 채점. 축약형(He's = He is), 대소문자, 문장부호, 띄어쓰기 차이는 맞은 것으로 본다.
+// exact: 표기까지 같음(끝 문장부호·따옴표 모양 차이만 허용) / close: 위 차이만 있음(정답 처리) / wrong: 틀림.
+export type ReviewGrade = "exact" | "close" | "wrong";
+
+const CONTRACTIONS: [RegExp, string][] = [
+  [/\bcan't\b/g, "can not"],
+  [/\bcannot\b/g, "can not"],
+  [/\bwon't\b/g, "will not"],
+  [/\bshan't\b/g, "shall not"],
+  [/\blet's\b/g, "let us"],
+  [/\bi'm\b/g, "i am"],
+  [/n't\b/g, " not"],
+  [/'re\b/g, " are"],
+  [/'ve\b/g, " have"],
+  [/'ll\b/g, " will"],
+  [/'d\b/g, " would"],
+  // he's/she's/it's/that's/what's/there's/who's/where's/how's → is (소유격과 섞이지 않게 대명사·의문사만)
+  [/\b(he|she|it|that|what|there|here|who|where|how|this)'s\b/g, "$1 is"],
+];
+
+function normalizeAnswer(text: string): string {
+  let value = text.toLowerCase().replace(/[’‘`]/g, "'");
+  for (const [pattern, replacement] of CONTRACTIONS) value = value.replace(pattern, replacement);
+  return value.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function surfaceForm(text: string): string {
+  return text.replace(/[’‘`]/g, "'").replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "");
+}
+
+export function gradeReviewAnswer(answer: string, expected: string): ReviewGrade {
+  if (!answer.trim()) return "wrong";
+  if (surfaceForm(answer) === surfaceForm(expected)) return "exact";
+  return normalizeAnswer(answer) === normalizeAnswer(expected) ? "close" : "wrong";
+}
+
 // AI 질문을 못 만들 때 쓰는 결정론적 짧은 대화. 대화하기 좋은 표현 하나를 소재로 고르고
 // (묻는 문장 > 다른 문장 > 단어), 두 번째·세 번째 질문은 같은 소재에 이어지는 후속 질문이다.
 export function pickTalkTopic(targets: LearningTarget[]): LearningTarget | undefined {
