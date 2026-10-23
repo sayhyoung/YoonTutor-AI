@@ -14,10 +14,16 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_CALL_REVIEW_API_BASE_URL": "https://yoon-tutor-web--eduai-tutor-62825.asia-east1.hosted.app"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_CALL_REVIEW_API_BASE_URL": "https://yoon-tutor-web--eduai-tutor-62825.asia-east1.hosted.app"
+      }
     }
   },
   "submit": {
