@@ -142,3 +142,11 @@ describe("gradeReviewAnswer", () => {
     assert.equal(gradeReviewAnswer("", "close"), "wrong");
   });
 });
+
+describe("buildTemplateFreeTalk without review expressions", () => {
+  it("still opens a three-turn talk about the student's day", () => {
+    const talk = buildTemplateFreeTalk([]);
+    assert.equal(talk.turns.length, FREE_TALK_TURNS);
+    assert.equal(talk.turns[0]!.questionEn, "How was your day today?");
+  });
+});

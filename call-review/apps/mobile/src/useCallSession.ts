@@ -245,7 +245,11 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     void firstTurn.current.then((turn) => {
       if (turn) services.prepareSpeech?.(turn.questionEn);
     });
-    connectTimer.current = setTimeout(() => setPhase("review"), CONNECT_PREVIEW_MS);
+    // 복습할 표현이 없으면 바로 짧은 대화로 넘어간다.
+    connectTimer.current = setTimeout(
+      () => (plan.targets.length > 0 ? setPhase("review") : void enterFreeTalk()),
+      CONNECT_PREVIEW_MS,
+    );
   }
 
   function cancelConnecting() {

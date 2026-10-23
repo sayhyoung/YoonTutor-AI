@@ -238,13 +238,29 @@ export function pickTalkTopic(targets: LearningTarget[]): LearningTarget | undef
   return sentences.find((target) => target.answerEn.trim().endsWith("?")) ?? sentences[0] ?? targets[0];
 }
 
+const DAILY_TALK_QUESTION = "How was your day today?";
+
 export function buildTemplateFreeTalk(targets: LearningTarget[]): FreeTalkPlan {
   const topic = pickTalkTopic(targets);
-  if (!topic) return { maxTurns: 1, idleStopSeconds: IDLE_STOP_SECONDS, turns: [] };
-  const expression = topic.answerEn.trim();
+  // 복습할 표현이 없는 학생(새 계정 등)도 하루 이야기로 짧은 대화를 한다.
+  const expression = topic?.answerEn.trim() ?? DAILY_TALK_QUESTION;
   const plain = expression.replace(/[.!?]+$/, "");
 
-  const opening: ConversationTurn = expression.endsWith("?")
+  const opening: ConversationTurn = !topic
+    ? {
+        id: "talk-1",
+        relatedExpression: expression,
+        questionEn: expression,
+        questionMeaningKo: "오늘 하루 어땠어?",
+        answerHint: "It was…로 시작해서 한 문장으로 말해 봐요.",
+        previewVoiceAnswer: "It was good.",
+        choices: [
+          { id: "talk-1-a", answerEn: "It was good.", meaningKo: "좋았어." },
+          { id: "talk-1-b", answerEn: "It was fun.", meaningKo: "재미있었어." },
+          { id: "talk-1-c", answerEn: "I was a little tired.", meaningKo: "조금 피곤했어." },
+        ],
+      }
+    : expression.endsWith("?")
     ? {
         id: "talk-1",
         relatedExpression: expression,
