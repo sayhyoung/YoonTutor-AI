@@ -44,7 +44,8 @@ export type CallReviewSnapshot = {
 export interface CallReviewRepository {
   load(): Promise<CallReviewSnapshot>;
   // 프리뷰 저장소는 저장·AI 질문·음성 인식을 하지 않는다(템플릿과 가짜 인식 결과 사용).
-  saveReport?(report: CallReportPayload): Promise<void>;
+  // 저장한 통화 요약을 돌려준다(서버가 만든 짧은 대화 피드백 포함).
+  saveReport?(report: CallReportPayload): Promise<CallReportSummary>;
   generateTurn?(request: FreeTalkTurnRequest): Promise<GeneratedTurn | null>;
   transcribe?(uri: string): Promise<string>;
   // 서버 푸시 기기 등록. 등록되면 true(기기 자체 알림 대신 서버가 보낸다).
@@ -82,6 +83,7 @@ export function toHistoryEntry(report: CallReportSummary): CallHistoryEntry {
         ...(target.learnerAnswer ? { learnerAnswer: target.learnerAnswer } : {}),
       })),
       conversation: report.conversation.filter((turn) => turn.answer.trim()),
+      ...(report.talkFeedback ? { talkFeedback: report.talkFeedback } : {}),
     },
   };
 }
@@ -201,7 +203,7 @@ export function createApiCallReviewRepository({
     async saveReport(report) {
       const token = getToken();
       if (!token) throw new UnauthorizedError();
-      await saveCallReport(token, report);
+      return (await saveCallReport(token, report)).report;
     },
     async generateTurn(request) {
       const token = getToken();

@@ -195,45 +195,92 @@ export const FREE_TALK_TURNS = 3;
 // AI 질문을 만들 때 보내는 표현 수(서버 free-talk 상한과 같다). 우선순위가 높은 문항부터 보낸다.
 export const FREE_TALK_EXPRESSIONS = 5;
 
-export function buildTemplateFreeTalk(targets: LearningTarget[]): FreeTalkPlan {
-  const turns: ConversationTurn[] = targets.slice(0, FREE_TALK_TURNS).map((target, index) => {
-    const expression = target.answerEn.trim().replace(/[.!?]+$/, "");
-    const id = `talk-${index + 1}`;
-    if (isWord(expression)) {
-      return {
-        id,
-        relatedExpression: expression,
-        questionEn: `Can you make a short sentence with "${expression}"?`,
-        questionMeaningKo: `"${expression}"를 넣어서 짧은 문장을 말해 볼래?`,
-        answerHint: `단어 하나만 말해도 괜찮아요. "${expression}"부터 말해 봐요.`,
-        previewVoiceAnswer: `I know the word ${expression}.`,
-        choices: [
-          { id: `${id}-a`, answerEn: `I know the word ${expression}.`, meaningKo: `나는 ${expression}라는 단어를 알아.` },
-          { id: `${id}-b`, answerEn: `${expression[0]!.toUpperCase()}${expression.slice(1)}.`, meaningKo: "단어만 말해도 좋아요." },
-          { id: `${id}-c`, answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
-        ],
-      };
-    }
-    return {
-      id,
-      relatedExpression: expression,
-      questionEn: `When can you say "${expression}"?`,
-      questionMeaningKo: `"${expression}"는 언제 말할 수 있을까?`,
-      answerHint: "I can say it at…로 시작해 봐요.",
-      previewVoiceAnswer: "I can say it at school.",
-      choices: [
-        { id: `${id}-a`, answerEn: "I can say it at school.", meaningKo: "학교에서 말할 수 있어." },
-        { id: `${id}-b`, answerEn: "I can say it at home.", meaningKo: "집에서 말할 수 있어." },
-        { id: `${id}-c`, answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
-      ],
-    };
-  });
+// AI 질문을 못 만들 때 쓰는 결정론적 짧은 대화. 대화하기 좋은 표현 하나를 소재로 고르고
+// (묻는 문장 > 다른 문장 > 단어), 두 번째·세 번째 질문은 같은 소재에 이어지는 후속 질문이다.
+export function pickTalkTopic(targets: LearningTarget[]): LearningTarget | undefined {
+  const sentences = targets.filter((target) => !isWord(target.answerEn.trim()));
+  return sentences.find((target) => target.answerEn.trim().endsWith("?")) ?? sentences[0] ?? targets[0];
+}
 
-  return {
-    maxTurns: Math.max(1, turns.length),
-    idleStopSeconds: IDLE_STOP_SECONDS,
-    turns,
-  };
+export function buildTemplateFreeTalk(targets: LearningTarget[]): FreeTalkPlan {
+  const topic = pickTalkTopic(targets);
+  if (!topic) return { maxTurns: 1, idleStopSeconds: IDLE_STOP_SECONDS, turns: [] };
+  const expression = topic.answerEn.trim();
+  const plain = expression.replace(/[.!?]+$/, "");
+
+  const opening: ConversationTurn = expression.endsWith("?")
+    ? {
+        id: "talk-1",
+        relatedExpression: expression,
+        questionEn: expression,
+        questionMeaningKo: `${topic.promptKo}`,
+        answerHint: "Yes나 No로 시작해서 한 문장으로 말해 봐요.",
+        previewVoiceAnswer: "Yes, I do.",
+        choices: [
+          { id: "talk-1-a", answerEn: "Yes, I do.", meaningKo: "응, 그래." },
+          { id: "talk-1-b", answerEn: "No, I don't.", meaningKo: "아니, 안 그래." },
+          { id: "talk-1-c", answerEn: "A little.", meaningKo: "조금." },
+        ],
+      }
+    : isWord(plain)
+      ? {
+          id: "talk-1",
+          relatedExpression: expression,
+          questionEn: `Can you make a short sentence with "${plain}"?`,
+          questionMeaningKo: `"${plain}"를 넣어서 짧은 문장을 말해 볼래?`,
+          answerHint: `단어 하나만 말해도 괜찮아요. "${plain}"부터 말해 봐요.`,
+          previewVoiceAnswer: `I know the word ${plain}.`,
+          choices: [
+            { id: "talk-1-a", answerEn: `I know the word ${plain}.`, meaningKo: `나는 ${plain}라는 단어를 알아.` },
+            { id: "talk-1-b", answerEn: `${plain[0]!.toUpperCase()}${plain.slice(1)}.`, meaningKo: "단어만 말해도 좋아요." },
+            { id: "talk-1-c", answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
+          ],
+        }
+      : {
+          id: "talk-1",
+          relatedExpression: expression,
+          questionEn: `When can you say "${plain}"?`,
+          questionMeaningKo: `"${plain}"는 언제 말할 수 있을까?`,
+          answerHint: "I can say it at…로 시작해 봐요.",
+          previewVoiceAnswer: "I can say it at school.",
+          choices: [
+            { id: "talk-1-a", answerEn: "I can say it at school.", meaningKo: "학교에서 말할 수 있어." },
+            { id: "talk-1-b", answerEn: "I can say it at home.", meaningKo: "집에서 말할 수 있어." },
+            { id: "talk-1-c", answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
+          ],
+        };
+
+  const followUps: ConversationTurn[] = [
+    {
+      id: "talk-2",
+      relatedExpression: expression,
+      questionEn: "Nice! Can you tell me more about that?",
+      questionMeaningKo: "좋아! 그것에 대해 조금 더 말해 줄래?",
+      answerHint: "I like…나 It is…로 한 문장 더 말해 봐요.",
+      previewVoiceAnswer: "I like it a lot.",
+      choices: [
+        { id: "talk-2-a", answerEn: "I like it a lot.", meaningKo: "나는 그게 정말 좋아." },
+        { id: "talk-2-b", answerEn: "It is fun.", meaningKo: "재미있어." },
+        { id: "talk-2-c", answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
+      ],
+    },
+    {
+      id: "talk-3",
+      relatedExpression: expression,
+      questionEn: "Great! Why do you think so?",
+      questionMeaningKo: "멋져! 왜 그렇게 생각해?",
+      answerHint: "Because…로 시작해 봐요.",
+      previewVoiceAnswer: "Because it is fun.",
+      choices: [
+        { id: "talk-3-a", answerEn: "Because it is fun.", meaningKo: "재미있으니까." },
+        { id: "talk-3-b", answerEn: "Because I like it.", meaningKo: "좋아하니까." },
+        { id: "talk-3-c", answerEn: "I don't know.", meaningKo: "모르겠어." },
+      ],
+    },
+  ];
+
+  const turns = [opening, ...followUps].slice(0, FREE_TALK_TURNS);
+  return { maxTurns: turns.length, idleStopSeconds: IDLE_STOP_SECONDS, turns };
 }
 
 export type CallReport = {
@@ -270,6 +317,8 @@ export type PastCallReport = {
   }[];
   // 짧은 대화: 베플리 질문과 내 대답(리포트에서 대화 형식으로 다시 본다).
   conversation: { questionEn: string; answer: string }[];
+  // 짧은 대화가 끝난 뒤 베플리가 남긴 피드백(교사 리포트에도 같은 글이 보인다).
+  talkFeedback?: string;
 };
 
 export type CallHistoryEntry = {

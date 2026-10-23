@@ -48,6 +48,7 @@ export type CallReviewSession = {
   correct: number;
   total: number;
   conversationTurns: number;
+  talkFeedback?: string;
   targets: {
     answerEn: string;
     promptKo: string;

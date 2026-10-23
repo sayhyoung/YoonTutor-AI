@@ -307,6 +307,12 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
                               ))}
                             </dl>
                           ) : null}
+                          {report.talkFeedback ? (
+                            <p className="talk-feedback">
+                              <strong>학생에게 남긴 대화 피드백</strong>
+                              {report.talkFeedback}
+                            </p>
+                          ) : null}
                         </div>
                       ) : null}
                     </li>

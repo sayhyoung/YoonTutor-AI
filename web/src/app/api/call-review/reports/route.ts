@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { parseCallReportInput, toStoredCallReport, toSummary } from "@/lib/call-review/report-schema";
+import {
+  type CallReportTurn,
+  parseCallReportInput,
+  toStoredCallReport,
+  toSummary,
+} from "@/lib/call-review/report-schema";
+import { buildTalkFeedbackInput, buildTalkFeedbackInstructions, parseTalkFeedback } from "@/lib/call-review/talk-feedback";
+import { callOpenAiMessages, isOpenAiEnabled } from "@/lib/openai";
 import {
   isReportStoreConfigured,
   listCallReports,
@@ -25,6 +32,29 @@ export function OPTIONS(request: Request) {
   return preflight(request, METHODS);
 }
 
+// 짧은 대화 피드백. 저장을 오래 막지 않도록 시간 제한을 두고, 실패하면 피드백 없이 저장한다.
+const FEEDBACK_TIMEOUT_MS = 8000;
+
+async function makeTalkFeedback(conversation: CallReportTurn[]): Promise<string | null> {
+  if (conversation.length === 0 || !isOpenAiEnabled()) return null;
+  try {
+    const raw = await Promise.race([
+      callOpenAiMessages(
+        [
+          { role: "developer", content: buildTalkFeedbackInstructions() },
+          { role: "user", content: buildTalkFeedbackInput(conversation) },
+        ],
+        600,
+        process.env.CALL_REVIEW_FREE_TALK_MODEL || undefined,
+      ),
+      new Promise<string>((_, reject) => setTimeout(() => reject(new Error("timeout")), FEEDBACK_TIMEOUT_MS)),
+    ]);
+    return parseTalkFeedback(raw);
+  } catch {
+    return null;
+  }
+}
+
 // 학생 앱이 통화를 마치면 결과를 저장한다. 학생 번호는 Bearer 토큰에서만 읽는다.
 export async function POST(request: Request) {
   if (!isReportStoreConfigured()) {
@@ -46,6 +76,8 @@ export async function POST(request: Request) {
     studentId: student.subjectId,
     studentName: student.displayName,
   });
+  const talkFeedback = await makeTalkFeedback(report.conversation);
+  if (talkFeedback) report.talkFeedback = talkFeedback;
   try {
     const { created } = await saveCallReport(report);
     return json(request, { report: toSummary(report), created }, created ? 201 : 200);

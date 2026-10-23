@@ -110,4 +110,11 @@ describe("buildTemplateFreeTalk", () => {
     assert.equal(plan.maxTurns, FREE_TALK_TURNS);
     assert.equal(plan.turns.length, FREE_TALK_TURNS);
   });
+
+  it("starts from a question sentence and keeps every turn on that topic", () => {
+    const targets = items.map((target) => ({ id: target.id, sourceLabel: target.sourceLabel, promptKo: target.promptKo, answerEn: target.answerEn, hint: "" }));
+    const plan = buildTemplateFreeTalk(targets);
+    assert.equal(plan.turns[0]!.questionEn, "Do you like movies?");
+    assert.deepEqual(new Set(plan.turns.map((turn) => turn.relatedExpression)), new Set(["Do you like movies?"]));
+  });
 });

@@ -35,6 +35,8 @@ export type StoredCallReport = CallReportInput & {
   reviewedCount: number;
   needsReviewCount: number;
   savedAt: string;
+  // 짧은 대화가 끝난 뒤 AI가 남긴 한국어 피드백(학생 앱·교사 리포트에 같이 보여 준다). 만들지 못하면 없음.
+  talkFeedback?: string;
 };
 
 const MAX_TARGETS = 10;
@@ -137,5 +139,6 @@ export function toSummary(report: StoredCallReport): CallReportSummary {
     reviewedCount: report.reviewedCount,
     needsReviewCount: report.needsReviewCount,
     savedAt: report.savedAt,
+    ...(report.talkFeedback ? { talkFeedback: report.talkFeedback } : {}),
   };
 }

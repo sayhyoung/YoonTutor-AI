@@ -33,6 +33,8 @@ export type CallReportSummary = {
     learnerAnswer?: string;
   }[];
   conversation: { questionEn: string; answer: string }[];
+  // 짧은 대화 뒤 학생에게 남긴 피드백(학생 앱에도 같은 글이 보인다).
+  talkFeedback?: string;
   reviewedCount: number;
   needsReviewCount: number;
   savedAt: string;

@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       ),
       TIMEOUT_MS,
     );
-    const turn = parseGeneratedTurn(raw);
+    const turn = parseGeneratedTurn(raw, parsed.request);
     return NextResponse.json({ turn, source: turn ? "ai" : "invalid" }, { headers });
   } catch {
     return NextResponse.json({ turn: null, source: "error" }, { headers });

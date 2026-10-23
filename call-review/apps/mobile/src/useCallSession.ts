@@ -65,7 +65,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 function toConversationTurn(turn: GeneratedTurn, index: number): ConversationTurn {
   return {
     id: `ai-${index}`,
-    relatedExpression: "",
+    relatedExpression: turn.topic,
     questionEn: turn.questionEn,
     questionMeaningKo: turn.questionMeaningKo,
     answerHint: turn.answerHint,
@@ -106,6 +106,8 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   const generation = useRef(0);
   const firstTurn = useRef<Promise<ConversationTurn | null> | null>(null);
   const lastRetryMessage = useRef<string | undefined>(undefined);
+  // 짧은 대화 소재(첫 질문에서 정해짐). 후속 질문은 이 소재에 이어서 묻는다.
+  const talkTopic = useRef<string | undefined>(undefined);
 
   const isCallSurface =
     phase === "incoming" ||
@@ -166,7 +168,12 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     if (!services.generateTurn || expressions.length === 0) return null;
     try {
       const generated = await withTimeout(
-        services.generateTurn({ expressions, history, turnIndex }),
+        services.generateTurn({
+          expressions,
+          history,
+          turnIndex,
+          ...(turnIndex > 0 && talkTopic.current ? { topic: talkTopic.current } : {}),
+        }),
         TURN_TIMEOUT_MS,
         null,
       );
@@ -190,6 +197,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   function resetCall() {
     generation.current += 1;
     firstTurn.current = null;
+    talkTopic.current = undefined;
     stopRecordingQuietly();
     setPhase("home");
     setTargetIndex(0);
@@ -257,8 +265,11 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     // The choices panel would cover the "이렇게 들었어" card.
     setChoiceAssistOpen(false);
     if (!services.voice) {
-      const previewText = phase === "free-talk" ? freeTalkTurn.previewVoiceAnswer : target?.answerEn ?? "";
-      setHeardText(previewText);
+      if (phase === "free-talk") {
+        submitAnswer(freeTalkTurn.previewVoiceAnswer);
+        return;
+      }
+      setHeardText(target?.answerEn ?? "");
       setVoiceState("review");
       return;
     }
@@ -271,6 +282,11 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       if (!text) {
         setVoiceState("idle");
         setVoiceError("잘 들리지 않았어요. 한 번 더 말해 볼까요?");
+        return;
+      }
+      // 짧은 대화는 들은 말을 확인하지 않고 바로 대답으로 보내 다음 질문으로 넘어간다(복습 문항만 확인 단계를 둔다).
+      if (phase === "free-talk") {
+        submitAnswer(text);
         return;
       }
       setHeardText(text);
@@ -355,7 +371,9 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       : null;
     if (current !== generation.current) return;
     setTurnLoading(false);
-    showTurn(0, prepared ?? plan.freeTalk.turns[0]!);
+    const opening = prepared ?? plan.freeTalk.turns[0]!;
+    talkTopic.current = opening.relatedExpression || undefined;
+    showTurn(0, opening);
   }
 
   function continueReview() {

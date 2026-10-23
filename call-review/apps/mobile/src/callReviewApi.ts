@@ -144,6 +144,7 @@ export type CallReportSummary = CallReportPayload & {
   reviewedCount: number;
   needsReviewCount: number;
   savedAt: string;
+  talkFeedback?: string;
 };
 
 export function saveCallReport(token: string, report: CallReportPayload): Promise<{ report: CallReportSummary }> {
@@ -173,9 +174,12 @@ export type FreeTalkTurnRequest = {
   expressions: { answerEn: string; promptKo: string; sourceType: "word" | "sentence" }[];
   history: { questionEn: string; answer: string }[];
   turnIndex: number;
+  // 첫 질문에서 고른 대화 소재. 두 번째·세 번째 질문은 이 소재에 이어서 묻는다.
+  topic?: string;
 };
 
 export type GeneratedTurn = {
+  topic: string;
   questionEn: string;
   questionMeaningKo: string;
   answerHint: string;

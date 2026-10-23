@@ -1812,6 +1812,9 @@ function CallDetails({ sessions }: { sessions: CallReviewSession[] }) {
               ))}
             </tbody>
           </table>
+          {session.talkFeedback ? (
+            <p className="panel-note" style={{ marginTop: 8 }}>대화 피드백: {session.talkFeedback}</p>
+          ) : null}
         </div>
       ))}
     </div>

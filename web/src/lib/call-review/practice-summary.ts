@@ -23,6 +23,7 @@ export type CallSession = {
   correct: number;
   total: number;
   conversationTurns: number;
+  talkFeedback?: string;
   targets: {
     answerEn: string;
     promptKo: string;
@@ -96,6 +97,7 @@ export function summarizePractice(reports: StoredCallReport[]): PracticeSummary 
         correct,
         total,
         conversationTurns: report.conversation.length,
+        ...(report.talkFeedback ? { talkFeedback: report.talkFeedback } : {}),
         targets: report.targets.map((target) => ({
           answerEn: target.answerEn,
           promptKo: target.promptKo,

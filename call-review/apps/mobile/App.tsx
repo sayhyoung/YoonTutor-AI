@@ -354,7 +354,7 @@ function CallReviewApp({
 }: {
   data: CallReviewSnapshot;
   onLogout?: () => void;
-  onSaveReport?: (report: CallReportPayload) => Promise<void>;
+  onSaveReport?: (report: CallReportPayload) => Promise<{ talkFeedback?: string }>;
   onRefresh?: () => void;
   generateTurn?: SessionServices["generateTurn"];
   transcribe?: (uri: string) => Promise<string>;
@@ -459,6 +459,8 @@ function CallReviewApp({
   );
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  // 저장할 때 서버가 짧은 대화를 보고 만든 피드백.
+  const [talkFeedback, setTalkFeedback] = useState<string | null>(null);
   const pendingReport = useRef<CallReportPayload | null>(null);
 
   const sendReport = useCallback(async () => {
@@ -466,7 +468,8 @@ function CallReviewApp({
     if (!report || !onSaveReport) return;
     setSaveStatus("saving");
     try {
-      await onSaveReport(report);
+      const saved = await onSaveReport(report);
+      setTalkFeedback(saved.talkFeedback ?? null);
       setSaveStatus("saved");
     } catch {
       setSaveStatus("failed");
@@ -484,6 +487,7 @@ function CallReviewApp({
     const saved = saveStatus === "saved";
     pendingReport.current = null;
     setSaveStatus("idle");
+    setTalkFeedback(null);
     session.resetCall();
     // 저장된 통화가 마이페이지 기록에 보이도록 다시 불러온다.
     if (saved) onRefresh?.();
@@ -519,6 +523,7 @@ function CallReviewApp({
               reviewedCount={openedHistory.report.reviewedCount}
               targets={openedHistory.report.targets}
               conversation={openedHistory.report.conversation}
+              talkFeedback={openedHistory.report.talkFeedback ?? null}
               saveStatus={null}
               onRetrySave={() => {}}
               onDone={() => setOpenedHistory(null)}
@@ -635,6 +640,7 @@ function CallReviewApp({
             reviewedCount={session.reviewedCount}
             targets={data.plan.targets}
             conversation={session.conversationTurns}
+            talkFeedback={talkFeedback}
             saveStatus={onSaveReport ? saveStatus : null}
             onRetrySave={() => void sendReport()}
             onDone={finishCall}
@@ -1626,6 +1632,7 @@ function ReportScreen({
   reviewedCount,
   targets,
   conversation,
+  talkFeedback,
   saveStatus,
   onRetrySave,
   onDone,
@@ -1638,6 +1645,7 @@ function ReportScreen({
   reviewedCount: number;
   targets: { id: string; promptKo: string; answerEn: string; learnerAnswer?: string }[];
   conversation: { questionEn: string; answer: string }[];
+  talkFeedback: string | null;
   saveStatus: SaveStatus | null;
   onRetrySave: () => void;
   onDone: () => void;
@@ -1721,6 +1729,14 @@ function ReportScreen({
                 </View>
               </View>
             ))}
+            {talkFeedback ? (
+              <View style={[styles.talkFeedbackCard, darkMode && darkAppStyles.card]} accessibilityLabel="베플리 선생님의 대화 피드백">
+                <Text style={[styles.talkFeedbackLabel, { color: darkMode ? color.beflyDark : color.befly }]}>베플리 선생님의 한마디</Text>
+                <Text style={[styles.talkFeedbackText, darkMode && darkAppStyles.strongText]}>{talkFeedback}</Text>
+              </View>
+            ) : !past && saveStatus === "saving" ? (
+              <Text style={[styles.talkFeedbackPending, darkMode && darkAppStyles.mutedText]}>대화 피드백을 정리하고 있어요…</Text>
+            ) : null}
           </View>
         )}
       </ScrollView>
@@ -1877,6 +1893,10 @@ const styles = StyleSheet.create({
   reportConversation: { gap: 12 },
   reportConversationTitle: { color: color.ink, fontSize: 15, fontWeight: "700" },
   chatTurn: { gap: 8 },
+  talkFeedbackCard: { marginTop: 4, borderRadius: 18, borderWidth: 1, borderColor: color.line, backgroundColor: color.beflySoft, padding: 16, gap: 6 },
+  talkFeedbackLabel: { fontSize: 13, fontWeight: "700" },
+  talkFeedbackText: { color: color.ink, fontSize: 15, lineHeight: 22 },
+  talkFeedbackPending: { color: color.muted, fontSize: 13 },
   chatBeflyRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, paddingRight: 40 },
   chatAvatar: { width: 32, height: 32, borderRadius: 16 },
   chatBeflyBubble: { flexShrink: 1, backgroundColor: color.surface, borderWidth: 1, borderColor: color.line, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomRightRadius: 16, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 10, gap: 2 },
