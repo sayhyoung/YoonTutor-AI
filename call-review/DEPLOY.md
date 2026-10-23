@@ -9,7 +9,8 @@
   - 프로젝트에 이미 있는 `GEMINI_API_KEY` 시크릿은 Cloud Functions용이라 건드리지 않는다. 앱의 `GEMINI_API_KEY` 환경변수는 `CALL_REVIEW_GEMINI_API_KEY` 시크릿을 읽는다.
 - [x] `web/apphosting.yaml`에서 전화관리 설정 켬(main 반영 시 롤아웃)
 - [x] 교사 화면 운영 배포(6번): 백엔드 `call-review-teacher`, https://call-review-teacher--eduai-tutor-62825.asia-east1.hosted.app
-- [ ] 서버 푸시 예약 작업(4번) → 만든 뒤 `CALL_REVIEW_PUSH_DISPATCH=enabled`. 그 전에는 앱이 기기 자체 알림을 쓴다.
+- [x] 서버 푸시 예약 작업(4번): Cloud Scheduler `call-review-dispatch`(asia-east1, 5분마다, Asia/Seoul). 수동 호출 200 확인.
+- [ ] 폰 푸시 토큰 발급(FCM 설정) → 그다음 `CALL_REVIEW_PUSH_DISPATCH=enabled`. 그 전에는 앱이 기기 자체 알림을 쓴다.
 - [ ] 운영 BFF 주소로 앱 빌드(5번)
 
 ## 1. Firestore 규칙·색인 배포
@@ -60,10 +61,11 @@ gcloud scheduler jobs create http call-review-dispatch \
 
 ## 5. 학생 앱(Expo/EAS)
 
-1. `cd call-review/apps/mobile && npx eas init`: Expo 계정으로 프로젝트를 만들면 `app.json`에 `extra.eas.projectId`가 생긴다. 이 ID가 있어야 서버 푸시용 기기 토큰을 받는다. 없으면 앱은 기기 자체 알림(매주 반복 예약)을 쓴다.
+1. 서버 푸시는 FCM 직접 연동이다. Android는 `apps/mobile/google-services.json`(Firebase 앱 `com.yoonsaeng.aicallreview`)로 FCM 기기 토큰을 받는다. 설정 파일은 네이티브 리소스라 바꾸면 앱을 다시 빌드한다. 토큰을 못 받으면 앱은 기기 자체 알림(매주 반복 예약)을 쓴다.
 2. 빌드 환경변수 `EXPO_PUBLIC_CALL_REVIEW_API_BASE_URL`을 운영 BFF 주소로 설정(`eas.json`의 각 build profile `env`).
 3. `npx eas build --profile preview --platform all`로 내부 배포 빌드 → 실제 기기에서 마이크·푸시·전화 알림 확인.
-4. iOS는 Apple 개발자 계정, Android는 FCM 설정이 EAS 빌드 과정에서 필요하다.
+4. iOS는 Apple 개발자 계정과 APNs 키를 Firebase에 연결한 뒤 서버 푸시를 붙인다(그 전에는 기기 자체 알림).
+5. 운영 BFF가 FCM을 보내려면 FCM API(`fcm.googleapis.com`)가 켜져 있고 App Hosting 실행 서비스 계정에 Firebase Cloud Messaging 발송 권한이 있어야 한다.
 
 ## 6. 교사 화면(`call-review/apps/teacher-web`)
 

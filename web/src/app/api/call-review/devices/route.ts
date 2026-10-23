@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isServerStoreConfigured } from "@/lib/call-review/admin-db";
 import { registerDevice, unregisterDevice } from "@/lib/call-review/device-store";
-import { isExpoPushToken } from "@/lib/call-review/push";
+import { isPushToken } from "@/lib/call-review/push";
 import { corsHeaders, preflight } from "@/lib/study-api/call-review-cors";
 import { readMobileToken } from "@/lib/study-api/call-review-mobile-token";
 
@@ -18,7 +18,7 @@ export function OPTIONS(request: Request) {
 async function readBody(request: Request): Promise<{ token: string; platform: string } | null> {
   try {
     const body = (await request.json()) as { token?: unknown; platform?: unknown };
-    if (!isExpoPushToken(body.token)) return null;
+    if (!isPushToken(body.token)) return null;
     const platform = body.platform === "ios" || body.platform === "android" ? body.platform : "unknown";
     return { token: body.token, platform };
   } catch {

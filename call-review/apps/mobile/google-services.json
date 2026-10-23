@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "435688058049",
+    "project_id": "eduai-tutor-62825",
+    "storage_bucket": "eduai-tutor-62825.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:435688058049:android:fb6de6fa2d8341cf0df840",
+        "android_client_info": {
+          "package_name": "com.yoonsaeng.aicallreview"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBAwzdrUfohOUSlp2-1Ti9So27NeHqAyJs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

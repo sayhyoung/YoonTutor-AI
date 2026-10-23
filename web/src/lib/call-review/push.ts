@@ -28,58 +28,61 @@ export function dueEvents(schedule: CallScheduleInput, from: Date, to: Date): Du
   return events;
 }
 
-export type ExpoPushMessage = {
-  to: string;
+// FCM으로 보낼 알림 내용. data 값은 문자열이어야 하고, 앱은 data.kind/type으로 전화 알림을 구분한다.
+export type PushContent = {
   title: string;
   body: string;
-  sound: "default";
-  priority: "high";
-  channelId: string;
   data: { kind: "call-review"; type: DispatchKind };
 };
 
-export function buildMessages(tokens: string[], event: DueEvent, reminderMinutes: number): ExpoPushMessage[] {
+export function buildPushContent(event: DueEvent, reminderMinutes: number): PushContent {
   const content =
     event.kind === "call"
       ? { title: "베플리 선생님 전화가 왔어요", body: "오늘 복습할 표현으로 짧게 이야기해요. 눌러서 전화를 받아요." }
       : { title: `${reminderMinutes}분 뒤 관리 전화가 와요`, body: "조용한 곳에서 베플리 선생님 전화를 기다려 주세요." };
-  return tokens.map((to) => ({
-    to,
-    ...content,
-    sound: "default",
-    priority: "high",
-    channelId: "call-review",
-    data: { kind: "call-review", type: event.kind },
-  }));
+  return { ...content, data: { kind: "call-review", type: event.kind } };
 }
 
-export function isExpoPushToken(value: unknown): value is string {
-  return typeof value === "string" && /^(Exponent|Expo)PushToken\[[A-Za-z0-9_-]+\]$/.test(value);
+// FCM 등록 토큰(기기 토큰). 형식이 공개돼 있지 않아 길이·문자 범위만 본다.
+export function isPushToken(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 20 && value.length <= 4096 && /^[A-Za-z0-9:_-]+$/.test(value);
 }
 
-type ExpoTicket = { status: "ok" | "error"; details?: { error?: string } };
+// 앱을 지웠거나 토큰이 바뀌어 다시 보낼 수 없는 경우. 이 토큰은 저장소에서 지운다.
+const INVALID_TOKEN_ERRORS = new Set([
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+]);
 
-// Expo 푸시 서비스로 보낸다. 더 이상 유효하지 않은 토큰 목록을 돌려준다.
-export async function sendExpoPush(messages: ExpoPushMessage[]): Promise<{ sent: number; invalidTokens: string[] }> {
+export type SendResult = { success: boolean; error?: { code?: string } };
+
+export function invalidTokensFrom(tokens: string[], responses: SendResult[]): string[] {
+  return responses.flatMap((response, index) =>
+    !response.success && INVALID_TOKEN_ERRORS.has(response.error?.code ?? "") ? [tokens[index]!] : [],
+  );
+}
+
+const ANDROID_CHANNEL_ID = "call-review";
+const MULTICAST_LIMIT = 500;
+
+// FCM(firebase-admin)으로 바로 보낸다. 더 이상 유효하지 않은 토큰 목록을 돌려준다.
+export async function sendPush(tokens: string[], content: PushContent): Promise<{ sent: number; invalidTokens: string[] }> {
+  const { getMessaging } = await import("firebase-admin/messaging");
+  const { adminApp } = await import("./admin-db");
+  const messaging = getMessaging(await adminApp());
   const invalidTokens: string[] = [];
   let sent = 0;
-  for (let index = 0; index < messages.length; index += 100) {
-    const chunk = messages.slice(index, index + 100);
-    const response = await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        ...(process.env.EXPO_ACCESS_TOKEN ? { Authorization: `Bearer ${process.env.EXPO_ACCESS_TOKEN}` } : {}),
-      },
-      body: JSON.stringify(chunk),
+  for (let index = 0; index < tokens.length; index += MULTICAST_LIMIT) {
+    const chunk = tokens.slice(index, index + MULTICAST_LIMIT);
+    const result = await messaging.sendEachForMulticast({
+      tokens: chunk,
+      notification: { title: content.title, body: content.body },
+      data: content.data,
+      android: { priority: "high", notification: { channelId: ANDROID_CHANNEL_ID, sound: "default" } },
+      apns: { payload: { aps: { sound: "default" } } },
     });
-    if (!response.ok) throw new Error(`Expo push ${response.status}`);
-    const body = (await response.json()) as { data?: ExpoTicket[] };
-    (body.data ?? []).forEach((ticket, ticketIndex) => {
-      if (ticket.status === "ok") sent += 1;
-      else if (ticket.details?.error === "DeviceNotRegistered") invalidTokens.push(chunk[ticketIndex]!.to);
-    });
+    sent += result.successCount;
+    invalidTokens.push(...invalidTokensFrom(chunk, result.responses));
   }
   return { sent, invalidTokens };
 }

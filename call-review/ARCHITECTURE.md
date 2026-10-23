@@ -91,7 +91,7 @@ study-api는 학습 데이터를 읽기만 하므로 전화 일정은 우리 서
 - 학생 앱: `GET /api/call-review/schedule`(Bearer). 다음 통화 시각과 "오늘/내일/10월 23일(목) 오후 7:30" 표시 문구를 서버가 KST로 계산해 준다.
 - 교사 현황: 학생별 다음 통화를 보여주고, 가장 최근 예정 회차에서 1시간이 지나도록 통화 기록이 없으면 `부재중`으로 표시한다(일정을 그 회차 이후에 만들었으면 제외, 30분 일찍 받은 통화는 인정).
 - 알림 1차(기기): 앱이 일정을 받을 때마다 기기 알림을 매주 반복으로 다시 예약한다(전화 시각 + 사전 알림). 교사가 바꾼 일정은 학생이 앱을 다음에 열 때 반영되며, 기기 시간대가 한국이라고 가정한다.
-- 알림 2차(서버 푸시): EAS 프로젝트 ID가 있으면 앱이 Expo 푸시 토큰을 `POST /api/call-review/devices`로 등록하고(최대 5대, 로그아웃 때 해제), 이때는 기기 자체 예약을 지워 중복을 막는다. 예약 작업이 5분마다 `POST /api/call-review/dispatch`(`CALL_REVIEW_CRON_SECRET` 인증)를 부르면 그 사이 도래한 전화·사전 알림을 Expo 푸시로 보내고, `callDispatches/{회원번호}_{종류}_{시각}`을 `create`로 남겨 같은 회차를 두 번 보내지 않는다. 더 이상 유효하지 않은 토큰은 지운다.
+- 알림 2차(서버 푸시, FCM 직접): Android 앱은 FCM 기기 토큰(`google-services.json`, Firebase 앱 `com.yoonsaeng.aicallreview`)을 `POST /api/call-review/devices`로 등록하고(최대 5대, 로그아웃 때 해제), 서버가 받아 주면(`CALL_REVIEW_PUSH_DISPATCH=enabled`) 기기 자체 예약을 지워 중복을 막는다. iOS는 아직 기기 자체 알림을 쓴다(APNs 연결 후 추가). Cloud Scheduler가 5분마다 `POST /api/call-review/dispatch`(`CALL_REVIEW_CRON_SECRET` 인증)를 부르면 그 사이 도래한 전화·사전 알림을 firebase-admin으로 FCM에 바로 보내고(외부 Expo 푸시 서비스 없음), `callDispatches/{회원번호}_{종류}_{시각}`을 `create`로 남겨 같은 회차를 두 번 보내지 않는다. 더 이상 유효하지 않은 토큰은 지운다.
 - 어느 방식이든 전화 알림을 누르거나 앱 사용 중 전화 시각이 되면 홈에서 수신 화면을 띄운다.
 
 ## 모바일 배포 방향

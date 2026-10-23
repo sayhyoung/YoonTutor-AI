@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { isServerStoreConfigured } from "@/lib/call-review/admin-db";
 import { claimDispatch, devicesWithSchedules, removeTokens } from "@/lib/call-review/device-store";
-import { buildMessages, dueEvents, sendExpoPush } from "@/lib/call-review/push";
+import { buildPushContent, dueEvents, sendPush } from "@/lib/call-review/push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     for (const event of dueEvents(schedule, from, now)) {
       if (!(await claimDispatch(schedule.customerNo, event.kind, event.at))) continue;
       events += 1;
-      const result = await sendExpoPush(buildMessages(tokens, event, schedule.reminderMinutesBefore));
+      const result = await sendPush(tokens, buildPushContent(event, schedule.reminderMinutesBefore));
       sent += result.sent;
       invalid.push(...result.invalidTokens);
     }

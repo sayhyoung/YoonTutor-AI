@@ -79,5 +79,3 @@ env:
   #   value: enabled
   # - variable: CALL_REVIEW_FREE_TALK_MODEL  # (선택) 짧은 대화 질문용 더 빠른 모델
   #   value: <model>
-  # - variable: EXPO_ACCESS_TOKEN            # (선택) Expo 푸시 보안 설정을 켠 경우
-  #   secret: EXPO_ACCESS_TOKEN

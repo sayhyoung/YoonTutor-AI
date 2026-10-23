@@ -14,16 +14,20 @@ export function isServerStoreConfigured(): boolean {
   return Boolean(process.env.FIRESTORE_EMULATOR_HOST) || process.env.CALL_REVIEW_FIRESTORE === "enabled";
 }
 
-export async function firestore(): Promise<Firestore> {
-  if (db) return db;
+// Firestore와 FCM 발송이 함께 쓰는 firebase-admin 앱. App Hosting/로컬 모두 Application Default Credentials를 쓴다.
+export async function adminApp(): Promise<App> {
   const { getApps, initializeApp } = await import("firebase-admin/app");
-  const { getFirestore } = await import("firebase-admin/firestore");
   const projectId =
     process.env.CALL_REVIEW_FIREBASE_PROJECT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-  // App Hosting/로컬 모두 Application Default Credentials를 쓴다.
-  const app: App =
+  return (
     getApps().find((candidate) => candidate.name === APP_NAME) ??
-    initializeApp(projectId ? { projectId } : {}, APP_NAME);
-  db = getFirestore(app);
+    initializeApp(projectId ? { projectId } : {}, APP_NAME)
+  );
+}
+
+export async function firestore(): Promise<Firestore> {
+  if (db) return db;
+  const { getFirestore } = await import("firebase-admin/firestore");
+  db = getFirestore(await adminApp());
   return db;
 }

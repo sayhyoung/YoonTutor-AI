@@ -1,5 +1,4 @@
 import { Platform } from "react-native";
-import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 
 import type { ApiSchedule } from "./callReviewApi";
@@ -41,26 +40,23 @@ export function currentPushToken(): string | null {
   return registeredPushToken;
 }
 
-// 서버 푸시(2차)용 Expo 푸시 토큰. EAS 프로젝트 ID가 없거나 권한이 없으면 null(기기 알림 사용).
+// 서버 푸시(2차)용 FCM 기기 토큰(Android). 서버가 firebase-admin으로 FCM에 바로 보낸다.
+// iOS는 APNs 연결 전이라 null(기기 자체 알림). 권한이 없거나 토큰을 못 받아도 null.
 export async function getPushToken(): Promise<string | null> {
-  if (Platform.OS === "web") return null;
-  const projectId =
-    (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId ??
-    Constants.easConfig?.projectId;
-  if (!projectId) return null;
+  if (Platform.OS !== "android") return null;
   try {
     const permission = await Notifications.getPermissionsAsync();
     const granted =
       permission.granted || (permission.canAskAgain && (await Notifications.requestPermissionsAsync()).granted);
     if (!granted) return null;
-    if (Platform.OS === "android") {
-      await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-        name: "관리 전화",
-        importance: Notifications.AndroidImportance.HIGH,
-      });
-    }
-    return (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-  } catch {
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+      name: "관리 전화",
+      importance: Notifications.AndroidImportance.HIGH,
+    });
+    const token = await Notifications.getDevicePushTokenAsync();
+    return typeof token.data === "string" ? token.data : null;
+  } catch (error) {
+    console.warn("[push] FCM 토큰을 받지 못했어요", error instanceof Error ? error.message : error);
     return null;
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildMessages, dueEvents, isExpoPushToken } from "./push";
+import { buildPushContent, dueEvents, invalidTokensFrom, isPushToken } from "./push";
 
 // 목 19:30 KST = 10:30 UTC (2026-10-22), 10분 전 알림 = 10:20 UTC
 const schedule = { weekdays: ["목" as const], time: "19:30", reminderMinutesBefore: 10, active: true };
@@ -22,11 +22,29 @@ describe("due push events", () => {
     expect(dueEvents({ ...schedule, reminderMinutesBefore: 0 }, at("2026-10-22T10:15:00Z"), at("2026-10-22T10:22:00Z"))).toEqual([]);
   });
 
-  it("builds one message per device and validates Expo tokens", () => {
-    const messages = buildMessages(["ExponentPushToken[abc]", "ExpoPushToken[def]"], { kind: "call", at: new Date() }, 10);
-    expect(messages).toHaveLength(2);
-    expect(messages[0]?.data).toEqual({ kind: "call-review", type: "call" });
-    expect(isExpoPushToken("ExponentPushToken[abc-123]")).toBe(true);
-    expect(isExpoPushToken("not-a-token")).toBe(false);
+  it("builds call and reminder content that the app can recognize", () => {
+    expect(buildPushContent({ kind: "call", at: new Date() }, 10)).toMatchObject({ data: { kind: "call-review", type: "call" } });
+    expect(buildPushContent({ kind: "reminder", at: new Date() }, 10).title).toBe("10분 뒤 관리 전화가 와요");
+  });
+
+  it("accepts FCM registration tokens and rejects other values", () => {
+    expect(isPushToken("dQw4w9WgXcQ:APA91bHun4MxP5egoKMwt2KZFBaFUH-1RYqx")).toBe(true);
+    expect(isPushToken("ExponentPushToken[abc]")).toBe(false);
+    expect(isPushToken("short")).toBe(false);
+    expect(isPushToken(42)).toBe(false);
+  });
+
+  it("removes only tokens that FCM says are no longer registered", () => {
+    expect(
+      invalidTokensFrom(
+        ["ok-token", "gone-token", "bad-token", "busy-token"],
+        [
+          { success: true },
+          { success: false, error: { code: "messaging/registration-token-not-registered" } },
+          { success: false, error: { code: "messaging/invalid-registration-token" } },
+          { success: false, error: { code: "messaging/server-unavailable" } },
+        ],
+      ),
+    ).toEqual(["gone-token", "bad-token"]);
   });
 });
