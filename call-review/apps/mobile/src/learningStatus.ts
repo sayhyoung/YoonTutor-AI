@@ -24,7 +24,7 @@ export type LearningStatus = {
   skipped: { answerEn: string; promptKo: string; times: number }[];
 };
 
-const emptyCounts = (): OutcomeCounts => ({ correct: 0, retry: 0, skipped: 0 });
+const emptyCounts = (): OutcomeCounts => ({ correct: 0, hinted: 0, retry: 0, skipped: 0 });
 
 function percent(part: number, whole: number): number | null {
   return whole > 0 ? Math.round((part / whole) * 100) : null;

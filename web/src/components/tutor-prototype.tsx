@@ -1467,7 +1467,7 @@ function TeacherMembers({
                       </p>
                     </div>
                     <span className={`result-status ${it.outcome === "correct" ? "perfect" : "not"}`}>
-                      {it.outcome === "correct" ? "완료함" : it.outcome === "retry" ? "오답" : "못 했어요"}
+                      {it.outcome === "correct" ? "완료함" : it.outcome === "hinted" ? "힌트로 완료" : it.outcome === "retry" ? "오답" : "못 했어요"}
                     </span>
                   </div>
                 ))}
@@ -1710,7 +1710,7 @@ function TeacherDashboard({ sessions }: { sessions: QuizSession[] }) {
                           {item.outcome === "retry" && item.learnerAnswer ? ` · 학생 답: ${item.learnerAnswer}` : ""}
                         </p>
                       </div>
-                      <span className="result-status not">{item.outcome === "retry" ? "오답" : "못 했어요"}</span>
+                      <span className="result-status not">{item.outcome === "hinted" ? "힌트로 완료" : item.outcome === "retry" ? "오답" : "못 했어요"}</span>
                     </div>
                   ))
                 )
@@ -1742,7 +1742,7 @@ const CALL_FINISH_LABELS: Record<CallReviewSession["finishReason"], string> = {
   "no-response": "응답 없음",
 };
 
-const CALL_OUTCOME_LABELS = { correct: "완료함", retry: "오답", skipped: "못 했어요" } as const;
+const CALL_OUTCOME_LABELS = { correct: "완료함", hinted: "힌트로 완료", retry: "오답", skipped: "못 했어요" } as const;
 
 // 교사용(실연동): 전화관리 통화별 정답률 막대.
 function CallScoreBars({ sessions }: { sessions: CallReviewSession[] }) {
@@ -1807,7 +1807,7 @@ function CallDetails({ sessions }: { sessions: CallReviewSession[] }) {
                       {CALL_OUTCOME_LABELS[target.outcome]}
                     </span>
                   </td>
-                  <td>{target.outcome === "retry" ? target.learnerAnswer ?? "-" : "-"}</td>
+                  <td>{target.outcome === "retry" || target.outcome === "hinted" ? target.learnerAnswer ?? "-" : "-"}</td>
                 </tr>
               ))}
             </tbody>

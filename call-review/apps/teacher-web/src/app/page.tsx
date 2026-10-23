@@ -204,7 +204,7 @@ function OverviewHero({
 }
 
 function ClassOverview({ stats }: { stats: ClassStats }) {
-  const judged = stats.outcomeTotals.correct + stats.outcomeTotals.retry;
+  const judged = stats.outcomeTotals.correct + stats.outcomeTotals.hinted + stats.outcomeTotals.retry;
   const accuracy = percent(stats.outcomeTotals.correct, judged);
   return (
     <div className="report-grid overview-grid">

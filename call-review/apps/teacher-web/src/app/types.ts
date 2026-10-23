@@ -1,6 +1,7 @@
 // BFF /api/call-review/teacher/* 응답 형식(web/src/lib/call-review/*와 맞춘다).
 
-export type CallOutcome = "correct" | "retry" | "skipped";
+// correct: 한 번에 맞힘 / hinted: 힌트 받고 맞힘 / retry: 끝내 못 맞힘 / skipped: 넘김.
+export type CallOutcome = "correct" | "hinted" | "retry" | "skipped";
 export type FinishReason = "completed" | "stopped" | "no-response";
 export type TeacherCallStatus = "완료" | "재통화 필요" | "부재중" | "기록 없음";
 
@@ -31,6 +32,8 @@ export type CallReportSummary = {
     answerEn: string;
     outcome: CallOutcome;
     learnerAnswer?: string;
+    // 이 표현에서 학생이 말한 답(순서대로). 한 번에 맞혔으면 없음.
+    attempts?: string[];
   }[];
   conversation: { questionEn: string; answer: string }[];
   // 짧은 대화 뒤 학생에게 남긴 피드백(학생 앱에도 같은 글이 보인다).

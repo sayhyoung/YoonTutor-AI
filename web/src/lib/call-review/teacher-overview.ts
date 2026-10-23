@@ -80,7 +80,7 @@ export type MissedExpression = { answerEn: string; promptKo: string; misses: num
 export type ClassStats = {
   days: number;
   dailyCalls: DailyCalls[];
-  outcomeTotals: { correct: number; retry: number; skipped: number };
+  outcomeTotals: { correct: number; hinted: number; retry: number; skipped: number };
   topMissed: MissedExpression[];
   totalCalls: number;
 };
@@ -95,7 +95,7 @@ export function buildClassStats(reports: StoredCallReport[], now = new Date(), d
     return { date: localDateKey(date), completed: 0, stopped: 0, noResponse: 0 };
   });
   const byDate = new Map(dailyCalls.map((day) => [day.date, day]));
-  const outcomeTotals = { correct: 0, retry: 0, skipped: 0 };
+  const outcomeTotals = { correct: 0, hinted: 0, retry: 0, skipped: 0 };
   const missed = new Map<string, MissedExpression & { studentIds: Set<string> }>();
 
   for (const report of reports) {

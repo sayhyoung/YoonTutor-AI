@@ -29,6 +29,7 @@ import type {
   InputMode,
   TeacherScheduleSettings,
 } from "@yoon-call/shared";
+import { MAX_REVIEW_ATTEMPTS } from "@yoon-call/shared";
 
 import {
   type CallReviewRepository,
@@ -135,6 +136,7 @@ function DataApp({
       onSaveReport={repository.saveReport?.bind(repository)}
       onRefresh={reload}
       generateTurn={repository.generateTurn?.bind(repository)}
+      checkAnswer={repository.checkAnswer?.bind(repository)}
       transcribe={repository.transcribe?.bind(repository)}
       registerPush={repository.registerPush?.bind(repository)}
       speechSource={repository.speechSource?.bind(repository)}
@@ -328,14 +330,16 @@ function buildReportPayload(
     finishReason: session.finishReason,
     targets: plan.targets.map((target, index) => {
       const outcome = session.reviewOutcomes[index] ?? "skipped";
-      const learnerAnswer = outcome === "retry" ? session.firstAnswers[index] : undefined;
+      // 한 번에 맞힌 표현은 답을 따로 남기지 않는다.
+      const attempts = outcome === "correct" ? [] : (session.reviewAttempts[index] ?? []);
       return {
         targetId: target.id,
         sourceLabel: target.sourceLabel,
         promptKo: target.promptKo,
         answerEn: target.answerEn,
         outcome,
-        ...(learnerAnswer ? { learnerAnswer } : {}),
+        ...(attempts[0] ? { learnerAnswer: attempts[0] } : {}),
+        ...(attempts.length > 0 ? { attempts: attempts.slice(-MAX_REVIEW_ATTEMPTS) } : {}),
       };
     }),
     conversation: session.conversationTurns,
@@ -348,6 +352,7 @@ function CallReviewApp({
   onSaveReport,
   onRefresh,
   generateTurn,
+  checkAnswer,
   transcribe,
   registerPush,
   speechSource,
@@ -357,6 +362,7 @@ function CallReviewApp({
   onSaveReport?: (report: CallReportPayload) => Promise<{ talkFeedback?: string }>;
   onRefresh?: () => void;
   generateTurn?: SessionServices["generateTurn"];
+  checkAnswer?: SessionServices["checkAnswer"];
   transcribe?: (uri: string) => Promise<string>;
   registerPush?: (pushToken: string) => Promise<boolean>;
   speechSource?: RemoteSpeechSource;
@@ -365,10 +371,11 @@ function CallReviewApp({
   const services = useMemo<SessionServices>(
     () => ({
       generateTurn,
+      checkAnswer,
       voice: transcribe ? { start: capture.start, stop: capture.stop, transcribe } : undefined,
       prepareSpeech: (questionEn) => prefetchSpeech(questionEn, "en-US", speechSource),
     }),
-    [capture, generateTurn, speechSource, transcribe],
+    [capture, checkAnswer, generateTurn, speechSource, transcribe],
   );
   const session = useCallSession(data.plan, services);
   const { setSpeaking } = session;
@@ -580,6 +587,7 @@ function CallReviewApp({
             sourceLabel={session.target.sourceLabel}
             answerEn={session.target.answerEn}
             reviewFeedback={session.reviewFeedback}
+            checkingAnswer={session.checkingAnswer}
             questionMeaningKo={
               session.phase === "free-talk"
                 ? session.freeTalkTurn.questionMeaningKo
@@ -1129,6 +1137,8 @@ type CallScreenProps = {
   sourceLabel: string;
   answerEn: string;
   reviewFeedback: ReviewFeedback | null;
+  // 뜻이 맞는 다른 답인지 서버 AI가 판정하는 중.
+  checkingAnswer: boolean;
   questionMeaningKo?: string;
   hint: string;
   choiceOptions: ConversationChoice[];
@@ -1174,10 +1184,13 @@ function maskAnswer(answer: string) {
 }
 
 function reviewGuide(props: CallScreenProps) {
+  if (props.checkingAnswer) return "베플리가 답을 확인하고 있어요…";
   if (props.reviewFeedback) {
     return props.reviewFeedback.kind === "correct"
       ? "좋아요! 아주 자연스러워요."
-      : "괜찮아요, 같이 다시 볼까요?";
+      : props.reviewFeedback.kind === "hint"
+        ? "힌트를 보고 다시 말해 볼까요?"
+        : "괜찮아요, 같이 다시 볼까요?";
   }
   if (props.inputMode === "text") return "글자로 써도 좋아요.";
   if (props.voiceState === "listening") return "천천히 말해도 괜찮아요.";
@@ -1408,6 +1421,34 @@ function CallScreen(props: CallScreenProps) {
           </View>
         )}
 
+        {props.checkingAnswer ? (
+          <View style={styles.listeningRow} accessibilityLiveRegion="polite">
+            <Text style={[styles.listeningText, { color: t.actionInk }]}>베플리가 답을 확인하고 있어요…</Text>
+          </View>
+        ) : null}
+
+        {feedback?.kind === "hint" && !props.checkingAnswer && (
+          <View style={[styles.reviewFeedbackCard, styles.reviewFeedbackCardRetry, light ? lightCallStyles.raisedSurface : darkAppStyles.card]} accessibilityLiveRegion="polite" accessibilityLabel="힌트">
+            <View style={styles.reviewRetryHead}>
+              <Image source={befly.hint} style={styles.reviewFeedbackAvatar} accessible={false} />
+              <View style={styles.reviewFeedbackTitleRow}>
+                <Icon name="hint" size={20} color={t.beflyInk} />
+                <Text style={[styles.reviewFeedbackTitle, { color: t.beflyInk }]}>{feedback.message ?? "다시 말해 볼까요?"}</Text>
+              </View>
+            </View>
+            <View style={[styles.reviewAnswerBox, { backgroundColor: t.surface2 }]}>
+              <Text style={[styles.reviewAnswerLabel, { color: t.ink2 }]}>내 답</Text>
+              <Text style={[styles.reviewAnswerText, { color: t.ink2 }]}>{feedback.answer}</Text>
+            </View>
+            {feedback.hint ? (
+              <View style={[styles.reviewAnswerBox, { backgroundColor: t.beflySoft }]}>
+                <Text style={[styles.reviewAnswerLabel, { color: t.beflyInk }]}>힌트</Text>
+                <Text style={[styles.reviewAnswerText, { color: t.ink }]}>{feedback.hint}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
+
         {feedback?.kind === "retry" && (
           <View style={[styles.reviewFeedbackCard, styles.reviewFeedbackCardRetry, light ? lightCallStyles.raisedSurface : darkAppStyles.card]} accessibilityLiveRegion="polite" accessibilityLabel="다시 해보기">
             <View style={styles.reviewRetryHead}>
@@ -1620,6 +1661,7 @@ function Signal({ barColor }: { barColor: string }) {
 
 const REPORT_TAGS = {
   correct: { label: "완료함", ink: "#17673F", bg: color.successSoft, darkInk: "#7FDCAE", darkBg: "#16302A" },
+  hinted: { label: "힌트로 완료", ink: color.primaryStrong, bg: color.primarySoft, darkInk: color.actionInkDark, darkBg: color.actionSoftDark },
   retry: { label: "복습 필요", ink: color.warningInk, bg: color.beflySoft, darkInk: "#EBC9A6", darkBg: color.callPulseMiddle },
   skipped: { label: "못 했어요", ink: color.muted, bg: color.surfaceMuted, darkInk: color.mutedInverse, darkBg: color.callPulseOuter },
 } as const;
@@ -1707,7 +1749,7 @@ function ReportScreen({
         <View style={[styles.reportExpressionCard,darkMode && darkAppStyles.card]} accessibilityLabel="오늘의 표현">
           {targets.map((target,index) => {
             const tag = REPORT_TAGS[outcomes[index] ?? "skipped"];
-            return <View key={target.id} style={[styles.reportExpressionRow,index < targets.length - 1 && styles.reportExpressionDivider,darkMode && darkAppStyles.bottomBorder]}><View style={styles.reportExpressionCopy}><Text style={[styles.reportExpressionEn,darkMode && darkAppStyles.strongText]}>{target.answerEn}</Text><Text style={[styles.reportExpressionKo,darkMode && darkAppStyles.mutedText]}>{target.promptKo}</Text>{target.learnerAnswer && outcomes[index] === "retry" ? <Text style={[styles.reportExpressionKo,darkMode && darkAppStyles.mutedText]}>내 답: {target.learnerAnswer}</Text> : null}</View><View style={[styles.reportExpressionTag,{backgroundColor: darkMode ? tag.darkBg : tag.bg}]}><Text style={[styles.reportExpressionTagText,{color: darkMode ? tag.darkInk : tag.ink}]}>{tag.label}</Text></View></View>;
+            return <View key={target.id} style={[styles.reportExpressionRow,index < targets.length - 1 && styles.reportExpressionDivider,darkMode && darkAppStyles.bottomBorder]}><View style={styles.reportExpressionCopy}><Text style={[styles.reportExpressionEn,darkMode && darkAppStyles.strongText]}>{target.answerEn}</Text><Text style={[styles.reportExpressionKo,darkMode && darkAppStyles.mutedText]}>{target.promptKo}</Text>{target.learnerAnswer && (outcomes[index] === "retry" || outcomes[index] === "hinted") ? <Text style={[styles.reportExpressionKo,darkMode && darkAppStyles.mutedText]}>내 답: {target.learnerAnswer}</Text> : null}</View><View style={[styles.reportExpressionTag,{backgroundColor: darkMode ? tag.darkBg : tag.bg}]}><Text style={[styles.reportExpressionTagText,{color: darkMode ? tag.darkInk : tag.ink}]}>{tag.label}</Text></View></View>;
           })}
         </View>
         {conversation.length > 0 && (

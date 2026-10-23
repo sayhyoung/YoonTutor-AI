@@ -31,7 +31,7 @@ export type CallReviewPractice = {
     answerEn: string;
     promptKo: string;
     sourceType: "word" | "sentence";
-    outcome: "correct" | "retry" | "skipped";
+    outcome: "correct" | "hinted" | "retry" | "skipped";
     learnerAnswer?: string;
     lastPracticedAt: string;
     times: number;
@@ -53,7 +53,7 @@ export type CallReviewSession = {
     answerEn: string;
     promptKo: string;
     sourceType: "word" | "sentence";
-    outcome: "correct" | "retry" | "skipped";
+    outcome: "correct" | "hinted" | "retry" | "skipped";
     learnerAnswer?: string;
   }[];
 };

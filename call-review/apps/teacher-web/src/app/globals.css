@@ -790,6 +790,11 @@ tbody tr.selected {
   background: color-mix(in oklch, var(--color-success) 12%, var(--color-paper-3));
 }
 
+.outcome-tag.hinted {
+  color: var(--color-primary);
+  background: color-mix(in oklch, var(--color-primary) 10%, var(--color-paper-3));
+}
+
 .outcome-tag.retry {
   color: var(--color-danger);
   background: color-mix(in oklch, var(--color-danger) 10%, var(--color-paper-3));
@@ -835,6 +840,7 @@ tbody tr.selected {
 /* Learning report: richer overview + per-student report. */
 :root {
   --tone-correct: oklch(62% 0.15 155);
+  --tone-hinted: oklch(64% 0.13 255);
   --tone-retry: oklch(68% 0.17 45);
   --tone-skipped: oklch(84% 0.02 285);
   --tone-stopped: oklch(60% 0.17 285);
@@ -842,6 +848,7 @@ tbody tr.selected {
 }
 
 .tone-correct { background: var(--tone-correct); }
+.tone-hinted { background: var(--tone-hinted); }
 .tone-retry { background: var(--tone-retry); }
 .tone-skipped { background: var(--tone-skipped); }
 .tone-stopped { background: var(--tone-stopped); }

@@ -63,10 +63,14 @@ export type CallPlan = {
   freeTalk: FreeTalkPlan;
 };
 
+// 표현별 통화 결과. correct: 한 번에 맞힘 / hinted: 힌트 받고 맞힘(다음 통화에 한 번 더) /
+// retry: 끝내 못 맞힘(복습 필요) / skipped: 넘김.
+export type CallTargetOutcome = "correct" | "hinted" | "retry" | "skipped";
+
 // 지난 통화에서 표현별로 낸 결과. 다음 통화 문항의 우선순위를 정하는 데 쓴다.
 export type PracticeRecord = {
   answerEn: string;
-  outcome: "correct" | "retry" | "skipped";
+  outcome: CallTargetOutcome;
   practicedAt: string;
 };
 
@@ -113,7 +117,7 @@ export type CallPlanSelection = {
 // 출제 규칙
 // 1. 새 학습 우선: 표현을 마지막으로 통화에서 연습한 뒤(또는 한 번도 연습 안 한 상태에서) 학습 차시에서 또 틀린 표현.
 //    최근 학습한 차시부터, 차시 안에서는 학습 순서대로. 여러 차시를 학습했으면 모두 내되 최대 10문항.
-// 2. 새 학습이 없으면 복습 필요: 가장 최근 통화 결과가 틀림(먼저)·넘김인 표현. 오래전에 연습한 것부터, 최대 10문항.
+// 2. 새 학습이 없으면 복습 필요: 가장 최근 통화 결과가 틀림(먼저)·힌트로 완료·넘김인 표현. 오래전에 연습한 것부터, 최대 10문항.
 // 3. 그것도 없으면(모두 맞힘) 가장 오래전에 연습한 표현 3개를 돌아가며 다시 본다.
 export function selectCallItems(
   items: LearningHistoryItem[],
@@ -133,7 +137,7 @@ export function selectCallItems(
     .sort((a, b) => (b.item.studiedAt ?? "").localeCompare(a.item.studiedAt ?? "") || a.order - b.order);
   if (fresh.length > 0) return { mode: "new", items: fresh.slice(0, maxTargets).map(({ item }) => item) };
 
-  const outcomeRank = { retry: 0, skipped: 1, correct: 2 } as const;
+  const outcomeRank = { retry: 0, hinted: 1, skipped: 2, correct: 3 } as const;
   const review = ranked
     .filter(({ record }) => record && record.outcome !== "correct")
     .sort(
@@ -215,10 +219,34 @@ const CONTRACTIONS: [RegExp, string][] = [
   [/\b(he|she|it|that|what|there|here|who|where|how|this)'s\b/g, "$1 is"],
 ];
 
+// 같은 말을 다르게 적는 경우(OK = Okay, 2 = two). 음성 인식이 어느 쪽으로든 적는다.
+const SAME_WORDS: Record<string, string> = {
+  ok: "okay",
+  okey: "okay",
+  zero: "0",
+  one: "1",
+  two: "2",
+  three: "3",
+  four: "4",
+  five: "5",
+  six: "6",
+  seven: "7",
+  eight: "8",
+  nine: "9",
+  ten: "10",
+  eleven: "11",
+  twelve: "12",
+};
+
 function normalizeAnswer(text: string): string {
-  let value = text.toLowerCase().replace(/[’‘`]/g, "'");
+  let value = text.toLowerCase().replace(/[’‘`]/g, "'").replace(/\bo\.\s?k\b\.?/g, "okay");
   for (const [pattern, replacement] of CONTRACTIONS) value = value.replace(pattern, replacement);
-  return value.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  return value
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => SAME_WORDS[word] ?? word)
+    .join(" ");
 }
 
 function surfaceForm(text: string): string {
@@ -229,6 +257,47 @@ export function gradeReviewAnswer(answer: string, expected: string): ReviewGrade
   if (!answer.trim()) return "wrong";
   if (surfaceForm(answer) === surfaceForm(expected)) return "exact";
   return normalizeAnswer(answer) === normalizeAnswer(expected) ? "close" : "wrong";
+}
+
+// 복습 한 문항에서 답할 수 있는 횟수. 1·2번째 오답에는 힌트를 주고, 3번째 오답이면 정답을 알려 주고 넘어간다.
+export const MAX_REVIEW_ATTEMPTS = 3;
+
+// 영어 알파벳 이름 뒤 조사: m(엠)·n(엔)만 받침이 있어 "으로", 나머지(l·r은 ㄹ 받침)는 "로".
+function letterWithRo(letter: string): string {
+  return `${letter}${/^[mn]$/i.test(letter) ? "으로" : "로"}`;
+}
+
+function answerWords(answerEn: string): string[] {
+  return answerEn.trim().replace(/[.!?]+$/, "").split(/\s+/).filter(Boolean);
+}
+
+function firstLetter(answerEn: string): string {
+  return answerEn.trim().match(/[A-Za-z]/)?.[0]?.toLowerCase() ?? "";
+}
+
+// 1번째 오답: 길이·첫 단어로 감을 잡게 한다. 2번째 오답: 철자 모양(g _ _ d)을 보여 준다. 정답 전체는 말하지 않는다.
+export function reviewHint(answerEn: string, level: 1 | 2): string {
+  const words = answerEn.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 1) {
+    const word = answerEn.trim().replace(/[.!?]+$/, "");
+    const letters = word.replace(/[^A-Za-z]/g, "");
+    if (level === 1) return `${letters.length}글자짜리 영어 단어예요. 뜻을 다시 떠올려 볼까요?`;
+    const shape = [...word].map((char, index) => (index === 0 || !/[A-Za-z]/.test(char) ? char : "_")).join(" ");
+    return `${letterWithRo(firstLetter(word))} 시작해요. ${shape}`;
+  }
+  const plain = answerWords(answerEn);
+  if (level === 1) return `${plain.length}개 단어로 된 문장이에요. "${plain[0]} …"로 시작해요.`;
+  const shape = plain.map((word) => `${word[0]}${"_".repeat(Math.max(word.length - 1, 0))}`).join(" ");
+  return `이런 모양이에요. ${shape}`;
+}
+
+// 뜻은 맞지만 이번 레슨에서 배운 표현이 아닐 때(good 자리에 nice). 오답으로 세지 않고 다시 말해 보게 한다.
+export function alternativeAnswerMessage(answer: string, answerEn: string): string {
+  const words = answerWords(answerEn);
+  if (words.length <= 1) {
+    return `"${answer.trim().replace(/[.!?]+$/, "")}"도 맞는 말이에요! 그런데 이번 레슨에서는 ${letterWithRo(firstLetter(answerEn))} 시작하는 단어를 찾고 있어요.`;
+  }
+  return `뜻은 잘 통해요! 이번 레슨에서 배운 문장으로 다시 말해 볼까요? "${words[0]} …"로 시작해요.`;
 }
 
 // AI 질문을 못 만들 때 쓰는 결정론적 짧은 대화. 대화하기 좋은 표현 하나를 소재로 고르고
@@ -364,7 +433,7 @@ export type PastCallReport = {
     sourceLabel: string;
     promptKo: string;
     answerEn: string;
-    outcome: "correct" | "retry" | "skipped";
+    outcome: CallTargetOutcome;
     learnerAnswer?: string;
   }[];
   // 짧은 대화: 베플리 질문과 내 대답(리포트에서 대화 형식으로 다시 본다).

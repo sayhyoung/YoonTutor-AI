@@ -18,6 +18,7 @@ export const FINISH_LABELS: Record<FinishReason, string> = {
 
 const OUTCOME_LABELS: Record<CallOutcome, string> = {
   correct: "완료함",
+  hinted: "힌트로 완료",
   retry: "복습 필요",
   skipped: "못 했어요",
 };
@@ -171,7 +172,7 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
               <Donut
                 ariaLabel="복습 결과 분포"
                 centerLabel="표현"
-                centerValue={String(analytics.outcomeTotals.correct + analytics.outcomeTotals.retry + analytics.outcomeTotals.skipped)}
+                centerValue={String(analytics.outcomeTotals.correct + analytics.outcomeTotals.hinted + analytics.outcomeTotals.retry + analytics.outcomeTotals.skipped)}
                 segments={OUTCOME_SEGMENTS(analytics.outcomeTotals)}
               />
             </section>
@@ -291,7 +292,11 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
                                 <div>
                                   <span className="target-en" lang="en">{target.answerEn}</span>
                                   <span className="target-ko">{target.promptKo}</span>
-                                  {target.learnerAnswer ? <span className="target-answer">학생 답: <span lang="en">{target.learnerAnswer}</span></span> : null}
+                                  {target.attempts && target.attempts.length > 0 ? (
+                                    <span className="target-answer">학생 답: <span lang="en">{target.attempts.join(" → ")}</span></span>
+                                  ) : target.learnerAnswer ? (
+                                    <span className="target-answer">학생 답: <span lang="en">{target.learnerAnswer}</span></span>
+                                  ) : null}
                                 </div>
                                 <span className={`outcome-tag ${target.outcome}`}>{OUTCOME_LABELS[target.outcome]}</span>
                               </li>

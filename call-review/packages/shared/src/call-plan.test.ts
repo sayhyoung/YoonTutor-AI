@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
+import { alternativeAnswerMessage, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
 
 function item(answerEn: string, sourceType: "word" | "sentence", studiedAt: string): LearningHistoryItem {
   return {
@@ -148,5 +148,43 @@ describe("buildTemplateFreeTalk without review expressions", () => {
     const talk = buildTemplateFreeTalk([]);
     assert.equal(talk.turns.length, FREE_TALK_TURNS);
     assert.equal(talk.turns[0]!.questionEn, "How was your day today?");
+  });
+});
+
+describe("gradeReviewAnswer spelling variants", () => {
+  it("treats OK/Okay/O.K. and number words as the same answer", () => {
+    assert.equal(gradeReviewAnswer("Okay,mom", "OK, mom."), "close");
+    assert.equal(gradeReviewAnswer("o.k. mom", "OK, mom."), "close");
+    assert.equal(gradeReviewAnswer("I have two cats.", "I have 2 cats."), "close");
+  });
+});
+
+describe("reviewHint", () => {
+  it("gives a length hint first and a letter shape second, never the full answer", () => {
+    assert.equal(reviewHint("good", 1), "4글자짜리 영어 단어예요. 뜻을 다시 떠올려 볼까요?");
+    assert.equal(reviewHint("good", 2), "g로 시작해요. g _ _ _");
+    assert.equal(reviewHint("nice", 2).startsWith("n으로"), true);
+    assert.equal(reviewHint("He is from China.", 1), '4개 단어로 된 문장이에요. "He …"로 시작해요.');
+    assert.equal(reviewHint("He is from China.", 2), "이런 모양이에요. H_ i_ f___ C____");
+  });
+
+  it("explains an acceptable alternative word", () => {
+    assert.equal(alternativeAnswerMessage("nice", "good"), '"nice"도 맞는 말이에요! 그런데 이번 레슨에서는 g로 시작하는 단어를 찾고 있어요.');
+  });
+});
+
+describe("selectCallItems with hinted outcomes", () => {
+  it("asks an expression answered with a hint once more in the next call", () => {
+    const at = "2026-10-23T00:00:00.000Z";
+    const items = [
+      { id: "a", studentId: "s", sourceType: "word" as const, sourceLabel: "단어 복습", promptKo: "좋은", answerEn: "good", studiedAt: "2026-10-01T00:00:00.000Z" },
+      { id: "b", studentId: "s", sourceType: "word" as const, sourceLabel: "단어 복습", promptKo: "닫다", answerEn: "close", studiedAt: "2026-10-01T00:00:00.000Z" },
+    ];
+    const selection = selectCallItems(items, [
+      { answerEn: "good", outcome: "hinted", practicedAt: at },
+      { answerEn: "close", outcome: "correct", practicedAt: at },
+    ]);
+    assert.equal(selection.mode, "review");
+    assert.deepEqual(selection.items.map((item) => item.answerEn), ["good"]);
   });
 });

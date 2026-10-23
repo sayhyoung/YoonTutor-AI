@@ -134,8 +134,10 @@ export type CallReportPayload = {
     sourceLabel: string;
     promptKo: string;
     answerEn: string;
-    outcome: "correct" | "retry" | "skipped";
+    outcome: "correct" | "hinted" | "retry" | "skipped";
     learnerAnswer?: string;
+    // 이 표현에서 말한 답(최근 3개). 한 번에 맞혔으면 없음.
+    attempts?: string[];
   }[];
   conversation: { questionEn: string; answer: string }[];
 };
@@ -193,6 +195,19 @@ export async function generateFreeTalkTurn(token: string, body: FreeTalkTurnRequ
     body,
   });
   return response.turn;
+}
+
+export type AnswerCheckRequest = {
+  answerEn: string;
+  promptKo: string;
+  sourceType: "word" | "sentence";
+  answer: string;
+};
+
+// 규칙 채점에서 틀린 답이 뜻으로는 맞는지(good 자리에 nice) 서버 AI에게 묻는다. 실패하면 false.
+export async function checkAlternativeAnswer(token: string, body: AnswerCheckRequest): Promise<boolean> {
+  const response = await request<{ acceptable?: boolean }>("/api/call-review/answer-check", { method: "POST", token, body });
+  return response.acceptable === true;
 }
 
 // 녹음 파일(uri)을 BFF로 올려 영어 텍스트로 바꾼다. 웹은 blob URL, 네이티브는 파일 uri.

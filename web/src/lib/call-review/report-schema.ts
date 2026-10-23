@@ -2,7 +2,8 @@
 // 학생 식별정보는 요청 본문이 아니라 서버가 검증한 토큰에서만 채운다.
 
 export type CallFinishReason = "completed" | "stopped" | "no-response";
-export type CallTargetOutcome = "correct" | "retry" | "skipped";
+// correct: 한 번에 맞힘 / hinted: 힌트 받고 맞힘 / retry: 끝내 못 맞힘 / skipped: 넘김.
+export type CallTargetOutcome = "correct" | "hinted" | "retry" | "skipped";
 
 export type CallReportTarget = {
   targetId: string;
@@ -10,7 +11,10 @@ export type CallReportTarget = {
   promptKo: string;
   answerEn: string;
   outcome: CallTargetOutcome;
+  // 학생의 첫 답(한 번에 맞혔으면 없음).
   learnerAnswer?: string;
+  // 이 표현에서 학생이 말한 답을 순서대로(최대 MAX_ATTEMPTS개). 한 번에 맞혔으면 없음.
+  attempts?: string[];
 };
 
 export type CallReportTurn = {
@@ -44,7 +48,8 @@ const MAX_TURNS = 5;
 const MAX_TEXT = 300;
 const REPORT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 const REASONS: CallFinishReason[] = ["completed", "stopped", "no-response"];
-const OUTCOMES: CallTargetOutcome[] = ["correct", "retry", "skipped"];
+const OUTCOMES: CallTargetOutcome[] = ["correct", "hinted", "retry", "skipped"];
+const MAX_ATTEMPTS = 3;
 
 function text(value: unknown, max = MAX_TEXT): string | null {
   if (typeof value !== "string") return null;
@@ -91,7 +96,20 @@ export function parseCallReportInput(
       return { ok: false, error: "복습 표현 항목이 올바르지 않아요." };
     }
     const learnerAnswer = text(item.learnerAnswer);
-    targets.push({ targetId, sourceLabel, promptKo, answerEn, outcome, ...(learnerAnswer ? { learnerAnswer } : {}) });
+    if (item.attempts !== undefined && (!Array.isArray(item.attempts) || item.attempts.length > MAX_ATTEMPTS)) {
+      return { ok: false, error: "복습 표현 항목이 올바르지 않아요." };
+    }
+    const attempts = ((item.attempts as unknown[] | undefined) ?? []).map((value) => text(value));
+    if (attempts.some((value) => value === null)) return { ok: false, error: "복습 표현 항목이 올바르지 않아요." };
+    targets.push({
+      targetId,
+      sourceLabel,
+      promptKo,
+      answerEn,
+      outcome,
+      ...(learnerAnswer ? { learnerAnswer } : {}),
+      ...(attempts.length > 0 ? { attempts: attempts as string[] } : {}),
+    });
   }
 
   if (!Array.isArray(body.conversation) || body.conversation.length > MAX_TURNS) {

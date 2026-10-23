@@ -70,7 +70,7 @@ describe("class stats", () => {
     expect(stats.dailyCalls).toHaveLength(14);
     expect(stats.dailyCalls.at(-1)).toMatchObject({ date: "2026-10-21", completed: 1, noResponse: 1 });
     expect(stats.dailyCalls.at(-2)).toMatchObject({ date: "2026-10-20", stopped: 1 });
-    expect(stats.outcomeTotals).toEqual({ correct: 4, retry: 5, skipped: 0 });
+    expect(stats.outcomeTotals).toEqual({ correct: 4, hinted: 0, retry: 5, skipped: 0 });
     expect(stats.topMissed[0]).toMatchObject({ answerEn: "close", students: 2, misses: 2 });
     expect(stats.topMissed[1]).toMatchObject({ students: 2, misses: 2 });
     expect(stats.topMissed[0]).not.toHaveProperty("studentIds");

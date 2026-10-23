@@ -8,6 +8,8 @@ import type {
 import { buildCallPlanFromLearningItems, buildTemplateFreeTalk, kstToIso } from "@yoon-call/shared";
 
 import {
+  type AnswerCheckRequest,
+  checkAlternativeAnswer,
   type ApiLearningItem,
   type ApiSchedule,
   type CallReportPayload,
@@ -47,6 +49,8 @@ export interface CallReviewRepository {
   // 저장한 통화 요약을 돌려준다(서버가 만든 짧은 대화 피드백 포함).
   saveReport?(report: CallReportPayload): Promise<CallReportSummary>;
   generateTurn?(request: FreeTalkTurnRequest): Promise<GeneratedTurn | null>;
+  // 규칙상 틀린 복습 답이 뜻으로는 맞는지 서버 AI 판정.
+  checkAnswer?(request: AnswerCheckRequest): Promise<boolean>;
   transcribe?(uri: string): Promise<string>;
   // 서버 푸시 기기 등록. 등록되면 true(기기 자체 알림 대신 서버가 보낸다).
   registerPush?(pushToken: string): Promise<boolean>;
@@ -208,6 +212,10 @@ export function createApiCallReviewRepository({
     async generateTurn(request) {
       const token = getToken();
       return token ? generateFreeTalkTurn(token, request) : null;
+    },
+    async checkAnswer(request) {
+      const token = getToken();
+      return token ? checkAlternativeAnswer(token, request).catch(() => false) : false;
     },
     speechSource(text, language) {
       const token = getToken();

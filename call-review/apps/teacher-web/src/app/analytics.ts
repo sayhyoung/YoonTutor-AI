@@ -21,7 +21,7 @@ export type StudentAnalytics = {
   lastAt: string | null;
 };
 
-const emptyOutcomes = (): Record<CallOutcome, number> => ({ correct: 0, retry: 0, skipped: 0 });
+const emptyOutcomes = (): Record<CallOutcome, number> => ({ correct: 0, hinted: 0, retry: 0, skipped: 0 });
 
 export function percent(part: number, whole: number): number | null {
   return whole > 0 ? Math.round((part / whole) * 100) : null;
@@ -64,7 +64,8 @@ export function analyzeReports(reports: CallReportSummary[]): StudentAnalytics {
     return { label: `${date.getMonth() + 1}/${date.getDate()}`, accuracy: percent(correct, judged), endedAt: report.endedAt };
   });
 
-  const judgedTotal = outcomeTotals.correct + outcomeTotals.retry;
+  // 정답률 = 한 번에 맞힌 표현 ÷ 판정한 표현(힌트로 완료 포함).
+  const judgedTotal = outcomeTotals.correct + outcomeTotals.hinted + outcomeTotals.retry;
   return {
     calls: reports.length,
     completionRate: percent(finishTotals.completed, reports.length),

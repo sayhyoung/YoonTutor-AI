@@ -1,21 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { CallPhase, CallPlan, ConversationTurn, InputMode } from "@yoon-call/shared";
-import { FREE_TALK_EXPRESSIONS, gradeReviewAnswer } from "@yoon-call/shared";
+import {
+  alternativeAnswerMessage,
+  FREE_TALK_EXPRESSIONS,
+  gradeReviewAnswer,
+  MAX_REVIEW_ATTEMPTS,
+  reviewHint,
+} from "@yoon-call/shared";
 
-import type { FreeTalkTurnRequest, GeneratedTurn } from "./callReviewApi";
+import type { AnswerCheckRequest, FreeTalkTurnRequest, GeneratedTurn } from "./callReviewApi";
 
 export type VoiceState = "idle" | "preparing" | "listening" | "transcribing" | "review";
 export type FinishReason = "completed" | "stopped" | "no-response";
-// message: 틀렸을 때 보여 줄 위로 멘트(매번 다르게 고른다).
-export type ReviewFeedback = { kind: "correct" | "retry"; answer: string; message?: string };
-export type ReviewOutcome = ReviewFeedback["kind"];
+// correct: 맞힘(다음 표현으로) / hint: 아직 기회가 남음(힌트를 보고 다시 말함) / retry: 3번째 오답(정답 공개).
+// message: 카드 제목 멘트(매번 다르게 고른다). hint: 힌트 문장(뜻은 맞는 다른 답이면 없음).
+export type ReviewFeedback = { kind: "correct" | "hint" | "retry"; answer: string; message?: string; hint?: string };
+// correct: 한 번에 맞힘 / hinted: 힌트 받고 맞힘 / retry: 끝내 못 맞힘.
+export type ReviewOutcome = "correct" | "hinted" | "retry";
 
 export type ConversationTurnRecord = { questionEn: string; answer: string };
 
 // 실회원 모드에서만 주입된다. 없으면(프리뷰) 템플릿 질문과 가짜 인식 결과를 쓴다.
 export type SessionServices = {
   generateTurn?: (request: FreeTalkTurnRequest) => Promise<GeneratedTurn | null>;
+  // 규칙상 틀린 답이 뜻으로는 맞는지(good 자리에 nice) 판정. 없으면 규칙 채점만 쓴다.
+  checkAnswer?: (request: AnswerCheckRequest) => Promise<boolean>;
   voice?: {
     start: () => Promise<void>;
     stop: () => Promise<string | null>;
@@ -54,6 +64,17 @@ export function pickCloseMessage(previous?: string, random: () => number = Math.
   const choices = CLOSE_MESSAGES.filter((message) => message !== previous);
   return choices[Math.floor(random() * choices.length)] ?? CLOSE_MESSAGES[0];
 }
+
+// 힌트를 받고 맞혔을 때 고르는 멘트.
+export const HINTED_MESSAGES = ["맞았어요! 스스로 찾아냈네요", "좋아요, 힌트를 잘 활용했어요", "맞아요! 잘 기억해 냈어요"] as const;
+
+export function pickHintedMessage(previous?: string, random: () => number = Math.random): string {
+  const choices = HINTED_MESSAGES.filter((message) => message !== previous);
+  return choices[Math.floor(random() * choices.length)] ?? HINTED_MESSAGES[0];
+}
+
+// 판정 AI를 기다리는 최대 시간(서버 제한보다 조금 길게). 넘으면 오답으로 본다.
+const ANSWER_CHECK_WAIT_MS = 4500;
 
 type HomeSection = "home" | "my-page";
 
@@ -109,9 +130,14 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     useState<FinishReason>("completed");
   const [coachLine, setCoachLine] = useState(INTRO_LINE);
   const [reviewFeedback, setReviewFeedback] = useState<ReviewFeedback | null>(null);
-  // First attempt wins: an item missed once stays on the "다시 보기" list.
+  // 표현마다 처음 확정된 결과가 남는다(정답 공개 뒤 다시 말해 맞혀도 바뀌지 않음).
   const [reviewOutcomes, setReviewOutcomes] = useState<Record<number, ReviewOutcome>>({});
-  const [firstAnswers, setFirstAnswers] = useState<Record<number, string>>({});
+  // 표현마다 학생이 말한 답(순서대로).
+  const [reviewAttempts, setReviewAttempts] = useState<Record<number, string[]>>({});
+  const [checkingAnswer, setCheckingAnswer] = useState(false);
+  // 표현마다 틀린 횟수(뜻은 맞는 다른 답은 세지 않음)와 도움(힌트·다른 답 안내)을 받았는지.
+  const wrongCounts = useRef<Record<number, number>>({});
+  const helped = useRef<Record<number, boolean>>({});
   const [callId, setCallId] = useState(newCallId);
   const [callStartedAt, setCallStartedAt] = useState<string | null>(null);
   const [idleSecondsLeft, setIdleSecondsLeft] = useState(plan.freeTalk.idleStopSeconds);
@@ -231,7 +257,10 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     setCoachLine(INTRO_LINE);
     setReviewFeedback(null);
     setReviewOutcomes({});
-    setFirstAnswers({});
+    setReviewAttempts({});
+    setCheckingAnswer(false);
+    wrongCounts.current = {};
+    helped.current = {};
     setCallId(newCallId());
     setCallStartedAt(null);
     setIdleSecondsLeft(plan.freeTalk.idleStopSeconds);
@@ -352,7 +381,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   }
 
   function submitAnswer(value: string) {
-    if (!value.trim()) return;
+    if (!value.trim() || checkingAnswer) return;
     setHintOpen(false);
     setHeardText("");
     setTypedText("");
@@ -366,21 +395,83 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       return;
     }
 
-    const grade = gradeReviewAnswer(value, target?.answerEn ?? "");
-    const correct = grade !== "wrong";
-    const message =
-      grade === "exact"
-        ? undefined
+    void judgeReviewAnswer(value);
+  }
+
+  // 복습 답 판정: 규칙 채점 → (틀리면) 뜻이 맞는 다른 답인지 AI 판정 → 1·2번째 오답은 힌트, 3번째 오답은 정답 공개.
+  async function judgeReviewAnswer(value: string) {
+    if (!target) return;
+    const index = targetIndex;
+    const current = generation.current;
+    const decided = reviewOutcomes[index];
+    setReviewAttempts((attempts) => ({ ...attempts, [index]: [...(attempts[index] ?? []), value] }));
+
+    const remember = (message: string) => {
+      lastRetryMessage.current = message;
+      return message;
+    };
+    const finish = (outcome: ReviewOutcome, feedback: ReviewFeedback, line: string) => {
+      setReviewFeedback(feedback);
+      setReviewOutcomes((outcomes) => (outcomes[index] ? outcomes : { ...outcomes, [index]: outcome }));
+      setCoachLine(line);
+    };
+
+    const grade = gradeReviewAnswer(value, target.answerEn);
+    if (grade !== "wrong") {
+      const hinted = !decided && ((wrongCounts.current[index] ?? 0) > 0 || helped.current[index] === true);
+      const message = hinted
+        ? remember(pickHintedMessage(lastRetryMessage.current))
         : grade === "close"
-          ? pickCloseMessage(lastRetryMessage.current)
-          : pickRetryMessage(lastRetryMessage.current);
-    if (message) lastRetryMessage.current = message;
-    setReviewFeedback({ kind: correct ? "correct" : "retry", answer: value, ...(message ? { message } : {}) });
-    setReviewOutcomes((current) =>
-      current[targetIndex] ? current : { ...current, [targetIndex]: correct ? "correct" : "retry" },
-    );
-    setFirstAnswers((current) => (targetIndex in current ? current : { ...current, [targetIndex]: value }));
-    setCoachLine(correct ? "좋아요! 아주 자연스러워요." : "괜찮아요. 같이 다시 볼까요?");
+          ? remember(pickCloseMessage(lastRetryMessage.current))
+          : undefined;
+      finish(hinted ? "hinted" : "correct", { kind: "correct", answer: value, ...(message ? { message } : {}) }, "좋아요! 아주 자연스러워요.");
+      return;
+    }
+
+    // 정답을 이미 알려 준 뒤 다시 말해 본 답은 결과를 바꾸지 않고 정답만 다시 보여 준다.
+    if (decided) {
+      finish(decided, { kind: "retry", answer: value, message: remember(pickRetryMessage(lastRetryMessage.current)) }, "괜찮아요. 같이 다시 볼까요?");
+      return;
+    }
+
+    if (services.checkAnswer) {
+      setCheckingAnswer(true);
+      const acceptable = await withTimeout(
+        services
+          .checkAnswer({
+            answerEn: target.answerEn,
+            promptKo: target.promptKo,
+            sourceType: target.answerEn.trim().includes(" ") ? "sentence" : "word",
+            answer: value,
+          })
+          .catch(() => false),
+        ANSWER_CHECK_WAIT_MS,
+        false,
+      );
+      if (current !== generation.current) return;
+      setCheckingAnswer(false);
+      if (acceptable) {
+        helped.current[index] = true;
+        setReviewFeedback({ kind: "hint", answer: value, message: alternativeAnswerMessage(value, target.answerEn) });
+        setCoachLine("그것도 맞는 말이에요. 다시 말해 볼까요?");
+        return;
+      }
+    }
+
+    const wrong = (wrongCounts.current[index] ?? 0) + 1;
+    wrongCounts.current[index] = wrong;
+    if (wrong >= MAX_REVIEW_ATTEMPTS) {
+      finish("retry", { kind: "retry", answer: value, message: remember(pickRetryMessage(lastRetryMessage.current)) }, "괜찮아요. 같이 다시 볼까요?");
+      return;
+    }
+    helped.current[index] = true;
+    setReviewFeedback({
+      kind: "hint",
+      answer: value,
+      message: remember(pickRetryMessage(lastRetryMessage.current)),
+      hint: reviewHint(target.answerEn, wrong === 1 ? 1 : 2),
+    });
+    setCoachLine("힌트를 보고 다시 말해 볼까요?");
   }
 
   async function enterFreeTalk() {
@@ -423,7 +514,8 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     conversationTurns,
     callId,
     callStartedAt,
-    firstAnswers,
+    reviewAttempts,
+    checkingAnswer,
     choiceAssistOpen,
     finishReason,
     coachLine,

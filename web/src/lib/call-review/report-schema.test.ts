@@ -30,6 +30,15 @@ describe("call report input", () => {
     expect(stored.studentId).toBe("<CUSTOMER_NO>");
   });
 
+  it("keeps hinted outcomes with the answers the student tried", () => {
+    const target = { targetId: "t4", sourceLabel: "단어 복습", promptKo: "좋은", answerEn: "good", outcome: "hinted", learnerAnswer: "nice", attempts: ["nice", "good"] };
+    const parsed = parseCallReportInput(validBody({ targets: [target] }));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.input.targets[0]).toMatchObject({ outcome: "hinted", attempts: ["nice", "good"] });
+    expect(parseCallReportInput(validBody({ targets: [{ ...target, attempts: ["a", "b", "c", "d"] }] })).ok).toBe(false);
+    expect(parseCallReportInput(validBody({ targets: [{ ...target, attempts: [""] }] })).ok).toBe(false);
+  });
+
   it("ignores a studentId sent in the body", () => {
     const parsed = parseCallReportInput(validBody({ studentId: "someone-else" }));
     expect(parsed.ok).toBe(true);

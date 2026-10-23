@@ -18,6 +18,7 @@ type Palette = {
   muted: string;
   line: string;
   correct: string;
+  hinted: string;
   retry: string;
   skipped: string;
   accent: string;
@@ -30,6 +31,7 @@ const LIGHT: Palette = {
   muted: color.muted,
   line: color.line,
   correct: color.success,
+  hinted: color.primary,
   retry: color.befly,
   skipped: "#B9B2A6",
   accent: color.primary,
@@ -42,13 +44,14 @@ const DARK: Palette = {
   muted: color.mutedInverse,
   line: color.lineInverse,
   correct: color.successDark,
+  hinted: color.actionDark,
   retry: color.beflyDark,
   skipped: "#5B6070",
   accent: color.actionDark,
 };
 
-const OUTCOME_LABEL: Record<Outcome, string> = { correct: "완료함", retry: "복습 필요", skipped: "못 했어요" };
-const OUTCOMES: Outcome[] = ["correct", "retry", "skipped"];
+const OUTCOME_LABEL: Record<Outcome, string> = { correct: "완료함", hinted: "힌트로 완료", retry: "복습 필요", skipped: "못 했어요" };
+const OUTCOMES: Outcome[] = ["correct", "hinted", "retry", "skipped"];
 
 export function LearningStatusSection({ history, darkMode }: { history: CallHistoryEntry[]; darkMode: boolean }) {
   const status = analyzeLearning(history);
@@ -222,12 +225,12 @@ function arcPath(cx: number, cy: number, r: number, start: number, end: number):
 
 function OutcomeDonut({ totals, p }: { totals: Record<Outcome, number>; p: Palette }) {
   const total = OUTCOMES.reduce((sum, key) => sum + totals[key], 0);
-  const judged = totals.correct + totals.retry;
+  const judged = totals.correct + totals.hinted + totals.retry;
   const accuracy = judged > 0 ? Math.round((totals.correct / judged) * 100) : null;
   const size = 116;
   const stroke = 16;
   const r = (size - stroke) / 2;
-  const colors: Record<Outcome, string> = { correct: p.correct, retry: p.retry, skipped: p.skipped };
+  const colors: Record<Outcome, string> = { correct: p.correct, hinted: p.hinted, retry: p.retry, skipped: p.skipped };
   let angle = 0;
   const gap = total > 1 ? 0.04 : 0;
 
@@ -265,12 +268,12 @@ function OutcomeDonut({ totals, p }: { totals: Record<Outcome, number>; p: Palet
 }
 
 function SourceBars({ rows, p }: { rows: LearningStatus["bySource"]; p: Palette }) {
-  const colors: Record<Outcome, string> = { correct: p.correct, retry: p.retry, skipped: p.skipped };
+  const colors: Record<Outcome, string> = { correct: p.correct, hinted: p.hinted, retry: p.retry, skipped: p.skipped };
   return (
     <View style={styles.sourceList}>
       {rows.map((row) => {
         const total = OUTCOMES.reduce((sum, key) => sum + row.counts[key], 0);
-        const judged = row.counts.correct + row.counts.retry;
+        const judged = row.counts.correct + row.counts.hinted + row.counts.retry;
         return (
           <View key={row.label} style={styles.sourceRow}>
             <View style={styles.sourceHead}>
