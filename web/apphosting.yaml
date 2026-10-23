@@ -74,8 +74,9 @@ env:
     value: koreacentral
   - variable: GEMINI_API_KEY               # 읽어 주기(Gemini TTS). 기존 GEMINI_API_KEY 시크릿은 다른 서비스용이라 전용 시크릿을 쓴다.
     secret: CALL_REVIEW_GEMINI_API_KEY
-  # 서버 푸시는 Cloud Scheduler 예약 작업을 만든 뒤에 켠다. 그 전에는 앱이 기기 자체 알림을 쓴다.
-  # - variable: CALL_REVIEW_PUSH_DISPATCH
-  #   value: enabled
+  # 서버 푸시(FCM). Cloud Scheduler `call-review-dispatch`가 5분마다 발송 API를 부른다.
+  # 끄면 앱이 기기 자체 알림(매주 반복 예약)으로 돌아간다.
+  - variable: CALL_REVIEW_PUSH_DISPATCH
+    value: enabled
   # - variable: CALL_REVIEW_FREE_TALK_MODEL  # (선택) 짧은 대화 질문용 더 빠른 모델
   #   value: <model>

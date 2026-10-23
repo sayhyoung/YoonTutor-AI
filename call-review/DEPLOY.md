@@ -10,7 +10,7 @@
 - [x] `web/apphosting.yaml`에서 전화관리 설정 켬(main 반영 시 롤아웃)
 - [x] 교사 화면 운영 배포(6번): 백엔드 `call-review-teacher`, https://call-review-teacher--eduai-tutor-62825.asia-east1.hosted.app
 - [x] 서버 푸시 예약 작업(4번): Cloud Scheduler `call-review-dispatch`(asia-east1, 5분마다, Asia/Seoul). 수동 호출 200 확인.
-- [ ] 폰 푸시 토큰 발급(FCM 설정) → 그다음 `CALL_REVIEW_PUSH_DISPATCH=enabled`. 그 전에는 앱이 기기 자체 알림을 쓴다.
+- [x] 서버 푸시(FCM 직접): Android 앱 FCM 토큰 등록 → 예약 발송 → 폰 알림 → 알림 누르면 수신 화면까지 로컬에서 확인, `CALL_REVIEW_PUSH_DISPATCH=enabled`. iOS는 APNs 연결 전까지 기기 자체 알림.
 - [ ] 운영 BFF 주소로 앱 빌드(5번)
 
 ## 1. Firestore 규칙·색인 배포
