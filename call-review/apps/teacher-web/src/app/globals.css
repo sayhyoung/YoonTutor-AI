@@ -1672,6 +1672,8 @@ tbody tr.selected {
 
 .picker-schedule.none { color: var(--color-muted); }
 
+.message-panel { margin-top: var(--space-lg); }
+
 .message-form {
   display: grid;
   gap: var(--space-md);

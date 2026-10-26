@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { kstToIso, selectCallItems } from "@yoon-call/shared";
 
 import { analyzeReports, coachSummary } from "./analytics";
+import { MessageComposer } from "./message-composer";
 import { DailyBarsLegend, OUTCOME_SEGMENTS } from "./report-parts";
 import { Donut, Kpi, StackedBars, TrendLine } from "./charts";
 import type { CallOutcome, FinishReason, StudentReportResponse, TeacherStudentRow } from "./types";
@@ -317,6 +318,8 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
               </ol>
             )}
           </section>
+
+          <MessageComposer student={student} />
         </>
       ) : null}
     </section>
