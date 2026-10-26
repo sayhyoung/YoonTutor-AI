@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPushContent, dueEvents, invalidTokensFrom, isPushToken } from "./push";
+import { buildPushContent, buildTeacherMessage, dueEvents, invalidTokensFrom, isPushToken } from "./push";
 
 // 목 19:30 KST = 10:30 UTC (2026-10-22), 10분 전 알림 = 10:20 UTC
 const schedule = { weekdays: ["목" as const], time: "19:30", reminderMinutesBefore: 10, active: true };
@@ -46,5 +46,16 @@ describe("due push events", () => {
         ],
       ),
     ).toEqual(["gone-token", "bad-token"]);
+  });
+});
+
+describe("teacher message push", () => {
+  it("opens the app without starting a call", () => {
+    expect(buildTeacherMessage("내일 통화 잊지 마세요!", "김윤")).toEqual({
+      title: "김윤 선생님의 메시지",
+      body: "내일 통화 잊지 마세요!",
+      data: { kind: "call-review", type: "message" },
+    });
+    expect(buildTeacherMessage("안녕", null).title).toBe("선생님의 메시지");
   });
 });

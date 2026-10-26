@@ -1,16 +1,16 @@
 "use client";
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useState } from "react";
 
 import { WEEKDAYS, type ScheduleView, type Weekday } from "./types";
 
 const REMINDERS = [0, 5, 10, 20, 30];
 
-type Draft = { weekdays: Weekday[]; time: string; reminderMinutesBefore: number; active: boolean };
+export type ScheduleDraft = { weekdays: Weekday[]; time: string; reminderMinutesBefore: number; active: boolean };
 
-const DEFAULT_DRAFT: Draft = { weekdays: ["화", "목"], time: "19:00", reminderMinutesBefore: 10, active: true };
+const DEFAULT_DRAFT: ScheduleDraft = { weekdays: ["화", "목"], time: "19:00", reminderMinutesBefore: 10, active: true };
 
-function draftOf(schedule: ScheduleView | null): Draft {
+function draftOf(schedule: ScheduleView | null): ScheduleDraft {
   return schedule
     ? {
         weekdays: schedule.weekdays,
@@ -21,48 +21,24 @@ function draftOf(schedule: ScheduleView | null): Draft {
     : DEFAULT_DRAFT;
 }
 
-// 학습자 한 명의 관리 전화 일정. 담당 교사만 저장할 수 있고 학생 앱에서는 읽기만 한다.
-export function ScheduleEditor({
-  customerNo,
-  studentName,
-  onSaved,
+export type SaveStatus = { tone: "info" | "ok" | "error"; text: string };
+
+// 관리 전화 일정 입력 폼. 고른 학습자(한 명 또는 여러 명)에게 같은 일정을 저장한다.
+// 학습자를 바꾸면 key로 새로 그려 처음 값(한 명이면 그 학습자 일정)부터 시작한다.
+export function ScheduleForm({
+  initial,
+  targetCount,
+  onSave,
 }: {
-  customerNo: string;
-  studentName: string;
-  onSaved?: (schedule: ScheduleView) => void;
+  initial: ScheduleView | null;
+  targetCount: number;
+  onSave: (draft: ScheduleDraft) => Promise<SaveStatus>;
 }) {
-  const [loaded, setLoaded] = useState<ScheduleView | null | undefined>(undefined);
-  const [draft, setDraft] = useState<Draft>(DEFAULT_DRAFT);
-  const [status, setStatus] = useState<{ tone: "info" | "ok" | "error"; text: string } | null>(null);
+  const [draft, setDraft] = useState<ScheduleDraft>(() => draftOf(initial));
+  const [status, setStatus] = useState<SaveStatus | null>(null);
   const [saving, setSaving] = useState(false);
-  const url = `/api/call-review/teacher/students/${encodeURIComponent(customerNo)}/schedule`;
 
-  useEffect(() => {
-    let cancelled = false;
-    void fetch(url, { cache: "no-store" })
-      .then(async (response) => {
-        const body = (await response.json().catch(() => null)) as { schedule?: ScheduleView | null; error?: string } | null;
-        if (cancelled) return;
-        if (!response.ok) {
-          setLoaded(null);
-          setStatus({ tone: "error", text: body?.error ?? "일정을 불러오지 못했어요." });
-          return;
-        }
-        setLoaded(body?.schedule ?? null);
-        setDraft(draftOf(body?.schedule ?? null));
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLoaded(null);
-          setStatus({ tone: "error", text: "서버에 연결하지 못했어요." });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
-
-  function update(changes: Partial<Draft>) {
+  function update(changes: Partial<ScheduleDraft>) {
     setDraft((current) => ({ ...current, ...changes }));
     setStatus(null);
   }
@@ -76,60 +52,21 @@ export function ScheduleEditor({
 
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (targetCount > 1 && !window.confirm(`고른 ${targetCount}명의 일정을 모두 이 일정으로 바꿀까요?`)) return;
     setSaving(true);
     setStatus(null);
     try {
-      const response = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft),
-      });
-      const body = (await response.json().catch(() => null)) as { schedule?: ScheduleView; error?: string } | null;
-      if (!response.ok || !body?.schedule) {
-        setStatus({ tone: "error", text: body?.error ?? "일정을 저장하지 못했어요." });
-        return;
-      }
-      setLoaded(body.schedule);
-      setDraft(draftOf(body.schedule));
-      setStatus({
-        tone: "ok",
-        text: body.schedule.nextCallLabel
-          ? `저장했어요. 다음 관리 전화는 ${body.schedule.nextCallLabel}이에요.`
-          : "저장했어요. 관리 전화를 쉬는 중이에요.",
-      });
-      onSaved?.(body.schedule);
-    } catch {
-      setStatus({ tone: "error", text: "서버에 연결하지 못했어요." });
+      setStatus(await onSave(draft));
     } finally {
       setSaving(false);
     }
   }
 
-  if (loaded === undefined) return <p className="detail-loading">일정을 불러오는 중…</p>;
-
   const invalid = draft.active && draft.weekdays.length === 0;
+  const blocked = targetCount === 0;
   return (
-    <form className="schedule-editor" onSubmit={(event) => void save(event)} aria-label={`${studentName} 전화 일정`}>
-      <div className="schedule-summary">
-        {loaded?.nextCallLabel ? (
-          <>
-            <span className="schedule-next-label">다음 관리 전화</span>
-            <strong>{loaded.nextCallLabel}</strong>
-            <small>
-              주 {loaded.callsPerWeek}회 · {loaded.weekdays.join("·")} {loaded.time}
-              {loaded.updatedByName ? ` · ${loaded.updatedByName} 선생님이 설정` : ""}
-            </small>
-          </>
-        ) : (
-          <>
-            <span className="schedule-next-label">다음 관리 전화</span>
-            <strong>{loaded ? "쉬는 중" : "아직 일정이 없어요"}</strong>
-            <small>요일과 시간을 정하면 학습자 앱에 바로 표시돼요.</small>
-          </>
-        )}
-      </div>
-
-      <fieldset className="field-group">
+    <form className="schedule-editor" onSubmit={(event) => void save(event)} aria-label="관리 전화 일정">
+      <fieldset className="field-group" disabled={blocked}>
         <legend>전화 요일</legend>
         <div className="weekday-row">
           {WEEKDAYS.map((day) => {
@@ -154,12 +91,12 @@ export function ScheduleEditor({
       <div className="schedule-fields">
         <label className="field-group">
           <span>전화 시간</span>
-          <input disabled={!draft.active} onChange={(event) => update({ time: event.target.value })} required type="time" value={draft.time} />
+          <input disabled={blocked || !draft.active} onChange={(event) => update({ time: event.target.value })} required type="time" value={draft.time} />
         </label>
         <label className="field-group">
           <span>사전 알림</span>
           <select
-            disabled={!draft.active}
+            disabled={blocked || !draft.active}
             onChange={(event) => update({ reminderMinutesBefore: Number(event.target.value) })}
             value={draft.reminderMinutesBefore}
           >
@@ -171,16 +108,21 @@ export function ScheduleEditor({
       </div>
 
       <label className="pause-toggle">
-        <input checked={!draft.active} onChange={(event) => update({ active: !event.target.checked })} type="checkbox" />
+        <input checked={!draft.active} disabled={blocked} onChange={(event) => update({ active: !event.target.checked })} type="checkbox" />
         <span>관리 전화 잠시 쉬기</span>
       </label>
 
       <div className="schedule-actions">
-        <button className="secondary-button" disabled={saving || invalid} type="submit">
-          {saving ? "저장하는 중…" : "일정 저장"}
+        <button className="secondary-button" disabled={blocked || saving || invalid} type="submit">
+          {saving ? "저장하는 중…" : targetCount > 1 ? `${targetCount}명에게 일정 저장` : "일정 저장"}
         </button>
         <span className={`schedule-status ${status?.tone ?? ""}`} role="status">
-          {status?.text ?? (invalid ? "전화 요일을 한 개 이상 골라 주세요." : "학습자와 약속한 시간으로 저장해 주세요. 학습자 앱에는 '선생님과 약속한 시간'으로 표시돼요.")}
+          {status?.text ??
+            (blocked
+              ? "왼쪽에서 학습자를 골라 주세요."
+              : invalid
+                ? "전화 요일을 한 개 이상 골라 주세요."
+                : "학습자와 약속한 시간으로 저장해 주세요. 학습자 앱에는 '선생님과 약속한 시간'으로 표시돼요.")}
         </span>
       </div>
     </form>

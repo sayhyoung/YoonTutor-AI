@@ -5,11 +5,12 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 import { percent } from "./analytics";
 import { DailyBars, Donut, Kpi } from "./charts";
 import { DailyBarsLegend, OUTCOME_SEGMENTS } from "./report-parts";
-import { ScheduleEditor } from "./schedule-editor";
+import { OperationsSettings } from "./settings";
 import { BM_LABELS, StudentReport, formatDateTime } from "./student-report";
 import type { ClassStats, TeacherCallStatus, TeacherStudentRow, TeacherStudentsResponse } from "./types";
 
 type Filter = "전체" | TeacherCallStatus;
+type View = "overview" | "settings";
 type AuthState = "checking" | "signed-out" | "signed-in";
 
 function isWithinDays(iso: string, days: number) {
@@ -37,6 +38,7 @@ export default function TeacherDashboard() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("전체");
   const [selected, setSelected] = useState<TeacherStudentRow | null>(null);
+  const [view, setView] = useState<View>("overview");
 
   const applyOverview = useCallback((result: Awaited<ReturnType<typeof requestOverview>>) => {
     if (result.status === 401 || result.status === 403) {
@@ -102,15 +104,33 @@ export default function TeacherDashboard() {
           </div>
         </div>
         <nav className="sidebar-nav">
-          <a className={`nav-link${selected ? "" : " active"}`} href="#calls" onClick={() => setSelected(null)}>관리 현황</a>
-          <a className={`nav-link${selected ? " active" : ""}`} href="#calls" onClick={(event) => !selected && event.preventDefault()}>학습현황 리포트</a>
-          <a className="nav-link" href="#settings" onClick={() => setSelected(null)}>운영 설정</a>
+          {(
+            [
+              ["overview", "관리 현황"],
+              ["settings", "운영 설정"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              aria-current={view === key ? "page" : undefined}
+              className={`nav-link${view === key ? " active" : ""}`}
+              key={key}
+              onClick={() => {
+                setView(key);
+                setSelected(null);
+              }}
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
         </nav>
         <button className="sidebar-logout" onClick={() => void logout()} type="button">로그아웃</button>
       </aside>
 
       <section className="dashboard-main" id="calls">
-        {selected ? (
+        {view === "settings" ? (
+          <OperationsSettings onChanged={() => void loadOverview()} students={students} />
+        ) : selected ? (
           <StudentReport key={selected.customerNo} onBack={() => setSelected(null)} student={selected} />
         ) : (
           <>
@@ -125,46 +145,10 @@ export default function TeacherDashboard() {
             <OverviewHero onRefresh={() => void loadOverview()} students={students} teacherName={teacherName ?? null} />
             {overview ? <ClassOverview stats={overview.classStats} /> : null}
             <StudentTable filter={filter} onFilter={setFilter} onSelect={setSelected} students={students} />
-
-            <ScheduleSettings onSaved={() => void loadOverview()} students={students} />
           </>
         )}
       </section>
     </main>
-  );
-}
-
-function ScheduleSettings({ students, onSaved }: { students: TeacherStudentRow[]; onSaved: () => void }) {
-  const [customerNo, setCustomerNo] = useState("");
-  const current = students.find((student) => student.customerNo === customerNo) ?? students[0];
-  return (
-    <section className="schedule-section" id="settings" aria-labelledby="schedule-title">
-      <div className="schedule-heading">
-        <div>
-          <h2 id="schedule-title">전화 일정 설정</h2>
-          <p>학습자와 약속한 전화 요일·시간과 사전 알림을 입력합니다.</p>
-        </div>
-        <span className="authority-badge">교사 권한</span>
-      </div>
-      {current ? (
-        <>
-          <label className="field-group schedule-student">
-            <span>학습자</span>
-            <select onChange={(event) => setCustomerNo(event.target.value)} value={current.customerNo}>
-              {students.map((student) => (
-                <option key={student.customerNo} value={student.customerNo}>
-                  {student.customerName}
-                  {student.schedule?.active ? ` · ${student.schedule.weekdays.join("·")} ${student.schedule.time}` : " · 일정 없음"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <ScheduleEditor customerNo={current.customerNo} key={current.customerNo} onSaved={onSaved} studentName={current.customerName} />
-        </>
-      ) : (
-        <p className="chart-empty">담당 학습자가 없어요.</p>
-      )}
-    </section>
   );
 }
 

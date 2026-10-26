@@ -29,11 +29,23 @@ export function dueEvents(schedule: CallScheduleInput, from: Date, to: Date): Du
 }
 
 // FCM으로 보낼 알림 내용. data 값은 문자열이어야 하고, 앱은 data.kind/type으로 전화 알림을 구분한다.
+// message(선생님이 보낸 메시지)는 눌러도 앱만 열리고 전화 화면으로 가지 않는다.
 export type PushContent = {
   title: string;
   body: string;
-  data: { kind: "call-review"; type: DispatchKind };
+  data: { kind: "call-review"; type: DispatchKind | "message" };
 };
+
+export const MAX_TEACHER_MESSAGE = 120;
+
+// 교사가 담당 학생에게 보내는 메시지 알림.
+export function buildTeacherMessage(body: string, teacherName: string | null): PushContent {
+  return {
+    title: teacherName ? `${teacherName} 선생님의 메시지` : "선생님의 메시지",
+    body,
+    data: { kind: "call-review", type: "message" },
+  };
+}
 
 export function buildPushContent(event: DueEvent, reminderMinutes: number): PushContent {
   const content =

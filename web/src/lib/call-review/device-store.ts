@@ -52,6 +52,19 @@ export async function removeTokens(tokens: string[]) {
   );
 }
 
+// 학생별 등록된 기기 토큰(기기가 없으면 빠진다).
+export async function tokensFor(customerNos: string[]): Promise<Map<string, string[]>> {
+  if (customerNos.length === 0) return new Map();
+  const store = await firestore();
+  const docs = await store.getAll(...customerNos.map((customerNo) => store.collection(DEVICES).doc(customerNo)));
+  return new Map(
+    docs
+      .filter((doc) => doc.exists)
+      .map((doc) => [doc.id, ((doc.data() as DeviceDoc).devices ?? []).map((device) => device.token)] as const)
+      .filter(([, tokens]) => tokens.length > 0),
+  );
+}
+
 export async function devicesWithSchedules(): Promise<{ schedule: StoredCallSchedule; tokens: string[] }[]> {
   const store = await firestore();
   const schedules = await store.collection(SCHEDULES).where("active", "==", true).get();
