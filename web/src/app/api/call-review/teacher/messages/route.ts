@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isServerStoreConfigured } from "@/lib/call-review/admin-db";
 import { removeTokens, tokensFor } from "@/lib/call-review/device-store";
+import { createMessages } from "@/lib/call-review/message-store";
 import { buildTeacherMessage, MAX_TEACHER_MESSAGE, sendPush } from "@/lib/call-review/push";
 import { ownStudentsAmong, parseCustomerNos, requireTeacher } from "@/lib/call-review/teacher-auth";
 import { StudyApiError } from "@/lib/study-api/client";
@@ -11,13 +12,11 @@ export const dynamic = "force-dynamic";
 
 const headers = { "Cache-Control": "private, no-store" };
 
-// 담당 학생들의 앱으로 선생님 메시지 알림을 보낸다. 앱을 설치해 알림을 등록한 기기에만 간다.
+// 담당 학생에게 메시지를 남기고(학생 앱 메시지함에 보임) 앱 알림으로도 보낸다.
+// 알림은 앱에서 알림을 허용한 기기에만 가고, 푸시 발송이 꺼져 있으면 저장만 한다.
 export async function POST(request: Request) {
   const gate = await requireTeacher();
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status, headers });
-  if (process.env.CALL_REVIEW_PUSH_DISPATCH !== "enabled") {
-    return NextResponse.json({ error: "푸시 발송이 꺼져 있어요." }, { status: 503, headers });
-  }
 
   let body: Record<string, unknown>;
   try {
@@ -41,18 +40,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "담당 학생을 확인하지 못했어요." }, { status, headers });
   }
   if (!isServerStoreConfigured()) {
-    return NextResponse.json({ error: "기기 저장소가 설정되지 않았어요." }, { status: 503, headers });
+    return NextResponse.json({ error: "메시지 저장소가 설정되지 않았어요." }, { status: 503, headers });
   }
 
+  const teacherName = gate.session.displayName ?? null;
+  let saved;
   try {
-    const devices = await tokensFor(customerNos);
-    const tokens = [...devices.values()].flat();
-    const reached = devices.size;
-    if (tokens.length === 0) return NextResponse.json({ sent: 0, reached: 0, noDevice: customerNos.length }, { headers });
-    const result = await sendPush(tokens, buildTeacherMessage(message, gate.session.displayName ?? null));
-    await removeTokens(result.invalidTokens).catch(() => undefined);
-    return NextResponse.json({ sent: result.sent, reached, noDevice: customerNos.length - reached }, { headers });
+    saved = await createMessages(customerNos, message, { teacherNo: gate.session.subjectId, teacherName });
   } catch {
-    return NextResponse.json({ error: "메시지를 보내지 못했어요." }, { status: 502, headers });
+    return NextResponse.json({ error: "메시지를 저장하지 못했어요." }, { status: 502, headers });
   }
+
+  let reached = 0;
+  if (process.env.CALL_REVIEW_PUSH_DISPATCH === "enabled") {
+    try {
+      const devices = await tokensFor(customerNos);
+      const invalid: string[] = [];
+      for (const [customerNo, tokens] of devices) {
+        const result = await sendPush(tokens, buildTeacherMessage(message, teacherName, saved.get(customerNo)?.id));
+        if (result.sent > 0) reached += 1;
+        invalid.push(...result.invalidTokens);
+      }
+      await removeTokens(invalid).catch(() => undefined);
+    } catch {
+      // 알림이 실패해도 메시지는 저장됐으니 학생이 앱을 열면 볼 수 있다.
+    }
+  }
+  return NextResponse.json({ saved: saved.size, reached, noDevice: customerNos.length - reached }, { headers });
 }

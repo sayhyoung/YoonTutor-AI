@@ -57,5 +57,6 @@ describe("teacher message push", () => {
       data: { kind: "call-review", type: "message" },
     });
     expect(buildTeacherMessage("안녕", null).title).toBe("선생님의 메시지");
+    expect(buildTeacherMessage("안녕", null, "m1").data).toEqual({ kind: "call-review", type: "message", messageId: "m1" });
   });
 });

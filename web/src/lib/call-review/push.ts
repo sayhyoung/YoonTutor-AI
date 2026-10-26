@@ -33,17 +33,17 @@ export function dueEvents(schedule: CallScheduleInput, from: Date, to: Date): Du
 export type PushContent = {
   title: string;
   body: string;
-  data: { kind: "call-review"; type: DispatchKind | "message" };
+  data: { kind: "call-review"; type: DispatchKind | "message"; messageId?: string };
 };
 
 export const MAX_TEACHER_MESSAGE = 120;
 
-// 교사가 담당 학생에게 보내는 메시지 알림.
-export function buildTeacherMessage(body: string, teacherName: string | null): PushContent {
+// 교사가 담당 학생에게 보내는 메시지 알림. 앱은 messageId로 해당 메시지를 연다.
+export function buildTeacherMessage(body: string, teacherName: string | null, messageId?: string): PushContent {
   return {
     title: teacherName ? `${teacherName} 선생님의 메시지` : "선생님의 메시지",
     body,
-    data: { kind: "call-review", type: "message" },
+    data: { kind: "call-review", type: "message", ...(messageId ? { messageId } : {}) },
   };
 }
 

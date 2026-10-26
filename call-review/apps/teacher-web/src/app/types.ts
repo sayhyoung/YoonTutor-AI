@@ -43,6 +43,19 @@ export type CallReportSummary = {
   savedAt: string;
 };
 
+// 교사가 보낸 메시지와 학습자의 읽음·반응(BFF messages.ts TeacherMessageView).
+export type MessageReaction = "thanks" | "check" | "love" | "cheer";
+
+export type TeacherMessage = {
+  id: string;
+  teacherName: string | null;
+  body: string;
+  sentAt: string;
+  readAt?: string;
+  reaction?: MessageReaction;
+  reactedAt?: string;
+};
+
 export type TeacherStudentRow = {
   customerNo: string;
   customerName: string;

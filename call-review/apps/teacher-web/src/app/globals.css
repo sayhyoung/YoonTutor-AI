@@ -1674,6 +1674,65 @@ tbody tr.selected {
 
 .message-panel { margin-top: var(--space-lg); }
 
+.message-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.sent-list {
+  margin: 0 0 var(--space-lg);
+  padding: 0;
+  list-style: none;
+  border-top: var(--rule-thin) solid var(--color-rule);
+}
+
+.sent-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: var(--rule-thin) solid var(--color-rule);
+}
+
+.sent-copy { min-width: 0; }
+
+.sent-copy p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.sent-copy small {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.sent-reaction,
+.sent-state {
+  flex: none;
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.sent-reaction {
+  color: var(--color-primary-strong);
+  background: var(--color-primary-soft);
+}
+
+.sent-state {
+  color: var(--color-muted);
+  background: var(--color-paper-2);
+}
+
+.sent-state.read { color: var(--color-success); }
+
+.sent-empty { margin-bottom: var(--space-md); }
+
 .message-form {
   display: grid;
   gap: var(--space-md);

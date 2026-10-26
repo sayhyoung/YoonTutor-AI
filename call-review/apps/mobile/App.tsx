@@ -50,10 +50,14 @@ import { color, font, radius, space } from "./src/theme";
 import { befly, callAvatar } from "./src/befly";
 import { Icon, type IconName } from "./src/icons";
 import { LearningStatusSection } from "./src/LearningStatusSection";
+import { HomeMessageCard, homeMessage, MessageInbox } from "./src/TeacherMessages";
+import { useTeacherMessages } from "./src/useTeacherMessages";
+import type { MessageReaction, TeacherMessage } from "./src/callReviewApi";
 import {
   currentPushToken,
   getPushToken,
   onIncomingCallNotification,
+  onTeacherMessageNotification,
   savePushToken,
   syncCallNotifications,
 } from "./src/callNotifications";
@@ -124,6 +128,11 @@ function DataApp({
   onLogout?: () => void;
 }) {
   const { data, error, reload } = useCallReviewData(repository);
+  // 메시지 함수는 저장소가 바뀔 때만 새로 만든다(매번 새 함수면 메시지를 계속 다시 불러온다).
+  const messageService = useMemo(
+    () => ({ loadMessages: repository.loadMessages?.bind(repository), updateMessage: repository.updateMessage?.bind(repository) }),
+    [repository],
+  );
 
   if (!data) {
     return <BootstrapScreen error={error} onRetry={reload} />;
@@ -140,6 +149,7 @@ function DataApp({
       transcribe={repository.transcribe?.bind(repository)}
       registerPush={repository.registerPush?.bind(repository)}
       speechSource={repository.speechSource?.bind(repository)}
+      messageService={messageService}
     />
   );
 }
@@ -356,6 +366,7 @@ function CallReviewApp({
   transcribe,
   registerPush,
   speechSource,
+  messageService,
 }: {
   data: CallReviewSnapshot;
   onLogout?: () => void;
@@ -366,8 +377,11 @@ function CallReviewApp({
   transcribe?: (uri: string) => Promise<string>;
   registerPush?: (pushToken: string) => Promise<boolean>;
   speechSource?: RemoteSpeechSource;
+  messageService: Parameters<typeof useTeacherMessages>[0];
 }) {
   const capture = useVoiceCapture();
+  const teacherMessages = useTeacherMessages(messageService);
+  const { reload: reloadMessages } = teacherMessages;
   const services = useMemo<SessionServices>(
     () => ({
       generateTurn,
@@ -465,6 +479,17 @@ function CallReviewApp({
     [data.plan.targets.length],
   );
 
+  // 선생님 메시지 알림: 받으면 메시지를 다시 불러오고, 눌러서 열었으면(통화 중이 아닐 때) 홈으로 간다.
+  useEffect(
+    () =>
+      onTeacherMessageNotification((tapped) => {
+        void reloadMessages();
+        const current = sessionRef.current;
+        if (tapped && current.phase === "home") current.closeMyPage();
+      }),
+    [reloadMessages],
+  );
+
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   // 저장할 때 서버가 짧은 대화를 보고 만든 피드백.
   const [talkFeedback, setTalkFeedback] = useState<string | null>(null);
@@ -544,6 +569,9 @@ function CallReviewApp({
               wordCount={data.plan.targets.filter((target) => target.sourceLabel.includes("단어")).length}
               onOpenMyPage={session.openMyPage}
               onStart={session.showIncomingCall}
+              message={homeMessage(teacherMessages.messages)}
+              onReadMessage={teacherMessages.markRead}
+              onReactMessage={teacherMessages.react}
             />
           ) : (
             <MyPageScreen
@@ -556,6 +584,9 @@ function CallReviewApp({
               onBack={session.closeMyPage}
               onLogout={onLogout}
               onOpenReport={setOpenedHistory}
+              messages={teacherMessages.enabled ? teacherMessages.messages : null}
+              onReadMessage={teacherMessages.markRead}
+              onReactMessage={teacherMessages.react}
             />
           )
         )}
@@ -702,6 +733,9 @@ function HomeScreen({
   wordCount,
   onOpenMyPage,
   onStart,
+  message,
+  onReadMessage,
+  onReactMessage,
 }: {
   darkMode: boolean;
   onToggleAppearance: () => void;
@@ -710,6 +744,9 @@ function HomeScreen({
   wordCount: number;
   onOpenMyPage: () => void;
   onStart: () => void;
+  message: TeacherMessage | null;
+  onReadMessage: (id: string) => void;
+  onReactMessage: (id: string, reaction: MessageReaction) => void;
 }) {
   return (
     <View style={styles.homeScreen}>
@@ -744,6 +781,8 @@ function HomeScreen({
         <View style={styles.homeReadyStrip}><View style={styles.homeReadyDot}/><Text style={styles.homeReadyText}>통화 준비가 됐어요. 조용한 곳이면 더 좋아요.</Text></View>
       </View>
 
+      {message ? <HomeMessageCard darkMode={darkMode} message={message} onRead={onReadMessage} onReact={onReactMessage} /> : null}
+
       <View style={styles.homeReviewSection}>
         <View style={styles.homeReviewHeading}><Text style={[styles.homeSectionTitle, darkMode && darkAppStyles.strongText]}>오늘 복습할 표현</Text><Text style={[styles.homeReviewSub, darkMode && darkAppStyles.mutedText]}>지난 학습에서 헷갈렸던 것</Text></View>
         <View style={styles.homeStatsRow}>
@@ -776,10 +815,17 @@ function MyPageScreen({
   onBack,
   onLogout,
   onOpenReport,
+  messages,
+  onReadMessage,
+  onReactMessage,
 }: {
   darkMode: boolean;
   onToggleAppearance: () => void;
   history: CallHistoryEntry[];
+  // 선생님 메시지함(메시지 기능이 없는 저장소면 null).
+  messages: TeacherMessage[] | null;
+  onReadMessage: (id: string) => void;
+  onReactMessage: (id: string, reaction: MessageReaction) => void;
   onOpenReport: (entry: CallHistoryEntry) => void;
   schedule: TeacherScheduleSettings | null;
   themePreference: "light" | "dark" | "system";
@@ -808,6 +854,7 @@ function MyPageScreen({
         <Text style={[styles.myPageTitle, darkMode && darkAppStyles.strongText]}>마이페이지</Text>
       </View>
 
+      {messages ? <MessageInbox darkMode={darkMode} messages={messages} onRead={onReadMessage} onReact={onReactMessage} /> : null}
       <LearningStatusSection history={history} darkMode={darkMode} />
       <View style={[styles.scheduleCard, darkMode && darkAppStyles.card]}>
         <View style={styles.scheduleTopline}>

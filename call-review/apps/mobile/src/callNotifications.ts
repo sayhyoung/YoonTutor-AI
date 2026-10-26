@@ -114,6 +114,22 @@ export async function syncCallNotifications(
   }
 }
 
+// 선생님 메시지 알림을 누르거나 앱을 쓰는 중에 받으면 메시지를 다시 불러온다(tapped: 눌러서 열었는지).
+export function onTeacherMessageNotification(handler: (tapped: boolean) => void): () => void {
+  if (Platform.OS === "web") return () => {};
+  const isMessage = (data: Record<string, unknown> | undefined) => data?.kind === KIND && data?.type === "message";
+  const tapped = Notifications.addNotificationResponseReceivedListener((response) => {
+    if (isMessage(response.notification.request.content.data)) handler(true);
+  });
+  const received = Notifications.addNotificationReceivedListener((notification) => {
+    if (isMessage(notification.request.content.data)) handler(false);
+  });
+  return () => {
+    tapped.remove();
+    received.remove();
+  };
+}
+
 // 전화 알림을 누르거나(앱 밖) 앱을 쓰는 중에 전화 시각이 되면 수신 화면을 띄운다.
 export function onIncomingCallNotification(handler: () => void): () => void {
   if (Platform.OS === "web") return () => {};

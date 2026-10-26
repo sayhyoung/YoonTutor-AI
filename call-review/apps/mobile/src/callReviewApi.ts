@@ -241,6 +241,34 @@ export async function transcribeAnswer(token: string, uri: string): Promise<stri
   return data.text ?? "";
 }
 
+// 선생님 메시지와 학생 반응. 반응은 정해진 아이콘 하나만 고른다.
+export type MessageReaction = "thanks" | "check" | "love" | "cheer";
+
+export type TeacherMessage = {
+  id: string;
+  teacherName: string | null;
+  body: string;
+  sentAt: string;
+  readAt?: string;
+  reaction?: MessageReaction;
+  reactedAt?: string;
+};
+
+export type MessageUpdate = { action: "read" } | { action: "react"; reaction: MessageReaction };
+
+export async function fetchTeacherMessages(token: string): Promise<TeacherMessage[]> {
+  return (await request<{ messages: TeacherMessage[] }>("/api/call-review/messages", { token })).messages ?? [];
+}
+
+export async function updateTeacherMessage(token: string, id: string, update: MessageUpdate): Promise<TeacherMessage> {
+  const response = await request<{ message: TeacherMessage }>(`/api/call-review/messages/${encodeURIComponent(id)}`, {
+    method: "POST",
+    token,
+    body: update,
+  });
+  return response.message;
+}
+
 export async function registerPushDevice(token: string, pushToken: string): Promise<boolean> {
   const result = await request<{ ok: boolean }>("/api/call-review/devices", {
     method: "POST",

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { kstToIso, selectCallItems } from "@yoon-call/shared";
 
 import { analyzeReports, coachSummary } from "./analytics";
+import { formatDateTime } from "./format";
 import { MessageComposer } from "./message-composer";
 import { DailyBarsLegend, OUTCOME_SEGMENTS } from "./report-parts";
 import { Donut, Kpi, StackedBars, TrendLine } from "./charts";
@@ -30,10 +31,7 @@ export const BM_LABELS: Record<string, string> = {
   IGSE: "IGSE",
 };
 
-export function formatDateTime(iso: string) {
-  const date = new Date(iso);
-  return `${date.getMonth() + 1}월 ${date.getDate()}일 ${date.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" })}`;
-}
+export { formatDateTime };
 
 function formatDate(iso: string) {
   const date = new Date(iso);

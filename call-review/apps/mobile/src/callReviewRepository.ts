@@ -10,6 +10,10 @@ import { buildCallPlanFromLearningItems, buildTemplateFreeTalk, kstToIso } from 
 import {
   type AnswerCheckRequest,
   checkAlternativeAnswer,
+  fetchTeacherMessages,
+  type MessageUpdate,
+  type TeacherMessage,
+  updateTeacherMessage,
   type ApiLearningItem,
   type ApiSchedule,
   type CallReportPayload,
@@ -49,6 +53,9 @@ export interface CallReviewRepository {
   // 저장한 통화 요약을 돌려준다(서버가 만든 짧은 대화 피드백 포함).
   saveReport?(report: CallReportPayload): Promise<CallReportSummary>;
   generateTurn?(request: FreeTalkTurnRequest): Promise<GeneratedTurn | null>;
+  // 선생님 메시지(홈 카드·마이페이지 메시지함)와 읽음·반응.
+  loadMessages?(): Promise<TeacherMessage[]>;
+  updateMessage?(id: string, update: MessageUpdate): Promise<TeacherMessage>;
   // 규칙상 틀린 복습 답이 뜻으로는 맞는지 서버 AI 판정.
   checkAnswer?(request: AnswerCheckRequest): Promise<boolean>;
   transcribe?(uri: string): Promise<string>;
@@ -92,6 +99,16 @@ export function toHistoryEntry(report: CallReportSummary): CallHistoryEntry {
   };
 }
 
+// 프리뷰(로그인 없음)에서 화면을 볼 수 있는 예시 메시지. 반응은 이번 실행 동안만 기억한다.
+let previewMessages: TeacherMessage[] = [
+  {
+    id: "preview-message-1",
+    teacherName: "김윤",
+    body: "오늘 통화 정말 잘했어요! 헷갈린 표현은 다음 통화에서 한 번 더 연습해 봐요.",
+    sentAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+  },
+];
+
 export const previewCallReviewRepository: CallReviewRepository = {
   async load() {
     return {
@@ -100,6 +117,18 @@ export const previewCallReviewRepository: CallReviewRepository = {
       schedule: previewSchedule,
       history: previewHistory,
     };
+  },
+  async loadMessages() {
+    return previewMessages;
+  },
+  async updateMessage(id, update) {
+    const now = new Date().toISOString();
+    previewMessages = previewMessages.map((message) =>
+      message.id !== id
+        ? message
+        : { ...message, readAt: message.readAt ?? now, ...(update.action === "react" ? { reaction: update.reaction, reactedAt: now } : {}) },
+    );
+    return previewMessages.find((message) => message.id === id)!;
   },
 };
 
@@ -212,6 +241,15 @@ export function createApiCallReviewRepository({
     async generateTurn(request) {
       const token = getToken();
       return token ? generateFreeTalkTurn(token, request) : null;
+    },
+    async loadMessages() {
+      const token = getToken();
+      return token ? fetchTeacherMessages(token) : [];
+    },
+    async updateMessage(id, update) {
+      const token = getToken();
+      if (!token) throw new UnauthorizedError();
+      return updateTeacherMessage(token, id, update);
     },
     async checkAnswer(request) {
       const token = getToken();
