@@ -153,7 +153,8 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     phase === "incoming" ||
     phase === "connecting" ||
     phase === "review" ||
-    phase === "free-talk";
+    phase === "free-talk" ||
+    phase === "closing";
   const target = plan.targets[targetIndex];
   const freeTalkTurn =
     shownTurns[freeTalkTurnIndex] ?? plan.freeTalk.turns[freeTalkTurnIndex] ?? plan.freeTalk.turns[0]!;
@@ -368,8 +369,9 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     const nextTurnIndex = freeTalkTurnIndex + 1;
     const fallback = plan.freeTalk.turns[nextTurnIndex];
     if (nextTurnIndex >= plan.freeTalk.maxTurns || !fallback) {
+      // 마지막 답 뒤에는 바로 결과로 가지 않고 베플리가 인사하는 마무리 화면을 잠깐 보여 준다.
       setFinishReason("completed");
-      setPhase("complete");
+      setPhase("closing");
       return;
     }
     const current = generation.current;
@@ -532,6 +534,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     openMyPage: () => setHomeSection("my-page"),
     closeMyPage: () => setHomeSection("home"),
     showIncomingCall: () => setPhase("incoming"),
+    finishClosing: () => setPhase((current) => (current === "closing" ? "complete" : current)),
     declineIncomingCall: () => setPhase("home"),
     answerIncomingCall,
     cancelConnecting,

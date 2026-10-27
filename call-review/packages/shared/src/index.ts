@@ -4,6 +4,7 @@ export type CallPhase =
   | "connecting"
   | "review"
   | "free-talk"
+  | "closing"
   | "complete";
 
 export type InputMode = "voice" | "text";

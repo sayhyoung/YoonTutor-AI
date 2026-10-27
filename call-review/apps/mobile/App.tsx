@@ -433,6 +433,30 @@ function CallReviewApp({
     speak(reviewPrompt, "ko-KR", () => setSpeaking(true), () => setSpeaking(false), speechSource);
   }, [reviewPrompt, session.target, setSpeaking, speechSource, voiceGuideOn]);
 
+  // 짧은 대화가 끝나면 베플리가 영어로 인사하고, 읽기가 끝나면(음성을 끈 경우엔 잠시 뒤) 결과로 넘어간다.
+  const closing = session.phase === "closing";
+  const finishClosing = session.finishClosing;
+  useEffect(() => {
+    if (!closing) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const shownAt = Date.now();
+    // 읽기가 바로 실패해도 마무리 화면은 최소 시간만큼 보여 준다.
+    const finishSoon = (ms: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(finishClosing, Math.max(ms, CLOSING_MIN_MS - (Date.now() - shownAt)));
+    };
+    finishSoon(voiceGuideOn ? CLOSING_FALLBACK_MS : CLOSING_SILENT_MS);
+    if (voiceGuideOn) {
+      speak(CLOSING_LINE_EN, "en-US", () => setSpeaking(true), () => {
+        setSpeaking(false);
+        finishSoon(CLOSING_AFTER_SPEECH_MS);
+      }, speechSource);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [closing, finishClosing, setSpeaking, speechSource, voiceGuideOn]);
+
   const toggleVoiceGuide = () => {
     if (voiceGuideOn) {
       stopSpeaking();
@@ -733,6 +757,13 @@ function CallReviewApp({
             voiceError={session.voiceError}
             idleStopSeconds={data.plan.freeTalk.idleStopSeconds}
             idleSecondsLeft={session.idleSecondsLeft}
+          />
+        )}
+        {session.phase === "closing" && (
+          <ClosingScreen
+            darkMode={darkMode}
+            talkCount={session.conversationTurns.length}
+            onNext={session.finishClosing}
           />
         )}
         {session.phase === "complete" && (
@@ -1239,6 +1270,36 @@ function ConnectingScreen({
   );
 }
 
+const CLOSING_LINE_EN = "It was great talking with you today. See you next time. Bye!";
+const CLOSING_AFTER_SPEECH_MS = 1500;
+const CLOSING_SILENT_MS = 4000;
+const CLOSING_MIN_MS = 4000;
+const CLOSING_FALLBACK_MS = 12000;
+
+// 짧은 대화 마지막 답 뒤의 마무리 화면. 베플리가 인사하고 곧 통화 결과로 넘어간다.
+function ClosingScreen({ darkMode, talkCount, onNext }: { darkMode: boolean; talkCount: number; onNext: () => void }) {
+  const light = !darkMode;
+  return (
+    <View style={styles.connectingScreen}>
+      <View style={styles.connectingCenter} accessibilityLiveRegion="polite">
+        <Image source={befly.result.completed} style={styles.connectingAvatar} accessibilityLabel="베플리 선생님" />
+        <View style={styles.connectingCopy}>
+          <Text style={[styles.closingLabel, { color: light ? color.befly : color.beflyDark }]}>대화 {talkCount}개를 모두 마쳤어요</Text>
+          <Text style={[styles.closingEnglish, light && lightCallStyles.strongText]}>{CLOSING_LINE_EN}</Text>
+          <Text style={[styles.connectingBody, styles.closingKorean, light && lightCallStyles.mutedText]}>오늘 대화 즐거웠어요. 다음 통화에서 또 만나요!</Text>
+        </View>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onNext}
+        style={({ pressed }) => [styles.connectingCancel, light ? lightCallStyles.raisedSurface : darkAppStyles.card, pressed && styles.buttonPressed]}
+      >
+        <Text style={[styles.connectingCancelText, light && lightCallStyles.strongText]}>통화 결과 보기</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 type CallScreenProps = {
   darkMode: boolean;
   onToggleAppearance: () => void;
@@ -1543,7 +1604,7 @@ function CallScreen(props: CallScreenProps) {
           <View style={[styles.reviewFeedbackCard, styles.reviewFeedbackCardRetry, light ? lightCallStyles.raisedSurface : darkAppStyles.card]} accessibilityLiveRegion="polite" accessibilityLabel="힌트">
             <View style={styles.reviewRetryHead}>
               <Image source={befly.hint} style={styles.reviewFeedbackAvatar} accessible={false} />
-              <View style={styles.reviewFeedbackTitleRow}>
+              <View style={[styles.reviewFeedbackTitleRow, styles.reviewRetryTitleRow]}>
                 <Icon name="hint" size={20} color={t.beflyInk} />
                 <Text style={[styles.reviewFeedbackTitle, { color: t.beflyInk }]}>{feedback.message ?? "다시 말해 볼까요?"}</Text>
               </View>
@@ -1565,7 +1626,7 @@ function CallScreen(props: CallScreenProps) {
           <View style={[styles.reviewFeedbackCard, styles.reviewFeedbackCardRetry, light ? lightCallStyles.raisedSurface : darkAppStyles.card]} accessibilityLiveRegion="polite" accessibilityLabel="다시 해보기">
             <View style={styles.reviewRetryHead}>
               <Image source={befly.review.retry} style={styles.reviewFeedbackAvatar} accessible={false} />
-              <View style={styles.reviewFeedbackTitleRow}>
+              <View style={[styles.reviewFeedbackTitleRow, styles.reviewRetryTitleRow]}>
                 <Icon name="retry" size={20} strokeWidth={2.2} color={t.beflyInk} />
                 <Text style={[styles.reviewFeedbackTitle, { color: t.beflyInk }]}>{feedback.message ?? "거의 다 왔어요"}</Text>
               </View>
@@ -1929,6 +1990,7 @@ const styles = StyleSheet.create({
   reviewCheck: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
   reviewFeedbackCardRetry: { flexDirection: "column", alignItems: "stretch", gap: 10 },
   reviewRetryHead: { flexDirection: "row", alignItems: "center", gap: 12 },
+  reviewRetryTitleRow: { flex: 1 },
   reviewAnswerBox: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, gap: 2 },
   reviewAnswerLabel: { fontSize: 12, fontWeight: "700" },
   reviewAnswerText: { fontFamily: font.englishBold, fontSize: 17, lineHeight: 23 },
@@ -2148,6 +2210,9 @@ const styles = StyleSheet.create({
   connectingCopy: { alignItems: "center", gap: 6 },
   connectingTitle: { color: color.inkInverse, fontSize: 24, fontWeight: "700" },
   connectingBody: { color: color.mutedInverse, fontSize: 15 },
+  closingLabel: { fontSize: 14, fontWeight: "700" },
+  closingEnglish: { color: color.inkInverse, fontFamily: font.englishBold, fontSize: 24, lineHeight: 32, textAlign: "center" },
+  closingKorean: { lineHeight: 22, textAlign: "center" },
   connectingSteps: { width: "100%", borderRadius: 22, paddingHorizontal: 20, paddingVertical: 18, gap: 14 },
   connectingStep: { flexDirection: "row", alignItems: "center", gap: 12 },
   connectingStepMark: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
@@ -2300,7 +2365,7 @@ const styles = StyleSheet.create({
   reviewFeedbackCorrect: { backgroundColor: color.successSoft },
   reviewFeedbackRetry: { backgroundColor: color.callHintLight },
   reviewFeedbackAvatar: { width: 68, height: 68, borderRadius: radius.pill },
-  reviewFeedbackTitle: { flexShrink: 1, color: color.ink, fontSize: 18, fontWeight: "700" },
+  reviewFeedbackTitle: { flex: 1, color: color.ink, fontSize: 18, fontWeight: "700" },
   reviewFeedbackCaption: { color: color.muted, fontSize: 13 },
   reviewFeedbackAnswer: { color: color.ink, fontFamily: font.englishBold, fontSize: 20, lineHeight: 26 },
   callTopbarCompact: { paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: space.sm },
