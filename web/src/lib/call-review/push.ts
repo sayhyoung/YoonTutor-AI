@@ -30,10 +30,15 @@ export function dueEvents(schedule: CallScheduleInput, from: Date, to: Date): Du
 
 // FCM으로 보낼 알림 내용. data 값은 문자열이어야 하고, 앱은 data.kind/type으로 전화 알림을 구분한다.
 // message(선생님이 보낸 메시지)는 눌러도 앱만 열리고 전화 화면으로 가지 않는다.
+// dataOnly: 시스템 알림 없이 data만 보낸다. 안드로이드 앱이 직접 전화 수신 화면(벨·진동)과
+// 확인할 때까지 남는 사전 알림을 띄운다. data의 title·message는 예전 앱이 기본 알림을 띄울 때 쓴다.
 export type PushContent = {
   title: string;
   body: string;
-  data: { kind: "call-review"; type: DispatchKind | "message"; messageId?: string };
+  data: { kind: "call-review"; type: DispatchKind | "message"; messageId?: string; title?: string; message?: string };
+  dataOnly?: boolean;
+  // 이 시간이 지나도록 기기에 전달하지 못하면 버린다(지난 전화가 뒤늦게 울리지 않게).
+  ttlSeconds?: number;
 };
 
 export const MAX_TEACHER_MESSAGE = 120;
@@ -47,12 +52,20 @@ export function buildTeacherMessage(body: string, teacherName: string | null, me
   };
 }
 
+// 예약 작업이 5분마다 돌므로 전화 푸시는 5분 안에만 전달한다.
+const CALL_TTL_SECONDS = 5 * 60;
+
 export function buildPushContent(event: DueEvent, reminderMinutes: number): PushContent {
   const content =
     event.kind === "call"
       ? { title: "베플리 선생님 전화가 왔어요", body: "오늘 복습할 표현으로 짧게 이야기해요. 눌러서 전화를 받아요." }
       : { title: `${reminderMinutes}분 뒤 관리 전화가 와요`, body: "조용한 곳에서 베플리 선생님 전화를 기다려 주세요." };
-  return { ...content, data: { kind: "call-review", type: event.kind } };
+  return {
+    ...content,
+    data: { kind: "call-review", type: event.kind, title: content.title, message: content.body },
+    dataOnly: true,
+    ttlSeconds: event.kind === "call" ? CALL_TTL_SECONDS : Math.max(reminderMinutes * 60, 60),
+  };
 }
 
 // FCM 등록 토큰(기기 토큰). 형식이 공개돼 있지 않아 길이·문자 범위만 본다.
@@ -86,13 +99,23 @@ export async function sendPush(tokens: string[], content: PushContent): Promise<
   let sent = 0;
   for (let index = 0; index < tokens.length; index += MULTICAST_LIMIT) {
     const chunk = tokens.slice(index, index + MULTICAST_LIMIT);
-    const result = await messaging.sendEachForMulticast({
-      tokens: chunk,
-      notification: { title: content.title, body: content.body },
-      data: content.data,
-      android: { priority: "high", notification: { channelId: ANDROID_CHANNEL_ID, sound: "default" } },
-      apns: { payload: { aps: { sound: "default" } } },
-    });
+    const ttl = content.ttlSeconds ? content.ttlSeconds * 1000 : undefined;
+    const result = await messaging.sendEachForMulticast(
+      content.dataOnly
+        ? {
+            tokens: chunk,
+            data: content.data,
+            android: { priority: "high", ...(ttl ? { ttl } : {}) },
+            apns: { headers: { "apns-priority": "10" }, payload: { aps: { alert: { title: content.title, body: content.body }, sound: "default" } } },
+          }
+        : {
+            tokens: chunk,
+            notification: { title: content.title, body: content.body },
+            data: content.data,
+            android: { priority: "high", ...(ttl ? { ttl } : {}), notification: { channelId: ANDROID_CHANNEL_ID, sound: "default" } },
+            apns: { payload: { aps: { sound: "default" } } },
+          },
+    );
     sent += result.successCount;
     invalidTokens.push(...invalidTokensFrom(chunk, result.responses));
   }

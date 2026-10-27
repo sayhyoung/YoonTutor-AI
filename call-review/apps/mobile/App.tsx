@@ -6,10 +6,12 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import {
   AccessibilityInfo,
   Animated,
+  AppState,
   BackHandler,
   Easing,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -51,6 +53,7 @@ import { befly, callAvatar } from "./src/befly";
 import { Icon, type IconName } from "./src/icons";
 import { LearningStatusSection } from "./src/LearningStatusSection";
 import { MessageInbox } from "./src/TeacherMessages";
+import { CallRinger } from "./modules/call-ringer";
 import { useTeacherMessages } from "./src/useTeacherMessages";
 import type { MessageReaction, TeacherMessage } from "./src/callReviewApi";
 import {
@@ -356,6 +359,9 @@ function buildReportPayload(
   };
 }
 
+// 앱을 연 딥링크(전화 알림)는 한 번만 처리한다(로그인 뒤 화면이 다시 그려져도 다시 울리지 않게).
+let initialLinkHandled = false;
+
 function CallReviewApp({
   data,
   onLogout,
@@ -479,6 +485,61 @@ function CallReviewApp({
     [data.plan.targets.length],
   );
 
+  // 안드로이드 전화 알림(전체 화면·벨·진동, modules/call-ringer). 알림·잠금 화면에서 앱이 열리면
+  // 딥링크(yooncall://incoming-call, ?answer=1이면 바로 받기)로 수신 화면을 띄운다.
+  useEffect(() => {
+    const handle = (url: string | null) => {
+      if (!url?.startsWith("yooncall://")) return;
+      const current = sessionRef.current;
+      if (url.startsWith("yooncall://incoming-call")) {
+        if (current.phase !== "home" && current.phase !== "incoming") return;
+        if (url.includes("answer=1")) {
+          CallRinger?.stopRinging();
+          current.answerIncomingCall();
+        } else {
+          current.showIncomingCall();
+        }
+      } else if (url.includes("reminder=1")) {
+        // 사전 알림을 눌러 앱을 열었으면 확인한 것으로 본다.
+        CallRinger?.dismissReminder();
+      }
+    };
+    if (!initialLinkHandled) {
+      initialLinkHandled = true;
+      void Linking.getInitialURL().then(handle);
+    }
+    const link = Linking.addEventListener("url", ({ url }) => handle(url));
+    // 앱을 쓰는 중에 전화가 오면 벨과 함께 수신 화면을 띄운다.
+    const incoming = CallRinger?.addListener("onIncomingCall", () => {
+      if (sessionRef.current.phase === "home") sessionRef.current.showIncomingCall();
+    });
+    return () => {
+      link.remove();
+      incoming?.remove();
+    };
+  }, []);
+
+  // 홈에 있는데 벨이 울리는 중이면(앱 아이콘으로 열었을 때) 수신 화면을 띄우고, 통화가 시작되면 벨을 멈춘다.
+  // 통화를 마치고 홈으로 오면 잠금 화면 위 표시를 끈다.
+  useEffect(() => {
+    if (!CallRinger) return;
+    if (session.phase === "home") {
+      if (CallRinger.isRinging()) sessionRef.current.showIncomingCall();
+      else CallRinger.setShowOverLockScreen(false);
+    } else if (session.phase !== "incoming") {
+      CallRinger.stopRinging();
+    }
+  }, [session.phase]);
+
+  // 앱을 열면 부재중 전화 알림을 지운다.
+  useEffect(() => {
+    CallRinger?.clearMissedCalls();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") CallRinger?.clearMissedCalls();
+    });
+    return () => subscription.remove();
+  }, []);
+
   // 선생님 메시지 알림: 받으면 메시지를 다시 불러오고, 눌러서 열었으면(통화 중이 아닐 때) 마이페이지 메시지함을 연다.
   useEffect(
     () =>
@@ -593,8 +654,14 @@ function CallReviewApp({
             darkMode={darkMode}
             onToggleAppearance={toggleAppearance}
             reviewCount={data.plan.targets.length}
-            onAnswer={session.answerIncomingCall}
-            onDecline={session.declineIncomingCall}
+            onAnswer={() => {
+              CallRinger?.stopRinging();
+              session.answerIncomingCall();
+            }}
+            onDecline={() => {
+              CallRinger?.stopRinging();
+              session.declineIncomingCall();
+            }}
           />
         )}
         {session.phase === "connecting" && (

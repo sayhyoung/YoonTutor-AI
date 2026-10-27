@@ -23,7 +23,12 @@ describe("due push events", () => {
   });
 
   it("builds call and reminder content that the app can recognize", () => {
-    expect(buildPushContent({ kind: "call", at: new Date() }, 10)).toMatchObject({ data: { kind: "call-review", type: "call" } });
+    expect(buildPushContent({ kind: "call", at: new Date() }, 10)).toMatchObject({
+      data: { kind: "call-review", type: "call", title: "베플리 선생님 전화가 왔어요" },
+      dataOnly: true,
+      ttlSeconds: 300,
+    });
+    expect(buildPushContent({ kind: "reminder", at: new Date() }, 10)).toMatchObject({ dataOnly: true, ttlSeconds: 600 });
     expect(buildPushContent({ kind: "reminder", at: new Date() }, 10).title).toBe("10분 뒤 관리 전화가 와요");
   });
 
