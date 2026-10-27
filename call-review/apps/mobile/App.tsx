@@ -50,7 +50,7 @@ import { color, font, radius, space } from "./src/theme";
 import { befly, callAvatar } from "./src/befly";
 import { Icon, type IconName } from "./src/icons";
 import { LearningStatusSection } from "./src/LearningStatusSection";
-import { HomeMessageCard, homeMessage, MessageInbox } from "./src/TeacherMessages";
+import { MessageInbox } from "./src/TeacherMessages";
 import { useTeacherMessages } from "./src/useTeacherMessages";
 import type { MessageReaction, TeacherMessage } from "./src/callReviewApi";
 import {
@@ -479,13 +479,13 @@ function CallReviewApp({
     [data.plan.targets.length],
   );
 
-  // 선생님 메시지 알림: 받으면 메시지를 다시 불러오고, 눌러서 열었으면(통화 중이 아닐 때) 홈으로 간다.
+  // 선생님 메시지 알림: 받으면 메시지를 다시 불러오고, 눌러서 열었으면(통화 중이 아닐 때) 마이페이지 메시지함을 연다.
   useEffect(
     () =>
       onTeacherMessageNotification((tapped) => {
         void reloadMessages();
         const current = sessionRef.current;
-        if (tapped && current.phase === "home") current.closeMyPage();
+        if (tapped && current.phase === "home") current.openMyPage();
       }),
     [reloadMessages],
   );
@@ -569,9 +569,7 @@ function CallReviewApp({
               wordCount={data.plan.targets.filter((target) => target.sourceLabel.includes("단어")).length}
               onOpenMyPage={session.openMyPage}
               onStart={session.showIncomingCall}
-              message={homeMessage(teacherMessages.messages)}
-              onReadMessage={teacherMessages.markRead}
-              onReactMessage={teacherMessages.react}
+              unreadMessages={teacherMessages.messages.filter((message) => !message.readAt).length}
             />
           ) : (
             <MyPageScreen
@@ -733,9 +731,7 @@ function HomeScreen({
   wordCount,
   onOpenMyPage,
   onStart,
-  message,
-  onReadMessage,
-  onReactMessage,
+  unreadMessages,
 }: {
   darkMode: boolean;
   onToggleAppearance: () => void;
@@ -744,9 +740,8 @@ function HomeScreen({
   wordCount: number;
   onOpenMyPage: () => void;
   onStart: () => void;
-  message: TeacherMessage | null;
-  onReadMessage: (id: string) => void;
-  onReactMessage: (id: string, reaction: MessageReaction) => void;
+  // 아직 읽지 않은 선생님 메시지 수(마이페이지 버튼에 표시).
+  unreadMessages: number;
 }) {
   return (
     <View style={styles.homeScreen}>
@@ -759,7 +754,7 @@ function HomeScreen({
         <View style={styles.homeHeaderActions}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="마이페이지 열기"
+          accessibilityLabel={unreadMessages > 0 ? `마이페이지 열기, 선생님 새 메시지 ${unreadMessages}개` : "마이페이지 열기"}
           onPress={onOpenMyPage}
           style={({ pressed }) => [
             styles.myButton,
@@ -768,6 +763,11 @@ function HomeScreen({
           ]}
         >
           <Icon name="person" size={22} color={darkMode ? color.inkInverse : color.ink} />
+          {unreadMessages > 0 ? (
+            <View style={[styles.myButtonBadge, darkMode && { borderColor: color.call }]} accessible={false}>
+              <Text style={styles.myButtonBadgeText}>{unreadMessages > 9 ? "9+" : unreadMessages}</Text>
+            </View>
+          ) : null}
         </Pressable>
         </View>
       </View>
@@ -780,8 +780,6 @@ function HomeScreen({
         <View><Text style={styles.nextCallTime}>{scheduledAtLabel}</Text><Text style={styles.homeCardMuted}>선생님과 약속한 시간에 베플리가 전화해요</Text></View>
         <View style={styles.homeReadyStrip}><View style={styles.homeReadyDot}/><Text style={styles.homeReadyText}>통화 준비가 됐어요. 조용한 곳이면 더 좋아요.</Text></View>
       </View>
-
-      {message ? <HomeMessageCard darkMode={darkMode} message={message} onRead={onReadMessage} onReact={onReactMessage} /> : null}
 
       <View style={styles.homeReviewSection}>
         <View style={styles.homeReviewHeading}><Text style={[styles.homeSectionTitle, darkMode && darkAppStyles.strongText]}>오늘 복습할 표현</Text><Text style={[styles.homeReviewSub, darkMode && darkAppStyles.mutedText]}>지난 학습에서 헷갈렸던 것</Text></View>
@@ -2196,6 +2194,8 @@ const styles = StyleSheet.create({
   expressionNumber: { color: color.primaryStrong, fontSize: 13, fontWeight: "800" },
   expressionText: { color: color.ink, fontSize: 15, fontWeight: "700", flex: 1 },
   homeHeaderActions: { flexDirection: "row", alignItems: "center", gap: space.xs },
+  myButtonBadge: { position: "absolute", top: -6, right: -6, minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: radius.pill, backgroundColor: color.danger, borderWidth: 2, borderColor: color.paper, alignItems: "center", justifyContent: "center" },
+  myButtonBadgeText: { color: color.accentInk, fontSize: 12, fontWeight: "800" },
   homeHeadingCopy: { flex: 1, minWidth: 0 },
   appearanceToggleCompact: { width: 44, height: 44, alignItems: "center", paddingHorizontal: 0, marginTop: 0 },
   homeBeflyRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
