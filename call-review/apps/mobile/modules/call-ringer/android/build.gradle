@@ -1,0 +1,26 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.yoonsaeng.aicallreview'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.callringer"
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+}
+
+// expo-notifications는 미리 빌드된 패키지(local-maven-repo)로 들어오므로 같은 버전을 참조한다.
+def notificationsVersion = new groovy.json.JsonSlurper().parse(
+  new File(["node", "--print", "require.resolve('expo-notifications/package.json')"].execute(null, projectDir).text.trim())
+).version
+
+dependencies {
+  implementation "host.exp.exponent:expo.modules.notifications:${notificationsVersion}"
+  implementation 'com.google.firebase:firebase-messaging:25.0.1'
+  implementation 'androidx.core:core-ktx:1.13.1'
+}

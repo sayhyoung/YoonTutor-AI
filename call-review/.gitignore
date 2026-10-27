@@ -10,6 +10,9 @@ web-build/
 .env.local
 android/
 ios/
+# 앱의 로컬 네이티브 모듈 코드는 커밋한다(빌드 결과물만 제외).
+!apps/mobile/modules/*/android/
+apps/mobile/modules/*/android/build/
 
 # 테스트 계정 메모(커밋 금지)
 *test accounts*
