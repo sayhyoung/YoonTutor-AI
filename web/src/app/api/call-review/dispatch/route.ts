@@ -9,7 +9,8 @@ import { buildPushContent, dueEvents, sendPush } from "@/lib/call-review/push";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// 예약 작업(Cloud Scheduler 등)이 5분마다 호출한다. 간격보다 조금 넓게 보고 중복은 기록으로 막는다.
+// 예약 작업(Cloud Scheduler `call-review-dispatch`)이 1분마다 호출한다. 한두 번 빠져도 놓치지 않게
+// 간격보다 넓게 보고, 중복은 `callDispatches` 기록으로 막는다.
 const DEFAULT_WINDOW_MINUTES = 7;
 
 function authorized(request: Request): boolean {
