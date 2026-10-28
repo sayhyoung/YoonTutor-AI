@@ -360,105 +360,70 @@ export function alternativeAnswerMessage(answer: string, answerEn: string): stri
   return `뜻은 잘 통해요! 이번 레슨에서 배운 문장으로 다시 말해 볼까요? "${words[0]} …"로 시작해요.`;
 }
 
-// AI 질문을 못 만들 때 쓰는 결정론적 짧은 대화. 대화하기 좋은 표현 하나를 소재로 고르고
-// (묻는 문장 > 다른 문장 > 단어), 두 번째·세 번째 질문은 같은 소재에 이어지는 후속 질문이다.
+// AI 질문을 못 만들 때 쓰는 결정론적 짧은 대화. 복습 표현을 그대로 묻거나 퀴즈처럼 쓰지 않는다.
+// 학생에게 바로 물을 수 있는 질문 문장(Do you like movies?)이 있으면 그것으로, 없으면 하루 이야기로 대화한다.
 export function pickTalkTopic(targets: LearningTarget[]): LearningTarget | undefined {
-  const sentences = targets.filter((target) => !isWord(target.answerEn.trim()));
-  return sentences.find((target) => target.answerEn.trim().endsWith("?")) ?? sentences[0] ?? targets[0];
+  return targets.find((target) => {
+    const text = target.answerEn.trim();
+    return !isWord(text) && text.endsWith("?") && /\byou\b/i.test(text);
+  });
 }
 
 const DAILY_TALK_QUESTION = "How was your day today?";
 
+function turn(id: string, relatedExpression: string, questionEn: string, questionMeaningKo: string, answerHint: string, choices: [string, string][]): ConversationTurn {
+  return {
+    id,
+    relatedExpression,
+    questionEn,
+    questionMeaningKo,
+    answerHint,
+    previewVoiceAnswer: choices[0]![0],
+    choices: choices.map(([answerEn, meaningKo], index) => ({ id: `${id}-${"abc"[index]}`, answerEn, meaningKo })),
+  };
+}
+
 export function buildTemplateFreeTalk(targets: LearningTarget[]): FreeTalkPlan {
   const topic = pickTalkTopic(targets);
-  // 복습할 표현이 없는 학생(새 계정 등)도 하루 이야기로 짧은 대화를 한다.
   const expression = topic?.answerEn.trim() ?? DAILY_TALK_QUESTION;
-  const plain = expression.replace(/[.!?]+$/, "");
 
-  const opening: ConversationTurn = !topic
-    ? {
-        id: "talk-1",
-        relatedExpression: expression,
-        questionEn: expression,
-        questionMeaningKo: "오늘 하루 어땠어?",
-        answerHint: "It was…로 시작해서 한 문장으로 말해 봐요.",
-        previewVoiceAnswer: "It was good.",
-        choices: [
-          { id: "talk-1-a", answerEn: "It was good.", meaningKo: "좋았어." },
-          { id: "talk-1-b", answerEn: "It was fun.", meaningKo: "재미있었어." },
-          { id: "talk-1-c", answerEn: "I was a little tired.", meaningKo: "조금 피곤했어." },
-        ],
-      }
-    : expression.endsWith("?")
-    ? {
-        id: "talk-1",
-        relatedExpression: expression,
-        questionEn: expression,
-        questionMeaningKo: `${topic.promptKo}`,
-        answerHint: "Yes나 No로 시작해서 한 문장으로 말해 봐요.",
-        previewVoiceAnswer: "Yes, I do.",
-        choices: [
-          { id: "talk-1-a", answerEn: "Yes, I do.", meaningKo: "응, 그래." },
-          { id: "talk-1-b", answerEn: "No, I don't.", meaningKo: "아니, 안 그래." },
-          { id: "talk-1-c", answerEn: "A little.", meaningKo: "조금." },
-        ],
-      }
-    : isWord(plain)
-      ? {
-          id: "talk-1",
-          relatedExpression: expression,
-          questionEn: `Can you make a short sentence with "${plain}"?`,
-          questionMeaningKo: `"${plain}"를 넣어서 짧은 문장을 말해 볼래?`,
-          answerHint: `단어 하나만 말해도 괜찮아요. "${plain}"부터 말해 봐요.`,
-          previewVoiceAnswer: `I know the word ${plain}.`,
-          choices: [
-            { id: "talk-1-a", answerEn: `I know the word ${plain}.`, meaningKo: `나는 ${plain}라는 단어를 알아.` },
-            { id: "talk-1-b", answerEn: `${plain[0]!.toUpperCase()}${plain.slice(1)}.`, meaningKo: "단어만 말해도 좋아요." },
-            { id: "talk-1-c", answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
-          ],
-        }
-      : {
-          id: "talk-1",
-          relatedExpression: expression,
-          questionEn: `When can you say "${plain}"?`,
-          questionMeaningKo: `"${plain}"는 언제 말할 수 있을까?`,
-          answerHint: "I can say it at…로 시작해 봐요.",
-          previewVoiceAnswer: "I can say it at school.",
-          choices: [
-            { id: "talk-1-a", answerEn: "I can say it at school.", meaningKo: "학교에서 말할 수 있어." },
-            { id: "talk-1-b", answerEn: "I can say it at home.", meaningKo: "집에서 말할 수 있어." },
-            { id: "talk-1-c", answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
-          ],
-        };
+  const opening = topic
+    ? turn("talk-1", expression, expression, topic.promptKo, "Yes나 No로 시작해서 한 문장으로 말해 봐요.", [
+        ["Yes, I do.", "응, 그래."],
+        ["No, I don't.", "아니, 안 그래."],
+        ["A little.", "조금."],
+      ])
+    : turn("talk-1", expression, expression, "오늘 하루 어땠어?", "It was…로 시작해서 한 문장으로 말해 봐요.", [
+        ["It was good.", "좋았어."],
+        ["It was fun.", "재미있었어."],
+        ["I was a little tired.", "조금 피곤했어."],
+      ]);
 
-  const followUps: ConversationTurn[] = [
-    {
-      id: "talk-2",
-      relatedExpression: expression,
-      questionEn: "Nice! Can you tell me more about that?",
-      questionMeaningKo: "좋아! 그것에 대해 조금 더 말해 줄래?",
-      answerHint: "I like…나 It is…로 한 문장 더 말해 봐요.",
-      previewVoiceAnswer: "I like it a lot.",
-      choices: [
-        { id: "talk-2-a", answerEn: "I like it a lot.", meaningKo: "나는 그게 정말 좋아." },
-        { id: "talk-2-b", answerEn: "It is fun.", meaningKo: "재미있어." },
-        { id: "talk-2-c", answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
-      ],
-    },
-    {
-      id: "talk-3",
-      relatedExpression: expression,
-      questionEn: "Great! Why do you think so?",
-      questionMeaningKo: "멋져! 왜 그렇게 생각해?",
-      answerHint: "Because…로 시작해 봐요.",
-      previewVoiceAnswer: "Because it is fun.",
-      choices: [
-        { id: "talk-3-a", answerEn: "Because it is fun.", meaningKo: "재미있으니까." },
-        { id: "talk-3-b", answerEn: "Because I like it.", meaningKo: "좋아하니까." },
-        { id: "talk-3-c", answerEn: "I don't know.", meaningKo: "모르겠어." },
-      ],
-    },
-  ];
+  const followUps: ConversationTurn[] = topic
+    ? [
+        turn("talk-2", expression, "Nice! Can you tell me more about that?", "좋아! 그것에 대해 조금 더 말해 줄래?", "I like…나 It is…로 한 문장 더 말해 봐요.", [
+          ["I like it a lot.", "나는 그게 정말 좋아."],
+          ["It is fun.", "재미있어."],
+          ["I'm not sure.", "잘 모르겠어."],
+        ]),
+        turn("talk-3", expression, "Great! Why do you think so?", "멋져! 왜 그렇게 생각해?", "Because…로 시작해 봐요.", [
+          ["Because it is fun.", "재미있으니까."],
+          ["Because I like it.", "좋아하니까."],
+          ["I don't know.", "모르겠어."],
+        ]),
+      ]
+    : [
+        turn("talk-2", expression, "I see! What did you do after school?", "그렇구나! 학교 끝나고 뭐 했어?", "I played…나 I went to…로 말해 봐요.", [
+          ["I played games.", "게임을 했어."],
+          ["I went to an academy.", "학원에 갔어."],
+          ["I did my homework.", "숙제를 했어."],
+        ]),
+        turn("talk-3", expression, "Sounds good! What do you want to do this weekend?", "좋네! 이번 주말에는 뭐 하고 싶어?", "I want to…로 시작해 봐요.", [
+          ["I want to go to the park.", "공원에 가고 싶어."],
+          ["I want to watch a movie.", "영화를 보고 싶어."],
+          ["I want to sleep a lot.", "푹 자고 싶어."],
+        ]),
+      ];
 
   const turns = [opening, ...followUps].slice(0, FREE_TALK_TURNS);
   return { maxTurns: turns.length, idleStopSeconds: IDLE_STOP_SECONDS, turns };
