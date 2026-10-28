@@ -14,7 +14,7 @@ function scheduleText(schedule: ScheduleView | null) {
   return `${schedule.weekdays.join("·")} ${schedule.time}`;
 }
 
-// 운영 설정: 학습자를 한 명 이상 골라 관리 전화 일정을 한꺼번에 저장한다.
+// 수업 설정: 학습자를 한 명 이상 골라 관리 전화 일정을 한꺼번에 저장한다.
 export function OperationsSettings({ students, onChanged }: { students: TeacherStudentRow[]; onChanged: () => void }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState("");
@@ -84,7 +84,7 @@ export function OperationsSettings({ students, onChanged }: { students: TeacherS
         <div className="overview-hero-top">
           <div>
             <p className="report-hero-eyebrow">윤선생 교사 LMS · AI 관리 전화</p>
-            <h1>운영 설정</h1>
+            <h1>수업 설정</h1>
             <p className="overview-hero-copy">학습자를 한 명 또는 여러 명 골라 관리 전화 일정을 한꺼번에 정해요.</p>
           </div>
         </div>
