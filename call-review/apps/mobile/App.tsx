@@ -434,10 +434,13 @@ function CallReviewApp({
   }, [reviewPrompt, session.target, setSpeaking, speechSource, voiceGuideOn]);
 
   // 짧은 대화가 끝나면 베플리가 영어로 인사하고, 읽기가 끝나면(음성을 끈 경우엔 잠시 뒤) 결과로 넘어간다.
+  // finishClosing은 렌더마다 새 함수라, 의존성에 넣으면 효과가 계속 다시 돌며 인사를 겹쳐 읽는다.
   const closing = session.phase === "closing";
-  const finishClosing = session.finishClosing;
+  const finishClosingRef = useRef(session.finishClosing);
+  finishClosingRef.current = session.finishClosing;
   useEffect(() => {
     if (!closing) return;
+    const finishClosing = () => finishClosingRef.current();
     let timer: ReturnType<typeof setTimeout> | null = null;
     const shownAt = Date.now();
     // 읽기가 바로 실패해도 마무리 화면은 최소 시간만큼 보여 준다.
@@ -454,8 +457,13 @@ function CallReviewApp({
     }
     return () => {
       if (timer) clearTimeout(timer);
+      // 결과 화면으로 넘어가면(버튼을 눌러도) 인사 읽기를 바로 멈춘다.
+      stopSpeaking();
+      setSpeaking(false);
     };
-  }, [closing, finishClosing, setSpeaking, speechSource, voiceGuideOn]);
+    // voiceGuideOn·speechSource가 바뀌어도 인사를 처음부터 다시 읽지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closing]);
 
   const toggleVoiceGuide = () => {
     if (voiceGuideOn) {
@@ -798,7 +806,7 @@ function BootstrapScreen({
       <StatusBar style="dark" />
       <Text style={styles.brandEyebrow}>윤선생 AI 전화관리</Text>
       <Text style={styles.bootstrapTitle}>
-        {error ? "학습 정보를 불러오지 못했어." : "오늘의 전화를 준비하고 있어."}
+        {error ? "학습 정보를 불러오지 못했어요." : "오늘의 전화를 준비하고 있어요."}
       </Text>
       <Text style={styles.bootstrapBody}>
         {error

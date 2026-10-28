@@ -142,7 +142,10 @@ function stopRemote() {
 }
 
 function speakWithDevice(text: string, language: SpeechLanguage, onStart?: () => void, onEnd?: () => void) {
+  const generation = speakGeneration;
   void Speech.stop().finally(() => {
+    // 기다리는 동안 다른 읽기가 시작됐거나 멈췄으면 읽지 않는다.
+    if (generation !== speakGeneration) return;
     Speech.speak(text, {
       language,
       rate: language === "en-US" ? 0.9 : 1,
@@ -200,6 +203,12 @@ function playRemote(
     if (currentPlayer === player) stopRemote();
   };
   const fallback = setTimeout(() => {
+    // 이미 멈췄거나(화면 이동) 다른 읽기로 바뀐 소리는 기기 음성으로 다시 읽지 않는다.
+    if (currentPlayer !== player) {
+      finished = true;
+      cleanUp();
+      return;
+    }
     if (started || finished) return;
     finished = true;
     cleanUp();
