@@ -157,6 +157,24 @@ describe("gradeReviewAnswer spelling variants", () => {
     assert.equal(gradeReviewAnswer("o.k. mom", "OK, mom."), "close");
     assert.equal(gradeReviewAnswer("I have two cats.", "I have 2 cats."), "close");
   });
+
+  it("accepts every reading of 's and 'd, odd apostrophes, spacing and fillers", () => {
+    assert.equal(gradeReviewAnswer("Mom is here.", "Mom's here."), "close");
+    assert.equal(gradeReviewAnswer("He has got a dog.", "He's got a dog."), "close");
+    assert.equal(gradeReviewAnswer("I had better go.", "I'd better go."), "close");
+    assert.equal(gradeReviewAnswer("I would like some water.", "I'd like some water."), "close");
+    assert.equal(gradeReviewAnswer("Tom's bag", "Tom's bag."), "exact");
+    assert.equal(gradeReviewAnswer("Itʼs sunny.", "It's sunny."), "exact");
+    assert.equal(gradeReviewAnswer("It's sunny.", "It&#39;s sunny."), "exact");
+    assert.equal(gradeReviewAnswer("um I like tshirts", "I like T-shirts."), "close");
+    assert.equal(gradeReviewAnswer("Hello.", "Hi./Hello."), "exact");
+    assert.equal(gradeReviewAnswer("I have fifteen pens.", "I have 15 pens."), "close");
+  });
+
+  it("still marks a different word wrong", () => {
+    assert.equal(gradeReviewAnswer("Dad's here.", "Mom's here."), "wrong");
+    assert.equal(gradeReviewAnswer("He is a dog.", "He's got a dog."), "wrong");
+  });
 });
 
 describe("reviewHint", () => {

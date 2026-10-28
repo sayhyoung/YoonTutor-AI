@@ -209,15 +209,13 @@ const CONTRACTIONS: [RegExp, string][] = [
   [/\bcannot\b/g, "can not"],
   [/\bwon't\b/g, "will not"],
   [/\bshan't\b/g, "shall not"],
+  [/\bain't\b/g, "is not"],
   [/\blet's\b/g, "let us"],
   [/\bi'm\b/g, "i am"],
   [/n't\b/g, " not"],
   [/'re\b/g, " are"],
   [/'ve\b/g, " have"],
   [/'ll\b/g, " will"],
-  [/'d\b/g, " would"],
-  // he's/she's/it's/that's/what's/there's/who's/where's/how's → is (소유격과 섞이지 않게 대명사·의문사만)
-  [/\b(he|she|it|that|what|there|here|who|where|how|this)'s\b/g, "$1 is"],
 ];
 
 // 같은 말을 다르게 적는 경우(OK = Okay, 2 = two). 음성 인식이 어느 쪽으로든 적는다.
@@ -237,27 +235,88 @@ const SAME_WORDS: Record<string, string> = {
   ten: "10",
   eleven: "11",
   twelve: "12",
+  thirteen: "13",
+  fourteen: "14",
+  fifteen: "15",
+  sixteen: "16",
+  seventeen: "17",
+  eighteen: "18",
+  nineteen: "19",
+  twenty: "20",
 };
 
-function normalizeAnswer(text: string): string {
-  let value = text.toLowerCase().replace(/[’‘`]/g, "'").replace(/\bo\.\s?k\b\.?/g, "okay");
+// 음성 인식이 앞뒤에 붙이는 망설임 소리.
+const FILLERS = new Set(["um", "umm", "uh", "uhm", "er", "erm", "hmm"]);
+
+// 교재 정답에 섞여 오는 HTML 문자(&#39; 등)와 여러 모양의 따옴표를 보통 글자로 바꾼다.
+function plainText(text: string): string {
+  return text
+    .replace(/&(#39|#x27|apos|rsquo|lsquo);/gi, "'")
+    .replace(/&(quot|ldquo|rdquo|#34);/gi, '"')
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/[’‘`´ʼ′＇]/g, "'")
+    .replace(/[“”]/g, '"');
+}
+
+// 'S·'D는 뜻이 여러 가지라(He's = He is / He has, Mom's = Mom is / 엄마의) 가능한 풀이를 모두 만든다.
+const AMBIGUOUS: [RegExp, string[]][] = [
+  [/^(.+)'s$/, ["$1 is", "$1 has", "$1 s"]],
+  [/^(.+)'d$/, ["$1 would", "$1 had"]],
+];
+const MAX_VARIANTS = 32;
+
+function answerVariants(text: string): Set<string> {
+  let value = plainText(text).toLowerCase().replace(/\bo\.\s?k\b\.?/g, "okay");
   for (const [pattern, replacement] of CONTRACTIONS) value = value.replace(pattern, replacement);
-  return value
+  let variants = [""];
+  for (const token of value.split(/\s+/).filter(Boolean)) {
+    const word = token.replace(/^[^a-z0-9']+|[^a-z0-9']+$/g, "");
+    const rule = AMBIGUOUS.find(([pattern]) => pattern.test(word));
+    const options = rule ? rule[1].map((replacement) => word.replace(rule[0], replacement)) : [token];
+    const next: string[] = [];
+    for (const head of variants) for (const option of options) if (next.length < MAX_VARIANTS) next.push(`${head} ${option}`);
+    variants = next;
+  }
+  return new Set(variants.map(canonicalWords));
+}
+
+function canonicalWords(text: string): string {
+  return text
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter(Boolean)
+    .filter((word) => word && !FILLERS.has(word))
     .map((word) => SAME_WORDS[word] ?? word)
     .join(" ");
 }
 
 function surfaceForm(text: string): string {
-  return text.replace(/[’‘`]/g, "'").replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "");
+  return plainText(text).replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "");
+}
+
+function sameMeaningForm(answer: string, expected: string): boolean {
+  const answers = answerVariants(answer);
+  const expecteds = answerVariants(expected);
+  for (const value of answers) {
+    if (expecteds.has(value)) return true;
+    // 띄어쓰기만 다른 경우(T-shirt = tshirt, every day = everyday)
+    const joined = value.replace(/\s+/g, "");
+    for (const target of expecteds) if (joined && joined === target.replace(/\s+/g, "")) return true;
+  }
+  return false;
+}
+
+// 교재 정답이 "Hi./Hello."처럼 여러 개면 그중 하나만 맞아도 된다.
+function expectedOptions(expected: string): string[] {
+  const options = plainText(expected).split(/\s*\/\s*/).map((option) => option.trim()).filter(Boolean);
+  return options.length > 1 ? [expected, ...options] : [expected];
 }
 
 export function gradeReviewAnswer(answer: string, expected: string): ReviewGrade {
   if (!answer.trim()) return "wrong";
-  if (surfaceForm(answer) === surfaceForm(expected)) return "exact";
-  return normalizeAnswer(answer) === normalizeAnswer(expected) ? "close" : "wrong";
+  const options = expectedOptions(expected);
+  if (options.some((option) => surfaceForm(answer) === surfaceForm(option))) return "exact";
+  return options.some((option) => sameMeaningForm(answer, option)) ? "close" : "wrong";
 }
 
 // 복습 한 문항에서 답할 수 있는 횟수. 1·2번째 오답에는 힌트를 주고, 3번째 오답이면 정답을 알려 주고 넘어간다.

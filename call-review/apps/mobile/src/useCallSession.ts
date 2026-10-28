@@ -51,13 +51,13 @@ export function pickRetryMessage(previous?: string, random: () => number = Math.
   return choices[Math.floor(random() * choices.length)] ?? RETRY_MESSAGES[0];
 }
 
-// 축약형·대소문자·문장부호만 다르게 말했을 때(정답 처리) 고르는 멘트.
+// 축약형·대소문자·문장부호만 다르게 말했을 때 고르는 멘트. 정답이므로 "거의"·"대체로"처럼 틀린 듯한 말은 쓰지 않는다.
 export const CLOSE_MESSAGES = [
-  "네, 잘 알고 있네요",
-  "대체로 맞았어요",
-  "거의 완벽해요",
-  "좋아요, 맞았어요",
-  "뜻이 딱 맞아요",
+  "정답이에요! 잘 알고 있네요",
+  "맞았어요!",
+  "좋아요, 정답이에요",
+  "정확해요! 뜻이 딱 맞아요",
+  "네, 맞아요! 잘했어요",
 ] as const;
 
 export function pickCloseMessage(previous?: string, random: () => number = Math.random): string {
