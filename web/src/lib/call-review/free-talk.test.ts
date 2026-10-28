@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFreeTalkInput, parseFreeTalkRequest, parseGeneratedTurn } from "./free-talk";
+import { buildFreeTalkInput, buildFreeTalkInstructions, parseFreeTalkRequest, parseGeneratedTurn } from "./free-talk";
 
 const expressions = [
   { answerEn: "close", promptKo: "닫다", sourceType: "word" },
@@ -61,16 +61,23 @@ describe("generated turn", () => {
 });
 
 describe("short talk topic", () => {
-  it("keeps the topic the model picked on the first question when it is a review expression", () => {
-    expect(parseGeneratedTurn(reply("do you like movies"), request(0))?.topic).toBe("Do you like movies?");
+  it("keeps the theme name the model picked on the first question", () => {
+    expect(parseGeneratedTurn(reply("where people are from"), request(0))?.topic).toBe("where people are from");
   });
 
-  it("falls back to the first review expression when the picked topic is not one of them", () => {
-    expect(parseGeneratedTurn(reply("Do you like pizza?"), request(0))?.topic).toBe("close");
+  it("falls back to the first review expression when the theme name is missing or not short English", () => {
+    expect(parseGeneratedTurn(reply(""), request(0))?.topic).toBe("close");
+    expect(parseGeneratedTurn(reply("출신 나라"), request(0))?.topic).toBe("close");
+  });
+
+  it("tells the model to use expressions only as inspiration, not to quiz them", () => {
+    const instructions = buildFreeTalkInstructions();
+    expect(instructions).toContain("only as inspiration");
+    expect(instructions).toContain("Where are you from?");
   });
 
   it("keeps the first topic on follow-up questions and tells the model to stay on it", () => {
     expect(parseGeneratedTurn(reply("close"), request(1, "Do you like movies?"))?.topic).toBe("Do you like movies?");
-    expect(buildFreeTalkInput(request(1, "Do you like movies?"))).toContain('follow up on the topic "Do you like movies?"');
+    expect(buildFreeTalkInput(request(1, "Do you like movies?"))).toContain('follow up on the theme "Do you like movies?"');
   });
 });

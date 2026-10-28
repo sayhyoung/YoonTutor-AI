@@ -143,6 +143,14 @@ describe("gradeReviewAnswer", () => {
   });
 });
 
+describe("buildTemplateFreeTalk without a question to ask the student", () => {
+  it("talks about the student's day instead of quizzing a textbook sentence", () => {
+    const talk = buildTemplateFreeTalk([{ id: "t1", sourceLabel: "", promptKo: "그는 중국 출신이에요.", answerEn: "He is from China.", hint: "" }]);
+    assert.equal(talk.turns[0]!.questionEn, "How was your day today?");
+    assert.ok(talk.turns.every((turn) => !turn.questionEn.includes("China")));
+  });
+});
+
 describe("buildTemplateFreeTalk without review expressions", () => {
   it("still opens a three-turn talk about the student's day", () => {
     const talk = buildTemplateFreeTalk([]);
