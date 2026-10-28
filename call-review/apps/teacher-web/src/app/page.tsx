@@ -107,7 +107,7 @@ export default function TeacherDashboard() {
           {(
             [
               ["overview", "관리 현황"],
-              ["settings", "운영 설정"],
+              ["settings", "수업 설정"],
             ] as const
           ).map(([key, label]) => (
             <button
