@@ -10,6 +10,7 @@ import {
   BackHandler,
   Easing,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -388,12 +389,14 @@ function CallReviewApp({
   const capture = useVoiceCapture();
   const teacherMessages = useTeacherMessages(messageService);
   const { reload: reloadMessages } = teacherMessages;
+  // 음성 가이드를 끈 상태면 질문 음성을 기다리지 않는다.
+  const voiceGuideRef = useRef(true);
   const services = useMemo<SessionServices>(
     () => ({
       generateTurn,
       checkAnswer,
       voice: transcribe ? { start: capture.start, stop: capture.stop, transcribe } : undefined,
-      prepareSpeech: (questionEn) => prefetchSpeech(questionEn, "en-US", speechSource),
+      prepareSpeech: (questionEn) => (voiceGuideRef.current ? prefetchSpeech(questionEn, "en-US", speechSource) : Promise.resolve()),
     }),
     [capture, checkAnswer, generateTurn, speechSource, transcribe],
   );
@@ -401,6 +404,7 @@ function CallReviewApp({
   const { setSpeaking } = session;
   // 음성 가이드(문항 자동 읽기). 기본은 켬, 통화 화면의 스피커 버튼으로 끈다. 다시 듣기 버튼은 꺼져 있어도 읽는다.
   const [voiceGuideOn, setVoiceGuideOn] = useState(true);
+  voiceGuideRef.current = voiceGuideOn;
   // 마이페이지에서 연 지난 통화 리포트. Android 뒤로 가기로 닫는다.
   const [openedHistory, setOpenedHistory] = useState<CallHistoryEntry | null>(null);
   useEffect(() => {
@@ -1166,6 +1170,33 @@ function useLoop(duration: number, { delay = 0, easing = Easing.linear, reverse 
   return value;
 }
 
+// 베플리가 다음 질문을 준비하는 동안 보여 주는 '입력 중' 점 세 개.
+function TypingDot({ progress, index, color: dotColor }: { progress: Animated.Value; index: number; color: string }) {
+  const start = index * 0.22;
+  const inputRange = start === 0 ? [0, 0.18, 0.36, 1] : [0, start, start + 0.18, start + 0.36, 1];
+  const fade = start === 0 ? [0.35, 1, 0.35, 0.35] : [0.35, 0.35, 1, 0.35, 0.35];
+  const lift = start === 0 ? [0, -5, 0, 0] : [0, 0, -5, 0, 0];
+  return (
+    <Animated.View
+      style={[
+        styles.typingDot,
+        { backgroundColor: dotColor, opacity: progress.interpolate({ inputRange, outputRange: fade }), transform: [{ translateY: progress.interpolate({ inputRange, outputRange: lift }) }] },
+      ]}
+    />
+  );
+}
+
+function TypingDots({ color: dotColor }: { color: string }) {
+  const progress = useLoop(1200);
+  return (
+    <View style={styles.typingDots} accessible accessibilityRole="text" accessibilityLabel="베플리가 입력하고 있어요" accessibilityLiveRegion="polite">
+      {[0, 1, 2].map((index) => (
+        <TypingDot key={index} progress={progress} index={index} color={dotColor} />
+      ))}
+    </View>
+  );
+}
+
 function useSpin() {
   return useLoop(1400).interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
 }
@@ -1405,6 +1436,11 @@ function CallScreen(props: CallScreenProps) {
           ? "잠깐만요…"
           : "눌러서 말하기";
   const micBusy = transcribing || preparing || props.turnLoading;
+  // 글자로 답을 보내면 키보드를 내려 문제·피드백이 가려지지 않게 한다.
+  const submitText = () => {
+    Keyboard.dismiss();
+    props.onSubmitText();
+  };
   const step = Number(props.progressLabel.match(/\d+/)?.[0] ?? 1);
   const segmentColor = (index: number) =>
     index < step - 1 || (index === step - 1 && feedback) ? t.action : index === step - 1 ? t.ink2 : t.line;
@@ -1516,7 +1552,7 @@ function CallScreen(props: CallScreenProps) {
               </Pressable>
             </View>
             {props.turnLoading ? (
-              <Text style={[styles.questionLoading, { color: t.ink2 }]} accessibilityLiveRegion="polite">베플리가 질문을 생각하고 있어요…</Text>
+              <TypingDots color={t.ink2} />
             ) : (
               <Text style={[styles.questionEnglish, compact && styles.questionEnglishCompact, light && lightCallStyles.strongText]}>{props.coachLine}</Text>
             )}
@@ -1789,7 +1825,8 @@ function CallScreen(props: CallScreenProps) {
                 autoCapitalize="sentences"
                 autoCorrect={false}
                 onChangeText={props.onChangeText}
-                onSubmitEditing={props.onSubmitText}
+                onSubmitEditing={submitText}
+                submitBehavior="blurAndSubmit"
                 placeholder="짧게 써도 괜찮아요"
                 placeholderTextColor={t.ink2}
                 returnKeyType="send"
@@ -1800,7 +1837,7 @@ function CallScreen(props: CallScreenProps) {
                 accessibilityRole="button"
                 accessibilityLabel="보내기"
                 disabled={!props.typedText.trim()}
-                onPress={props.onSubmitText}
+                onPress={submitText}
                 style={({ pressed }) => [styles.sendButton, { backgroundColor: t.action }, !props.typedText.trim() && styles.sendButtonDisabled, pressed && styles.buttonPressed]}
               >
                 <Icon name="send" size={22} strokeWidth={2.4} color={color.accentInk} />
@@ -2052,6 +2089,8 @@ const styles = StyleSheet.create({
   saveRetry: { minHeight: 44, borderRadius: 22, backgroundColor: color.primary, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
   saveRetryText: { color: color.surface, fontSize: 14, fontWeight: "700" },
   questionLoading: { fontSize: 17, lineHeight: 26, fontWeight: "600", paddingVertical: 8 },
+  typingDots: { flexDirection: "row", alignItems: "center", gap: 8, height: 40, paddingHorizontal: 4 },
+  typingDot: { width: 10, height: 10, borderRadius: 5 },
   voiceErrorCard: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12 },
   voiceErrorText: { flex: 1, fontSize: 14, lineHeight: 20 },
   voiceButtonBusy: { opacity: 0.55 },

@@ -32,7 +32,7 @@ export type SessionServices = {
     transcribe: (uri: string) => Promise<string>;
   };
   // 읽어 줄 질문이 정해지면 미리 받아 둔다(첫 대화 질문은 복습 중에 미리 만들어진다).
-  prepareSpeech?: (questionEn: string) => void;
+  prepareSpeech?: (questionEn: string) => Promise<void>;
 };
 
 // 복습 표현을 틀렸을 때 고르는 멘트. 같은 멘트가 연달아 나오지 않게 한다.
@@ -92,6 +92,8 @@ const CONNECT_PREVIEW_MS = 1800;
 const TURN_TIMEOUT_MS = 9000;
 // 첫 질문은 통화 시작 때 미리 만들어 두고, 대화에 들어갈 때 이만큼만 더 기다린다.
 const FIRST_TURN_WAIT_MS = 2500;
+// 질문 글자와 음성이 함께 나오도록 음성을 받아 둘 때까지 '입력 중'을 보여 준다. 너무 늦으면 글자부터 띄운다.
+const SPEECH_READY_WAIT_MS = 5000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
@@ -224,6 +226,11 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     }
   }
 
+  function waitForSpeech(questionEn: string): Promise<void> {
+    const ready = services.prepareSpeech?.(questionEn).catch(() => undefined);
+    return ready ? withTimeout(ready, SPEECH_READY_WAIT_MS, undefined) : Promise.resolve();
+  }
+
   function showTurn(index: number, turn: ConversationTurn) {
     setShownTurns((current) => ({ ...current, [index]: turn }));
     setFreeTalkTurnIndex(index);
@@ -273,7 +280,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     // 복습하는 동안 첫 대화 질문을 미리 만들어 둔다.
     firstTurn.current = requestTurn(0, []);
     void firstTurn.current.then((turn) => {
-      if (turn) services.prepareSpeech?.(turn.questionEn);
+      if (turn) void services.prepareSpeech?.(turn.questionEn);
     });
     // 복습할 표현이 없으면 바로 짧은 대화로 넘어간다.
     connectTimer.current = setTimeout(
@@ -378,8 +385,11 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     setTurnLoading(true);
     const generated = await requestTurn(nextTurnIndex, history);
     if (current !== generation.current) return;
+    const next = generated ?? fallback;
+    await waitForSpeech(next.questionEn);
+    if (current !== generation.current) return;
     setTurnLoading(false);
-    showTurn(nextTurnIndex, generated ?? fallback);
+    showTurn(nextTurnIndex, next);
   }
 
   function submitAnswer(value: string) {
@@ -486,8 +496,10 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       ? await withTimeout(firstTurn.current, FIRST_TURN_WAIT_MS, null)
       : null;
     if (current !== generation.current) return;
-    setTurnLoading(false);
     const opening = prepared ?? plan.freeTalk.turns[0]!;
+    await waitForSpeech(opening.questionEn);
+    if (current !== generation.current) return;
+    setTurnLoading(false);
     talkTopic.current = opening.relatedExpression || undefined;
     showTurn(0, opening);
   }
