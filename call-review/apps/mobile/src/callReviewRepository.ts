@@ -18,13 +18,15 @@ import {
   type ApiSchedule,
   type CallReportPayload,
   type FreeTalkTurnRequest,
-  type GeneratedTurn,
+  type GeneratedQuestion,
+  type GeneratedSupport,
   type CallReportSummary,
   UnauthorizedError,
   fetchCallReports,
   fetchLearningItems,
   fetchSchedule,
-  generateFreeTalkTurn,
+  generateFreeTalkQuestion,
+  generateFreeTalkSupport,
   registerPushDevice,
   transcribeAnswer,
   ttsSource,
@@ -52,7 +54,8 @@ export interface CallReviewRepository {
   // 프리뷰 저장소는 저장·AI 질문·음성 인식을 하지 않는다(템플릿과 가짜 인식 결과 사용).
   // 저장한 통화 요약을 돌려준다(서버가 만든 짧은 대화 피드백 포함).
   saveReport?(report: CallReportPayload): Promise<CallReportSummary>;
-  generateTurn?(request: FreeTalkTurnRequest): Promise<GeneratedTurn | null>;
+  generateQuestion?(request: FreeTalkTurnRequest): Promise<GeneratedQuestion | null>;
+  generateSupport?(request: FreeTalkTurnRequest & { questionEn: string }): Promise<GeneratedSupport | null>;
   // 선생님 메시지(홈 카드·마이페이지 메시지함)와 읽음·반응.
   loadMessages?(): Promise<TeacherMessage[]>;
   updateMessage?(id: string, update: MessageUpdate): Promise<TeacherMessage>;
@@ -238,9 +241,13 @@ export function createApiCallReviewRepository({
       if (!token) throw new UnauthorizedError();
       return (await saveCallReport(token, report)).report;
     },
-    async generateTurn(request) {
+    async generateQuestion(request) {
       const token = getToken();
-      return token ? generateFreeTalkTurn(token, request) : null;
+      return token ? generateFreeTalkQuestion(token, request) : null;
+    },
+    async generateSupport(request) {
+      const token = getToken();
+      return token ? generateFreeTalkSupport(token, request) : null;
     },
     async loadMessages() {
       const token = getToken();

@@ -180,21 +180,33 @@ export type FreeTalkTurnRequest = {
   topic?: string;
 };
 
-export type GeneratedTurn = {
-  topic: string;
-  questionEn: string;
+// 통화 중 빨리 묻도록 질문을 먼저 받고(question), 한국어 뜻·힌트·답 예시는 따로 받는다(support).
+export type GeneratedQuestion = { topic: string; questionEn: string };
+export type GeneratedSupport = {
   questionMeaningKo: string;
   answerHint: string;
   choices: { answerEn: string; meaningKo: string }[];
 };
 
-export async function generateFreeTalkTurn(token: string, body: FreeTalkTurnRequest): Promise<GeneratedTurn | null> {
-  const response = await request<{ turn: GeneratedTurn | null }>("/api/call-review/free-talk", {
+export async function generateFreeTalkQuestion(token: string, body: FreeTalkTurnRequest): Promise<GeneratedQuestion | null> {
+  const response = await request<{ turn: GeneratedQuestion | null }>("/api/call-review/free-talk", {
     method: "POST",
     token,
-    body,
+    body: { ...body, part: "question" },
   });
   return response.turn;
+}
+
+export async function generateFreeTalkSupport(
+  token: string,
+  body: FreeTalkTurnRequest & { questionEn: string },
+): Promise<GeneratedSupport | null> {
+  const response = await request<{ support?: GeneratedSupport | null }>("/api/call-review/free-talk", {
+    method: "POST",
+    token,
+    body: { ...body, part: "support" },
+  });
+  return response.support ?? null;
 }
 
 export type AnswerCheckRequest = {

@@ -14,7 +14,7 @@ import {
   reviewHint,
 } from "@yoon-call/shared";
 
-import type { AnswerCheckRequest, FreeTalkTurnRequest, GeneratedTurn } from "./callReviewApi";
+import type { AnswerCheckRequest, FreeTalkTurnRequest, GeneratedQuestion, GeneratedSupport } from "./callReviewApi";
 
 export type VoiceState = "idle" | "preparing" | "listening" | "transcribing" | "review";
 export type FinishReason = "completed" | "stopped" | "no-response";
@@ -28,7 +28,9 @@ export type ConversationTurnRecord = { questionEn: string; answer: string };
 
 // 실회원 모드에서만 주입된다. 없으면(프리뷰) 템플릿 질문과 가짜 인식 결과를 쓴다.
 export type SessionServices = {
-  generateTurn?: (request: FreeTalkTurnRequest) => Promise<GeneratedTurn | null>;
+  // 짧은 대화: 질문을 먼저 받아 바로 묻고, 한국어 뜻·힌트·답 예시는 따로 받아 채운다.
+  generateQuestion?: (request: FreeTalkTurnRequest) => Promise<GeneratedQuestion | null>;
+  generateSupport?: (request: FreeTalkTurnRequest & { questionEn: string }) => Promise<GeneratedSupport | null>;
   // 규칙상 틀린 답이 뜻으로는 맞는지(good 자리에 nice) 판정. 없으면 규칙 채점만 쓴다.
   checkAnswer?: (request: AnswerCheckRequest) => Promise<boolean>;
   voice?: {
@@ -101,15 +103,29 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
   return Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
 }
 
-function toConversationTurn(turn: GeneratedTurn, index: number): ConversationTurn {
+// 질문만 받은 상태의 대화 차례. 뜻·답 예시가 오기 전에는 어떤 질문에도 쓸 수 있는 말을 보여 준다.
+function questionTurn(question: GeneratedQuestion, index: number): ConversationTurn {
   return {
     id: `ai-${index}`,
-    relatedExpression: turn.topic,
-    questionEn: turn.questionEn,
-    questionMeaningKo: turn.questionMeaningKo,
-    answerHint: turn.answerHint,
-    previewVoiceAnswer: turn.choices[0]?.answerEn ?? "",
-    choices: turn.choices.map((choice, choiceIndex) => ({ id: `ai-${index}-${choiceIndex}`, ...choice })),
+    relatedExpression: question.topic,
+    questionEn: question.questionEn,
+    questionMeaningKo: "",
+    answerHint: "짧게 한 문장으로 대답해 봐요.",
+    previewVoiceAnswer: "Yes.",
+    choices: [
+      { id: `ai-${index}-wait-0`, answerEn: "I'm not sure.", meaningKo: "잘 모르겠어." },
+      { id: `ai-${index}-wait-1`, answerEn: "Can you say that again?", meaningKo: "다시 말해 줄래?" },
+    ],
+  };
+}
+
+function withSupport(turn: ConversationTurn, support: GeneratedSupport): ConversationTurn {
+  return {
+    ...turn,
+    questionMeaningKo: support.questionMeaningKo,
+    answerHint: support.answerHint,
+    previewVoiceAnswer: support.choices[0]?.answerEn ?? turn.previewVoiceAnswer,
+    choices: support.choices.map((choice, choiceIndex) => ({ id: `${turn.id}-${choiceIndex}`, ...choice })),
   };
 }
 
@@ -154,6 +170,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   const lastRetryMessage = useRef<string | undefined>(undefined);
   // 짧은 대화 소재(첫 질문에서 정해짐). 후속 질문은 이 소재에 이어서 묻는다.
   const talkTopic = useRef<string | undefined>(undefined);
+  const supportByQuestion = useRef(new Map<string, GeneratedSupport>());
 
   const isCallSurface =
     phase === "incoming" ||
@@ -213,22 +230,38 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   );
 
   async function requestTurn(turnIndex: number, history: ConversationTurnRecord[]): Promise<ConversationTurn | null> {
-    if (!services.generateTurn || expressions.length === 0) return null;
+    if (!services.generateQuestion || expressions.length === 0) return null;
+    const request: FreeTalkTurnRequest = {
+      expressions,
+      history,
+      turnIndex,
+      ...(turnIndex > 0 && talkTopic.current ? { topic: talkTopic.current } : {}),
+    };
     try {
-      const generated = await withTimeout(
-        services.generateTurn({
-          expressions,
-          history,
-          turnIndex,
-          ...(turnIndex > 0 && talkTopic.current ? { topic: talkTopic.current } : {}),
-        }),
-        TURN_TIMEOUT_MS,
-        null,
-      );
-      return generated ? toConversationTurn(generated, turnIndex) : null;
+      const question = await withTimeout(services.generateQuestion(request), TURN_TIMEOUT_MS, null);
+      if (!question) return null;
+      loadSupport(turnIndex, question.questionEn, request);
+      return questionTurn(question, turnIndex);
     } catch {
       return null;
     }
+  }
+
+  // 질문을 읽어 주는 동안 한국어 뜻·힌트·답 예시를 받아, 화면의 그 질문에 채운다.
+  function loadSupport(turnIndex: number, questionEn: string, request: FreeTalkTurnRequest) {
+    if (!services.generateSupport) return;
+    const current = generation.current;
+    void services
+      .generateSupport({ ...request, questionEn })
+      .then((support) => {
+        if (!support || current !== generation.current) return;
+        supportByQuestion.current.set(questionEn, support);
+        setShownTurns((turns) => {
+          const shown = turns[turnIndex];
+          return shown && shown.questionEn === questionEn ? { ...turns, [turnIndex]: withSupport(shown, support) } : turns;
+        });
+      })
+      .catch(() => undefined);
   }
 
   function waitForSpeech(questionEn: string): Promise<void> {
@@ -237,7 +270,10 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   }
 
   function showTurn(index: number, turn: ConversationTurn) {
-    setShownTurns((current) => ({ ...current, [index]: turn }));
+    // 뜻·답 예시가 질문보다 먼저 와 있으면 함께 보여 준다.
+    const support = supportByQuestion.current.get(turn.questionEn);
+    const ready = support ? withSupport(turn, support) : turn;
+    setShownTurns((current) => ({ ...current, [index]: ready }));
     setFreeTalkTurnIndex(index);
     setChoiceAssistOpen(false);
     setCoachLine(turn.questionEn);
@@ -251,6 +287,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     generation.current += 1;
     firstTurn.current = null;
     talkTopic.current = undefined;
+    supportByQuestion.current.clear();
     stopRecordingQuietly();
     setPhase("home");
     setTargetIndex(0);

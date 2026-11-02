@@ -149,7 +149,8 @@ function DataApp({
       onLogout={onLogout}
       onSaveReport={repository.saveReport?.bind(repository)}
       onRefresh={reload}
-      generateTurn={repository.generateTurn?.bind(repository)}
+      generateQuestion={repository.generateQuestion?.bind(repository)}
+      generateSupport={repository.generateSupport?.bind(repository)}
       checkAnswer={repository.checkAnswer?.bind(repository)}
       transcribe={repository.transcribe?.bind(repository)}
       registerPush={repository.registerPush?.bind(repository)}
@@ -384,7 +385,8 @@ function CallReviewApp({
   onLogout,
   onSaveReport,
   onRefresh,
-  generateTurn,
+  generateQuestion,
+  generateSupport,
   checkAnswer,
   transcribe,
   registerPush,
@@ -395,7 +397,8 @@ function CallReviewApp({
   onLogout?: () => void;
   onSaveReport?: (report: CallReportPayload) => Promise<{ talkFeedback?: string }>;
   onRefresh?: () => void;
-  generateTurn?: SessionServices["generateTurn"];
+  generateQuestion?: SessionServices["generateQuestion"];
+  generateSupport?: SessionServices["generateSupport"];
   checkAnswer?: SessionServices["checkAnswer"];
   transcribe?: (uri: string) => Promise<string>;
   registerPush?: (pushToken: string) => Promise<boolean>;
@@ -409,12 +412,13 @@ function CallReviewApp({
   const voiceGuideRef = useRef(true);
   const services = useMemo<SessionServices>(
     () => ({
-      generateTurn,
+      generateQuestion,
+      generateSupport,
       checkAnswer,
       voice: transcribe ? { start: capture.start, stop: capture.stop, transcribe } : undefined,
       prepareSpeech: (questionEn) => (voiceGuideRef.current ? prefetchSpeech(questionEn, "en-US", speechSource) : Promise.resolve()),
     }),
-    [capture, checkAnswer, generateTurn, speechSource, transcribe],
+    [capture, checkAnswer, generateQuestion, generateSupport, speechSource, transcribe],
   );
   const session = useCallSession(data.plan, services);
   const { setSpeaking } = session;

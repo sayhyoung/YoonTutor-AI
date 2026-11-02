@@ -4,6 +4,8 @@ import {
   buildFreeTalkInput,
   buildFreeTalkInstructions,
   parseFreeTalkRequest,
+  parseGeneratedQuestion,
+  parseGeneratedSupport,
   parseGeneratedTurn,
 } from "@/lib/call-review/free-talk";
 import { callOpenAiMessages, isOpenAiEnabled } from "@/lib/openai";
@@ -29,6 +31,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 // 짧은 대화 질문 한 개 생성. 실패하면 turn: null(앱은 템플릿 질문 사용).
+// part=question이면 질문만(빠름), part=support면 그 질문의 한국어 뜻·힌트·답 예시만 돌려준다.
 export async function POST(request: Request) {
   const headers = { "Cache-Control": "private, no-store", ...corsHeaders(request, METHODS) };
   if (!readMobileToken(request)) {
@@ -44,16 +47,18 @@ export async function POST(request: Request) {
   const parsed = parseFreeTalkRequest(body);
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400, headers });
 
-  if (!isOpenAiEnabled()) return NextResponse.json({ turn: null, source: "disabled" }, { headers });
+  const part = parsed.request.part ?? "full";
+  const empty = part === "support" ? { support: null } : { turn: null };
+  if (!isOpenAiEnabled()) return NextResponse.json({ ...empty, source: "disabled" }, { headers });
 
   try {
     const raw = await withTimeout(
       callOpenAiMessages(
         [
-          { role: "developer", content: buildFreeTalkInstructions() },
+          { role: "developer", content: buildFreeTalkInstructions(part) },
           { role: "user", content: buildFreeTalkInput(parsed.request) },
         ],
-        1200,
+        part === "question" ? 300 : 1200,
         // 통화 중 지연을 줄이려면 더 빠른 모델을 따로 지정할 수 있다(없으면 OPENAI_MODEL).
         process.env.CALL_REVIEW_FREE_TALK_MODEL || undefined,
         // 통화처럼 바로 답해야 해서 생각 단계를 건너뛴다.
@@ -61,9 +66,13 @@ export async function POST(request: Request) {
       ),
       TIMEOUT_MS,
     );
-    const turn = parseGeneratedTurn(raw, parsed.request);
+    if (part === "support") {
+      const support = parseGeneratedSupport(raw);
+      return NextResponse.json({ support, source: support ? "ai" : "invalid" }, { headers });
+    }
+    const turn = part === "question" ? parseGeneratedQuestion(raw, parsed.request) : parseGeneratedTurn(raw, parsed.request);
     return NextResponse.json({ turn, source: turn ? "ai" : "invalid" }, { headers });
   } catch {
-    return NextResponse.json({ turn: null, source: "error" }, { headers });
+    return NextResponse.json({ ...empty, source: "error" }, { headers });
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFreeTalkInput, buildFreeTalkInstructions, parseFreeTalkRequest, parseGeneratedTurn } from "./free-talk";
+import { buildFreeTalkInput, buildFreeTalkInstructions, parseFreeTalkRequest, parseGeneratedQuestion, parseGeneratedSupport, parseGeneratedTurn } from "./free-talk";
 
 const expressions = [
   { answerEn: "close", promptKo: "닫다", sourceType: "word" },
@@ -79,5 +79,30 @@ describe("short talk topic", () => {
   it("keeps the first topic on follow-up questions and tells the model to stay on it", () => {
     expect(parseGeneratedTurn(reply("close"), request(1, "Do you like movies?"))?.topic).toBe("Do you like movies?");
     expect(buildFreeTalkInput(request(1, "Do you like movies?"))).toContain('follow up on the theme "Do you like movies?"');
+  });
+});
+
+describe("question first, support later", () => {
+  it("accepts a question-only request and a support request with its question", () => {
+    const question = parseFreeTalkRequest({ expressions, history: [], turnIndex: 0, part: "question" });
+    expect(question.ok && question.request.part).toBe("question");
+    const support = parseFreeTalkRequest({ expressions, history: [], turnIndex: 0, part: "support", questionEn: "Where are you from?" });
+    expect(support.ok && support.request.questionEn).toBe("Where are you from?");
+    expect(parseFreeTalkRequest({ expressions, history: [], turnIndex: 0, part: "support" }).ok).toBe(false);
+  });
+
+  it("asks only for the question in question mode and only for help in support mode", () => {
+    expect(buildFreeTalkInstructions("question")).toContain('{"topic": string, "questionEn": string}');
+    expect(buildFreeTalkInstructions("question")).not.toContain("choices");
+    expect(buildFreeTalkInstructions("support")).toContain("choices");
+    expect(buildFreeTalkInstructions()).toContain("choices");
+  });
+
+  it("parses a question-only reply and a support-only reply", () => {
+    const parsed = parseFreeTalkRequest({ expressions, history: [], turnIndex: 0, part: "question" });
+    if (!parsed.ok) throw new Error("bad request");
+    expect(parseGeneratedQuestion('{"topic":"where people are from","questionEn":"Where are you from?"}', parsed.request)).toEqual({ topic: "where people are from", questionEn: "Where are you from?" });
+    expect(parseGeneratedQuestion('{"topic":"x","questionEn":"어디서 왔니?"}', parsed.request)).toBeNull();
+    expect(parseGeneratedSupport('{"questionMeaningKo":"어디서 왔니?","answerHint":"I\'m from…로 말해 봐요.","choices":[{"answerEn":"I\'m from Korea.","meaningKo":"한국에서 왔어."},{"answerEn":"Seoul.","meaningKo":"서울."}]}')?.choices).toHaveLength(2);
   });
 });
