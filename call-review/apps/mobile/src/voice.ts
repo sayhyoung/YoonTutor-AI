@@ -104,12 +104,14 @@ function cacheName(key: string): string {
   return `${hash.toString(36)}-${key.length}.wav`;
 }
 
-export function prefetchSpeech(text: string, language: SpeechLanguage, remote?: RemoteSpeechSource) {
+// 받아 두기가 끝나면(실패해도) 풀리는 약속을 돌려준다. 질문을 음성과 함께 띄우려고 기다릴 때 쓴다.
+export function prefetchSpeech(text: string, language: SpeechLanguage, remote?: RemoteSpeechSource): Promise<void> {
   const lang = language === "en-US" ? "en" : "ko";
   const key = `${lang}:${text}`;
-  if (prefetched.has(key)) return;
+  const existing = prefetched.get(key);
+  if (existing) return existing.then(() => undefined);
   const source = remote?.(text, lang);
-  if (!source) return;
+  if (!source) return Promise.resolve();
   const task = (async () => {
     try {
       if (Platform.OS === "web") {
@@ -134,6 +136,7 @@ export function prefetchSpeech(text: string, language: SpeechLanguage, remote?: 
     }
   })();
   prefetched.set(key, task);
+  return task.then(() => undefined);
 }
 
 function stopRemote() {
