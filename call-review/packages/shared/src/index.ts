@@ -2,6 +2,7 @@ export type CallPhase =
   | "home"
   | "incoming"
   | "connecting"
+  | "greeting"
   | "review"
   | "free-talk"
   | "closing"

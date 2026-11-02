@@ -7,6 +7,7 @@ import {
   AccessibilityInfo,
   Animated,
   AppState,
+  Alert,
   BackHandler,
   Easing,
   Image,
@@ -72,6 +73,7 @@ import {
   type SessionServices,
   type ReviewOutcome,
   type VoiceState,
+  AUTO_SEND_MS,
   useCallSession,
 } from "./src/useCallSession";
 import { useCallReviewData } from "./src/useCallReviewData";
@@ -412,11 +414,55 @@ function CallReviewApp({
     return () => subscription.remove();
   }, [openedHistory]);
 
+  // Android 뒤로 가기: 앱을 끄지 않고 한 단계 앞 화면으로 간다. 통화 중에는 실제 전화처럼
+  // 바로 끊지 않고 끝낼지 묻는다(끝내면 종료 버튼과 같이 결과 화면 → 홈). 홈에서는 기본 동작(앱 닫기).
+  const backRef = useRef<() => boolean>(() => false);
+  backRef.current = () => {
+    switch (session.phase) {
+      case "home":
+        if (session.homeSection === "home") return false;
+        session.closeMyPage();
+        return true;
+      case "incoming":
+        CallRinger?.stopRinging();
+        session.declineIncomingCall();
+        return true;
+      case "connecting":
+        session.cancelConnecting();
+        return true;
+      case "greeting":
+      case "review":
+      case "free-talk":
+        if (session.hintOpen) {
+          session.toggleHint();
+          return true;
+        }
+        Alert.alert("통화를 끝낼까요?", "지금까지 한 내용은 결과로 남아요.", [
+          { text: "계속하기", style: "cancel" },
+          { text: "끝내기", style: "destructive", onPress: () => session.endCall() },
+        ]);
+        return true;
+      case "closing":
+        session.finishClosing();
+        return true;
+      case "complete":
+        finishCall();
+        return true;
+      default:
+        return false;
+    }
+  };
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => backRef.current());
+    return () => subscription.remove();
+  }, []);
+
   // 전화가 오면 복습 문항 음성을 미리 받아 둔다. 그래야 문항이 뜨자마자 읽는다.
   const preparingCall = session.phase === "incoming" || session.phase === "connecting";
   useEffect(() => {
     if (!preparingCall || !voiceGuideOn) return;
-    for (const target of data.plan.targets) prefetchSpeech(reviewPromptText(target.promptKo), "ko-KR", speechSource);
+    void prefetchSpeech(GREETING_LINE_EN, "en-US", speechSource);
+    for (const target of data.plan.targets) void prefetchSpeech(reviewPromptText(target.promptKo), "ko-KR", speechSource);
   }, [data.plan.targets, preparingCall, speechSource, voiceGuideOn]);
 
   // 짧은 대화 질문은 화면에 뜨면 영어로 읽어 준다. 무응답 타이머는 읽기가 끝난 뒤 센다.
@@ -434,6 +480,33 @@ function CallReviewApp({
   }, [reviewPrompt, session.target, setSpeaking, speechSource, voiceGuideOn]);
 
   // 짧은 대화가 끝나면 베플리가 영어로 인사하고, 읽기가 끝나면(음성을 끈 경우엔 잠시 뒤) 결과로 넘어간다.
+  // 연결 뒤 베플리 인사를 영어로 읽고, 끝나면(음성을 껐으면 잠시 뒤) 복습을 시작한다.
+  const greeting = session.phase === "greeting";
+  const startLessonRef = useRef(session.startLesson);
+  startLessonRef.current = session.startLesson;
+  useEffect(() => {
+    if (!greeting) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const shownAt = Date.now();
+    const startSoon = (ms: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => startLessonRef.current(), Math.max(ms, GREETING_MIN_MS - (Date.now() - shownAt)));
+    };
+    startSoon(voiceGuideOn ? GREETING_FALLBACK_MS : GREETING_SILENT_MS);
+    if (voiceGuideOn) {
+      speak(GREETING_LINE_EN, "en-US", () => setSpeaking(true), () => {
+        setSpeaking(false);
+        startSoon(GREETING_AFTER_SPEECH_MS);
+      }, speechSource);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+      stopSpeaking();
+      setSpeaking(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [greeting]);
+
   // finishClosing은 렌더마다 새 함수라, 의존성에 넣으면 효과가 계속 다시 돌며 인사를 겹쳐 읽는다.
   const closing = session.phase === "closing";
   const finishClosingRef = useRef(session.finishClosing);
@@ -703,6 +776,7 @@ function CallReviewApp({
             onCancel={session.cancelConnecting}
           />
         )}
+        {session.phase === "greeting" && <GreetingScreen darkMode={darkMode} onNext={session.startLesson} />}
         {(session.phase === "review" || session.phase === "free-talk") &&
           session.target && (
           <CallScreen
@@ -752,6 +826,7 @@ function CallReviewApp({
             onVoiceAction={session.beginOrStopVoice}
             onSubmitText={session.submitTypedAnswer}
             onRetryVoice={session.retryVoice}
+            onEditHeard={session.editHeardText}
             onContinueReview={session.continueReview}
             onRetryReview={session.retryReview}
             isLastTarget={session.isLastTarget}
@@ -1278,6 +1353,52 @@ function ConnectingScreen({
   );
 }
 
+// 들은 말을 저절로 보내기까지 남은 시간(가득 → 비움).
+function AutoSendBar({ color: fillColor, track }: { color: string; track: string }) {
+  const remaining = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const animation = Animated.timing(remaining, { toValue: 0, duration: AUTO_SEND_MS, easing: Easing.linear, useNativeDriver: false });
+    animation.start();
+    return () => animation.stop();
+  }, [remaining]);
+  return (
+    <View style={[styles.autoSendTrack, { backgroundColor: track }]} accessible={false}>
+      <Animated.View style={[styles.autoSendFill, { backgroundColor: fillColor, width: remaining.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }) }]} />
+    </View>
+  );
+}
+
+const GREETING_LINE_EN = "Hi, it's Befly! Nice to hear your voice. Let's practice what you learned today.";
+const GREETING_LINE_KO = "안녕하세요! 베플리예요. 오늘 배운 표현 같이 연습해 봐요.";
+const GREETING_AFTER_SPEECH_MS = 600;
+const GREETING_MIN_MS = 2500;
+const GREETING_SILENT_MS = 2500;
+const GREETING_FALLBACK_MS = 10000;
+
+// 전화가 연결되면 베플리가 먼저 인사하는 화면. 인사가 끝나면 복습으로 넘어간다.
+function GreetingScreen({ darkMode, onNext }: { darkMode: boolean; onNext: () => void }) {
+  const light = !darkMode;
+  return (
+    <View style={styles.connectingScreen}>
+      <View style={styles.connectingCenter} accessibilityLiveRegion="polite">
+        <Image source={befly.call.speaking} style={styles.connectingAvatar} accessibilityLabel="베플리 선생님" />
+        <View style={styles.connectingCopy}>
+          <Text style={[styles.closingLabel, { color: light ? color.befly : color.beflyDark }]}>베플리와 연결됐어요</Text>
+          <Text style={[styles.closingEnglish, light && lightCallStyles.strongText]}>{GREETING_LINE_EN}</Text>
+          <Text style={[styles.connectingBody, styles.closingKorean, light && lightCallStyles.mutedText]}>{GREETING_LINE_KO}</Text>
+        </View>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onNext}
+        style={({ pressed }) => [styles.connectingCancel, light ? lightCallStyles.raisedSurface : darkAppStyles.card, pressed && styles.buttonPressed]}
+      >
+        <Text style={[styles.connectingCancelText, light && lightCallStyles.strongText]}>바로 시작하기</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 const CLOSING_LINE_EN = "It was great talking with you today. See you next time. Bye!";
 const CLOSING_AFTER_SPEECH_MS = 1500;
 const CLOSING_SILENT_MS = 4000;
@@ -1340,6 +1461,7 @@ type CallScreenProps = {
   onVoiceAction: () => void;
   onSubmitText: () => void;
   onRetryVoice: () => void;
+  onEditHeard: () => void;
   onContinueReview: () => void;
   onRetryReview: () => void;
   isLastTarget: boolean;
@@ -1375,7 +1497,7 @@ function reviewGuide(props: CallScreenProps) {
   }
   if (props.inputMode === "text") return "글자로 써도 좋아요.";
   if (props.voiceState === "listening") return "천천히 말해도 괜찮아요.";
-  if (props.voiceState === "review") return "내가 이렇게 들었어. 맞니?";
+  if (props.voiceState === "review") return "이렇게 들었어요. 곧 보낼게요.";
   return "영어로 말해 볼까요?";
 }
 
@@ -1581,9 +1703,14 @@ function CallScreen(props: CallScreenProps) {
 
         {props.heardText ? (
           <View style={[styles.heardCard, { backgroundColor: t.actionSoft }]} accessibilityLabel="음성 인식 결과">
-            <Text style={[styles.heardLabel, { color: t.actionInk }]}>이렇게 들었어</Text>
+            <Text style={[styles.heardLabel, { color: t.actionInk }]}>이렇게 들었어요</Text>
             <Text style={[styles.heardText, { color: t.ink }]}>“{props.heardText}”</Text>
-            {!isChat && <Text style={[styles.heardHelp, { color: t.ink2 }]}>맞으면 보내고, 아니면 다시 말해요.</Text>}
+            {!isChat && props.voiceState === "review" ? (
+              <>
+                <Text style={[styles.heardHelp, { color: t.ink2 }]}>잘못 들었을 때만 고쳐 주세요. 곧 보낼게요.</Text>
+                <AutoSendBar key={props.heardText} color={t.action} track={t.line} />
+              </>
+            ) : null}
           </View>
         ) : null}
 
@@ -1718,8 +1845,8 @@ function CallScreen(props: CallScreenProps) {
             <Pressable accessibilityRole="button" onPress={props.onRetryVoice} style={({ pressed }) => [styles.confirmSecondary, light && lightCallStyles.utilityButton, pressed && styles.buttonPressed]}>
               <Text style={[styles.confirmSecondaryText, light && lightCallStyles.strongText]}>다시 말하기</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" onPress={props.onVoiceAction} style={({ pressed }) => [styles.confirmPrimary, { backgroundColor: t.action }, pressed && styles.buttonPressed]}>
-              <Text style={styles.confirmPrimaryText}>이대로 보내기</Text>
+            <Pressable accessibilityRole="button" onPress={props.onEditHeard} style={({ pressed }) => [styles.confirmSecondary, light && lightCallStyles.utilityButton, pressed && styles.buttonPressed]}>
+              <Text style={[styles.confirmSecondaryText, light && lightCallStyles.strongText]}>글자로 고치기</Text>
             </Pressable>
           </View>
         ) : props.inputMode === "voice" ? (
@@ -1983,6 +2110,8 @@ const styles = StyleSheet.create({
   listeningRow: { alignItems: "center", gap: 8, paddingVertical: 8 },
   listeningText: { fontSize: 15, fontWeight: "700" },
   heardHelp: { fontSize: 13, lineHeight: 19 },
+  autoSendTrack: { height: 4, borderRadius: 2, overflow: "hidden" },
+  autoSendFill: { height: 4, borderRadius: 2 },
   callStatusRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   callLiveDot: { width: 7, height: 7, borderRadius: 4 },
   callHeaderAvatarCompact: { width: 36, height: 36 },

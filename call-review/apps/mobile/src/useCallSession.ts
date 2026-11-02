@@ -88,6 +88,8 @@ const INTRO_LINE =
 const QUESTION_SETTLE_MS = 1500;
 // Preview only: long enough to read the connection checklist.
 const CONNECT_PREVIEW_MS = 1800;
+// 음성으로 답하면 들은 말을 잠깐 보여 준 뒤 이 시간이 지나면 저절로 보낸다(잘못 들었을 때만 학생이 고친다).
+export const AUTO_SEND_MS = 2500;
 // AI 질문을 이보다 오래 기다리지 않고 템플릿 질문을 쓴다.
 const TURN_TIMEOUT_MS = 9000;
 // 첫 질문은 통화 시작 때 미리 만들어 두고, 대화에 들어갈 때 이만큼만 더 기다린다.
@@ -152,6 +154,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   const isCallSurface =
     phase === "incoming" ||
     phase === "connecting" ||
+    phase === "greeting" ||
     phase === "review" ||
     phase === "free-talk" ||
     phase === "closing";
@@ -275,11 +278,15 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     void firstTurn.current.then((turn) => {
       if (turn) services.prepareSpeech?.(turn.questionEn);
     });
-    // 복습할 표현이 없으면 바로 짧은 대화로 넘어간다.
-    connectTimer.current = setTimeout(
-      () => (plan.targets.length > 0 ? setPhase("review") : void enterFreeTalk()),
-      CONNECT_PREVIEW_MS,
-    );
+    // 연결되면 베플리가 먼저 인사한다(전화처럼). 인사가 끝나면 startLesson으로 복습을 시작한다.
+    connectTimer.current = setTimeout(() => setPhase("greeting"), CONNECT_PREVIEW_MS);
+  }
+
+  // 인사 뒤 학습 시작. 복습할 표현이 없으면 바로 짧은 대화로 넘어간다.
+  function startLesson() {
+    if (phase !== "greeting") return;
+    if (plan.targets.length > 0) setPhase("review");
+    else void enterFreeTalk();
   }
 
   function cancelConnecting() {
@@ -346,6 +353,15 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       setVoiceError("말한 내용을 알아듣지 못했어요. 다시 말하거나 글자로 답해 주세요.");
     }
   }
+
+  // 들은 말 확인 단계: 학생이 고치지 않으면 잠시 뒤 그대로 보낸다.
+  const submitRef = useRef(submitAnswer);
+  submitRef.current = submitAnswer;
+  useEffect(() => {
+    if (voiceState !== "review" || !heardText) return;
+    const timer = setTimeout(() => submitRef.current(heardText), AUTO_SEND_MS);
+    return () => clearTimeout(timer);
+  }, [heardText, voiceState]);
 
   function beginOrStopVoice() {
     if (voiceState === "idle") {
@@ -534,6 +550,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     openMyPage: () => setHomeSection("my-page"),
     closeMyPage: () => setHomeSection("home"),
     showIncomingCall: () => setPhase("incoming"),
+    startLesson,
     finishClosing: () => setPhase((current) => (current === "closing" ? "complete" : current)),
     declineIncomingCall: () => setPhase("home"),
     answerIncomingCall,
@@ -563,6 +580,13 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     },
     retryVoice: () => {
       void startListening();
+    },
+    // 잘못 들었을 때 들은 말을 글자 입력창에 옮겨 직접 고친다(자동 보내기는 멈춘다).
+    editHeardText: () => {
+      setTypedText(heardText);
+      setHeardText("");
+      setVoiceState("idle");
+      setInputMode("text");
     },
     chooseAnswer: submitAnswer,
     toggleChoiceAssist: () => setChoiceAssistOpen((current) => !current),
