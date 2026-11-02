@@ -48,6 +48,7 @@ export async function POST(request: Request) {
         ],
         200,
         process.env.CALL_REVIEW_FREE_TALK_MODEL || undefined,
+        "none",
       ),
       new Promise<string>((_, reject) => setTimeout(() => reject(new Error("timeout")), TIMEOUT_MS)),
     ]);

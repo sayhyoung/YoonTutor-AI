@@ -320,6 +320,52 @@ export function gradeReviewAnswer(answer: string, expected: string): ReviewGrade
   return options.some((option) => sameMeaningForm(answer, option)) ? "close" : "wrong";
 }
 
+function letters(text: string): string {
+  return plainText(text).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function editDistance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = row[0]!;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const above = row[j]!;
+      row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return row[b.length]!;
+}
+
+// 철자만 살짝 틀린 답(schol → school). 다른 단어로 보지 않고 철자를 다시 보게 한다.
+export function isNearSpelling(answer: string, expected: string): boolean {
+  const a = letters(answer);
+  const b = letters(expected);
+  if (!a || !b || a === b) return false;
+  return editDistance(a, b) <= (b.length <= 5 ? 1 : 2);
+}
+
+// 틀린 답이 정답에 얼마나 가까운지. 가까우면 "거의 맞혔어요", 멀면 다른 위로 말을 고른다.
+export function isCloseMiss(answer: string, expected: string): boolean {
+  if (isNearSpelling(answer, expected)) return true;
+  const want = canonicalWords(plainText(expected).toLowerCase()).split(" ").filter(Boolean);
+  if (want.length < 2) return false;
+  const have = new Set(canonicalWords(plainText(answer).toLowerCase()).split(" "));
+  return want.filter((word) => have.has(word)).length / want.length >= 0.6;
+}
+
+// 문장 문항을 글자로 답할 때는 빈칸 단어만 써도 된다(문장 전체를 써도 된다).
+export function blankAnswerTarget(answerEn: string): string {
+  return sentenceBlanks(answerEn).blanks.join(" ");
+}
+
+export function gradeSentenceTyped(answer: string, answerEn: string): ReviewGrade {
+  const whole = gradeReviewAnswer(answer, answerEn);
+  if (whole !== "wrong") return whole;
+  return gradeReviewAnswer(answer, blankAnswerTarget(answerEn));
+}
+
 // 복습 한 문항에서 답할 수 있는 횟수. 1·2번째 오답에는 힌트를 주고, 3번째 오답이면 정답을 알려 주고 넘어간다.
 export const MAX_REVIEW_ATTEMPTS = 3;
 
@@ -370,8 +416,9 @@ export function sentenceBlanks(answerEn: string): { masked: string; blanks: stri
 }
 
 // 단어 — 1번째 오답: 길이로 감을 잡게 하고, 2번째 오답: 철자 모양(g _ _ d)을 보여 준다. 정답 전체는 말하지 않는다.
-// 문장 — 1번째 오답: 빈칸 단어의 첫 글자, 2번째 오답: 문장 전체를 보여 주고 따라 읽게 한다.
-export function reviewHint(answerEn: string, level: 1 | 2): string {
+// 문장 — 1번째 오답: 빈칸 단어의 첫 글자, 2번째 오답: 말할 때는 문장 전체를 보여 주고 따라 읽게 하고,
+// 글자로 답할 때는 빈칸 단어의 철자 모양(c _ _ _ _)을 보여 준다.
+export function reviewHint(answerEn: string, level: 1 | 2, mode: "speak" | "type" = "speak"): string {
   const words = answerEn.trim().split(/\s+/).filter(Boolean);
   if (words.length <= 1) {
     const word = answerEn.trim().replace(/[.!?]+$/, "");
@@ -380,9 +427,16 @@ export function reviewHint(answerEn: string, level: 1 | 2): string {
     const shape = [...word].map((char, index) => (index === 0 || !/[A-Za-z]/.test(char) ? char : "_")).join(" ");
     return `${letterWithRo(firstLetter(word))} 시작해요. ${shape}`;
   }
+  const { blanks } = sentenceBlanks(answerEn);
   if (level === 1) {
-    const starts = sentenceBlanks(answerEn).blanks.map((word) => `"${word[0]!.toLowerCase()}…"`);
-    return `빈칸 단어는 ${starts.join(", ")}로 시작해요. 다시 듣고 문장 전체를 말해 보세요.`;
+    const starts = blanks.map((word) => `"${word[0]!.toLowerCase()}…"`);
+    return mode === "type"
+      ? `빈칸 단어는 ${starts.join(", ")}로 시작해요. 빈칸 단어만 써도 돼요.`
+      : `빈칸 단어는 ${starts.join(", ")}로 시작해요. 다시 듣고 문장 전체를 말해 보세요.`;
+  }
+  if (mode === "type") {
+    const shapes = blanks.map((word) => [...word].map((char, index) => (index === 0 ? char.toLowerCase() : "_")).join(" "));
+    return `빈칸 단어 모양이에요. ${shapes.join(" / ")}`;
   }
   return `문장을 보고 그대로 따라 읽어 보세요. ${answerEn.trim()}`;
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { alternativeAnswerMessage, sentenceBlanks, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
+import { alternativeAnswerMessage, gradeSentenceTyped, isCloseMiss, isNearSpelling, sentenceBlanks, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
 
 function item(answerEn: string, sourceType: "word" | "sentence", studiedAt: string): LearningHistoryItem {
   return {
@@ -224,5 +224,30 @@ describe("sentenceBlanks", () => {
 
   it("still blanks something when every word is short", () => {
     assert.equal(sentenceBlanks("I am ok.").blanks.length, 1);
+  });
+});
+
+describe("near misses and typed blanks", () => {
+  it("spots a misspelling instead of calling it a different word", () => {
+    assert.equal(isNearSpelling("Schol", "school"), true);
+    assert.equal(isNearSpelling("nice", "good"), false);
+    assert.equal(isNearSpelling("Guin", "China"), false);
+  });
+
+  it("calls only answers that share most of the words a close miss", () => {
+    assert.equal(isCloseMiss("He is from Japan.", "He is from China."), true);
+    assert.equal(isCloseMiss("Guin", "He is from China."), false);
+  });
+
+  it("lets a typed sentence answer be just the blank word", () => {
+    assert.equal(gradeSentenceTyped("China", "He is from China."), "exact");
+    assert.equal(gradeSentenceTyped("china", "He is from China."), "close");
+    assert.equal(gradeSentenceTyped("He's from China", "He is from China."), "close");
+    assert.equal(gradeSentenceTyped("Guin", "He is from China."), "wrong");
+    assert.equal(gradeSentenceTyped("usually seven", "I usually get up at seven."), "exact");
+  });
+
+  it("gives typed hints for the blank word", () => {
+    assert.equal(reviewHint("He is from China.", 2, "type"), "빈칸 단어 모양이에요. c _ _ _ _");
   });
 });

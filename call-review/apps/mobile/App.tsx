@@ -74,7 +74,6 @@ import {
   type SessionServices,
   type ReviewOutcome,
   type VoiceState,
-  AUTO_SEND_MS,
   useCallSession,
 } from "./src/useCallSession";
 import { useCallReviewData } from "./src/useCallReviewData";
@@ -470,21 +469,48 @@ function CallReviewApp({
 
   // 전화가 오면 복습 문항 음성을 미리 받아 둔다. 그래야 문항이 뜨자마자 읽는다.
   const preparingCall = session.phase === "incoming" || session.phase === "connecting";
+  const greetingLine = useMemo(() => greetingFor(session.callId), [session.callId]);
   useEffect(() => {
     if (!preparingCall || !voiceGuideOn) return;
-    void prefetchSpeech(GREETING_LINE_EN, "en-US", speechSource);
+    void prefetchSpeech(greetingLine.en, "en-US", speechSource);
+    for (const filler of TALK_FILLERS) void prefetchSpeech(filler, "en-US", speechSource);
     for (const target of data.plan.targets) {
       const line = reviewSpeech(target);
       void prefetchSpeech(line.text, line.language, speechSource);
     }
-  }, [data.plan.targets, preparingCall, speechSource, voiceGuideOn]);
+  }, [data.plan.targets, greetingLine, preparingCall, speechSource, voiceGuideOn]);
 
   // 짧은 대화 질문은 화면에 뜨면 영어로 읽어 준다. 무응답 타이머는 읽기가 끝난 뒤 센다.
+  // 통화처럼 이어지게, 말로 답하는 중이면 질문을 다 읽은 뒤 마이크를 저절로 켠다.
   const questionToRead = session.phase === "free-talk" && !session.turnLoading ? session.coachLine : null;
   useEffect(() => {
     if (!questionToRead || !voiceGuideOn) return;
-    speak(questionToRead, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
+    const turnId = session.freeTalkTurn.id;
+    speak(questionToRead, "en-US", () => setSpeaking(true), () => {
+      setSpeaking(false);
+      const current = sessionRef.current;
+      if (
+        current.phase === "free-talk" &&
+        !current.turnLoading &&
+        current.freeTalkTurn.id === turnId &&
+        current.inputMode === "voice" &&
+        current.voiceState === "idle" &&
+        !current.choiceAssistOpen
+      ) {
+        current.beginOrStopVoice();
+      }
+    }, speechSource);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionToRead, session.freeTalkTurn.id, setSpeaking, speechSource, voiceGuideOn]);
+
+  // 짧은 대화에서 학생이 답하면 다음 질문을 만드는 동안 바로 짧게 맞장구친다(전화처럼 빈틈 없이).
+  const talkReplies = session.phase === "free-talk" ? session.conversationTurns.length : 0;
+  useEffect(() => {
+    if (!talkReplies || !voiceGuideOn) return;
+    const filler = TALK_FILLERS[(talkReplies + session.callId.length) % TALK_FILLERS.length]!;
+    speak(filler, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [talkReplies]);
 
   // 복습 단계도 표현이 바뀔 때마다 바로 읽어 준다(단어: 한국어 문제, 문장: 영어 문장).
   const reviewPrompt = session.phase === "review" && session.target ? reviewSpeech(session.target) : null;
@@ -508,7 +534,7 @@ function CallReviewApp({
     };
     startSoon(voiceGuideOn ? GREETING_FALLBACK_MS : GREETING_SILENT_MS);
     if (voiceGuideOn) {
-      speak(GREETING_LINE_EN, "en-US", () => setSpeaking(true), () => {
+      speak(greetingLine.en, "en-US", () => setSpeaking(true), () => {
         setSpeaking(false);
         startSoon(GREETING_AFTER_SPEECH_MS);
       }, speechSource);
@@ -791,7 +817,7 @@ function CallReviewApp({
             onCancel={session.cancelConnecting}
           />
         )}
-        {session.phase === "greeting" && <GreetingScreen darkMode={darkMode} onNext={session.startLesson} />}
+        {session.phase === "greeting" && <GreetingScreen darkMode={darkMode} line={greetingLine} onNext={session.startLesson} />}
         {(session.phase === "review" || session.phase === "free-talk") &&
           session.target && (
           <CallScreen
@@ -841,7 +867,6 @@ function CallReviewApp({
             onVoiceAction={session.beginOrStopVoice}
             onSubmitText={session.submitTypedAnswer}
             onRetryVoice={session.retryVoice}
-            onEditHeard={session.editHeardText}
             onContinueReview={session.continueReview}
             onRetryReview={session.retryReview}
             isLastTarget={session.isLastTarget}
@@ -1155,7 +1180,7 @@ function IncomingScreen({
         <Image source={befly.incoming} style={[styles.incomingAvatar, darkMode && darkAppStyles.beflyRing]} accessibilityLabel="헤드셋을 쓰고 손 흔드는 베플리 선생님" />
       </View>
       <View style={styles.incomingIdentity}><Text style={[styles.incomingName,!darkMode && lightCallStyles.strongText]}>베플리 선생님</Text><Text style={[styles.incomingMeta,!darkMode && lightCallStyles.mutedText]}>오늘 복습할 표현 {reviewCount}개</Text></View>
-      <View style={[styles.incomingSpeech,!darkMode && lightCallStyles.raisedSurface]}><Text style={[styles.incomingEnglish,!darkMode && lightCallStyles.strongText]}>Hi, it’s Befly!</Text><Text style={[styles.incomingKo,!darkMode && lightCallStyles.strongText]}>오늘 배운 표현으로 짧게 이야기해 볼까요?</Text></View>
+      <View style={[styles.incomingSpeech,!darkMode && lightCallStyles.raisedSurface]}><Text style={[styles.incomingEnglish,!darkMode && lightCallStyles.strongText]}>Hi! Let’s talk!</Text><Text style={[styles.incomingKo,!darkMode && lightCallStyles.strongText]}>오늘 배운 표현으로 짧게 이야기해 볼까요?</Text></View>
       </View>
 
       <View style={styles.incomingActions}>
@@ -1395,30 +1420,32 @@ function ConnectingScreen({
   );
 }
 
-// 들은 말을 저절로 보내기까지 남은 시간(가득 → 비움).
-function AutoSendBar({ color: fillColor, track }: { color: string; track: string }) {
-  const remaining = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const animation = Animated.timing(remaining, { toValue: 0, duration: AUTO_SEND_MS, easing: Easing.linear, useNativeDriver: false });
-    animation.start();
-    return () => animation.stop();
-  }, [remaining]);
-  return (
-    <View style={[styles.autoSendTrack, { backgroundColor: track }]} accessible={false}>
-      <Animated.View style={[styles.autoSendFill, { backgroundColor: fillColor, width: remaining.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }) }]} />
-    </View>
-  );
+// 짧은 대화 맞장구. 학생 대답이 무엇이든 어울리는 중립적인 말만 쓴다.
+const TALK_FILLERS = ["Oh, I see.", "Okay.", "Uh-huh.", "Got it.", "Mm, okay."];
+
+// 통화 첫인사. 짧게 하고 바로 복습으로 넘어간다. 매번 같으면 지루해서 통화마다 하나를 고른다.
+// 베플리 이름은 말하지 않는다(음성 모델이 이름을 이상하게 읽는다).
+const GREETINGS: { en: string; ko: string }[] = [
+  { en: "Hi! How are you? Let's practice what we learned today.", ko: "안녕하세요! 잘 지냈어요? 오늘 배운 표현 같이 연습해 봐요." },
+  { en: "Hello! Good to hear you. Let's review today's lesson.", ko: "안녕하세요! 목소리 들으니 좋네요. 오늘 배운 걸 복습해 봐요." },
+  { en: "Hi there! Ready? Let's go over what we learned today.", ko: "안녕하세요! 준비됐나요? 오늘 배운 걸 같이 볼게요." },
+  { en: "Hello! How's your day going? Let's practice together.", ko: "안녕하세요! 오늘 하루 어때요? 같이 연습해 봐요." },
+  { en: "Hey! Nice to talk to you. Let's practice today's words.", ko: "안녕하세요! 반가워요. 오늘 배운 표현 연습해 봐요." },
+];
+
+function greetingFor(callId: string) {
+  let hash = 0;
+  for (const char of callId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return GREETINGS[hash % GREETINGS.length]!;
 }
 
-const GREETING_LINE_EN = "Hi, it's Befly! Nice to hear your voice. Let's practice what you learned today.";
-const GREETING_LINE_KO = "안녕하세요! 베플리예요. 오늘 배운 표현 같이 연습해 봐요.";
-const GREETING_AFTER_SPEECH_MS = 600;
-const GREETING_MIN_MS = 2500;
-const GREETING_SILENT_MS = 2500;
-const GREETING_FALLBACK_MS = 10000;
+const GREETING_AFTER_SPEECH_MS = 300;
+const GREETING_MIN_MS = 1500;
+const GREETING_SILENT_MS = 1800;
+const GREETING_FALLBACK_MS = 8000;
 
 // 전화가 연결되면 베플리가 먼저 인사하는 화면. 인사가 끝나면 복습으로 넘어간다.
-function GreetingScreen({ darkMode, onNext }: { darkMode: boolean; onNext: () => void }) {
+function GreetingScreen({ darkMode, line, onNext }: { darkMode: boolean; line: { en: string; ko: string }; onNext: () => void }) {
   const light = !darkMode;
   return (
     <View style={styles.connectingScreen}>
@@ -1426,8 +1453,8 @@ function GreetingScreen({ darkMode, onNext }: { darkMode: boolean; onNext: () =>
         <Image source={befly.call.speaking} style={styles.connectingAvatar} accessibilityLabel="베플리 선생님" />
         <View style={styles.connectingCopy}>
           <Text style={[styles.closingLabel, { color: light ? color.befly : color.beflyDark }]}>베플리와 연결됐어요</Text>
-          <Text style={[styles.closingEnglish, light && lightCallStyles.strongText]}>{GREETING_LINE_EN}</Text>
-          <Text style={[styles.connectingBody, styles.closingKorean, light && lightCallStyles.mutedText]}>{GREETING_LINE_KO}</Text>
+          <Text style={[styles.closingEnglish, light && lightCallStyles.strongText]}>{line.en}</Text>
+          <Text style={[styles.connectingBody, styles.closingKorean, light && lightCallStyles.mutedText]}>{line.ko}</Text>
         </View>
       </View>
       <Pressable
@@ -1503,7 +1530,6 @@ type CallScreenProps = {
   onVoiceAction: () => void;
   onSubmitText: () => void;
   onRetryVoice: () => void;
-  onEditHeard: () => void;
   onContinueReview: () => void;
   onRetryReview: () => void;
   isLastTarget: boolean;
@@ -1537,10 +1563,10 @@ function reviewGuide(props: CallScreenProps) {
         ? "힌트를 보고 다시 말해 볼까요?"
         : "괜찮아요, 같이 다시 볼까요?";
   }
-  if (props.inputMode === "text") return "글자로 써도 좋아요.";
+  if (props.inputMode === "text") return isSentence(props.answerEn) ? "빈칸 단어만 써도 좋아요." : "글자로 써도 좋아요.";
   if (props.voiceState === "listening") return "천천히 말해도 괜찮아요.";
-  if (props.voiceState === "review") return "이렇게 들었어요. 곧 보낼게요.";
-  return isSentence(props.answerEn) ? "잘 듣고 따라 말해 볼까요?" : "영어로 말해 볼까요?";
+  if (props.voiceState === "review") return "이렇게 들었어요. 맞나요?";
+  return isSentence(props.answerEn) ? "잘 듣고 문장 전체를 따라 말해 볼까요?" : "영어로 말해 볼까요?";
 }
 
 function CallScreen(props: CallScreenProps) {
@@ -1726,7 +1752,9 @@ function CallScreen(props: CallScreenProps) {
               <>
                 <Text style={[styles.questionEnglish, light && lightCallStyles.strongText]} accessibilityLabel={`빈칸이 있는 문장: ${sentence.masked.replace(/_+/g, "빈칸")}`}>{sentence.masked}</Text>
                 <Text style={[styles.promptMeaning, light && lightCallStyles.mutedText]}>{props.promptKo}</Text>
-                <Text style={[styles.promptGuide, light && lightCallStyles.mutedText]}>베플리가 읽어 준 문장을 빈칸까지 모두 말해 보세요.</Text>
+                <Text style={[styles.promptGuide, light && lightCallStyles.mutedText]}>
+                  {props.inputMode === "text" ? "빈칸에 들어갈 단어만 써도 돼요." : "베플리가 읽어 준 문장을 빈칸까지 모두 말해 보세요."}
+                </Text>
               </>
             ) : (
               <>
@@ -1763,12 +1791,7 @@ function CallScreen(props: CallScreenProps) {
           <View style={[styles.heardCard, { backgroundColor: t.actionSoft }]} accessibilityLabel="음성 인식 결과">
             <Text style={[styles.heardLabel, { color: t.actionInk }]}>이렇게 들었어요</Text>
             <Text style={[styles.heardText, { color: t.ink }]}>“{props.heardText}”</Text>
-            {!isChat && props.voiceState === "review" ? (
-              <>
-                <Text style={[styles.heardHelp, { color: t.ink2 }]}>잘못 들었을 때만 고쳐 주세요. 곧 보낼게요.</Text>
-                <AutoSendBar key={props.heardText} color={t.action} track={t.line} />
-              </>
-            ) : null}
+            {!isChat && <Text style={[styles.heardHelp, { color: t.ink2 }]}>맞으면 보내고, 아니면 다시 말해요.</Text>}
           </View>
         ) : null}
 
@@ -1903,8 +1926,8 @@ function CallScreen(props: CallScreenProps) {
             <Pressable accessibilityRole="button" onPress={props.onRetryVoice} style={({ pressed }) => [styles.confirmSecondary, light && lightCallStyles.utilityButton, pressed && styles.buttonPressed]}>
               <Text style={[styles.confirmSecondaryText, light && lightCallStyles.strongText]}>다시 말하기</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" onPress={props.onEditHeard} style={({ pressed }) => [styles.confirmSecondary, light && lightCallStyles.utilityButton, pressed && styles.buttonPressed]}>
-              <Text style={[styles.confirmSecondaryText, light && lightCallStyles.strongText]}>글자로 고치기</Text>
+            <Pressable accessibilityRole="button" onPress={props.onVoiceAction} style={({ pressed }) => [styles.confirmPrimary, { backgroundColor: t.action }, pressed && styles.buttonPressed]}>
+              <Text style={styles.confirmPrimaryText}>이대로 보내기</Text>
             </Pressable>
           </View>
         ) : props.inputMode === "voice" ? (
@@ -1923,7 +1946,7 @@ function CallScreen(props: CallScreenProps) {
             </View>
             <View style={styles.dockColumn}>
               <View style={styles.micStage}>
-              {listening && <MicPulse pulseColor={t.action} size={compact ? 68 : 80} />}
+              {listening && <MicPulse pulseColor={t.action} size={compact ? 58 : 64} />}
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={micLabel}
@@ -1939,7 +1962,7 @@ function CallScreen(props: CallScreenProps) {
                   pressed && { transform: [{ scale: 0.94 }] },
                 ]}
               >
-                <Icon name={listening ? "stop" : "mic"} size={listening ? 26 : 30} color={color.accentInk} />
+                <Icon name={listening ? "stop" : "mic"} size={listening ? 24 : 28} color={color.accentInk} />
               </Pressable>
               </View>
               <Text style={[styles.dockLabel, styles.dockLabelPrimary, { color: t.actionInk }]}>{micLabel}</Text>
@@ -2169,12 +2192,10 @@ const styles = StyleSheet.create({
   listeningRow: { alignItems: "center", gap: 8, paddingVertical: 8 },
   listeningText: { fontSize: 15, fontWeight: "700" },
   heardHelp: { fontSize: 13, lineHeight: 19 },
-  autoSendTrack: { height: 4, borderRadius: 2, overflow: "hidden" },
-  autoSendFill: { height: 4, borderRadius: 2 },
   callStatusRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   callLiveDot: { width: 7, height: 7, borderRadius: 4 },
   callHeaderAvatarCompact: { width: 36, height: 36 },
-  dockColumn: { alignItems: "center", gap: 8, minWidth: 72 },
+  dockColumn: { alignItems: "center", gap: 4, minWidth: 72 },
   dockLabel: { fontSize: 12, fontWeight: "600" },
   dockLabelPrimary: { fontWeight: "700" },
   textDockChip: { minHeight: 36, flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 18, paddingHorizontal: 12 },
@@ -2486,7 +2507,7 @@ const styles = StyleSheet.create({
   heardText: { color: color.ink, fontFamily: font.englishBold, fontSize: 20, fontWeight: "700" },
   retryButton: { alignSelf: "flex-start", paddingVertical: space.sm, paddingHorizontal: space.md, borderRadius: radius.pill, backgroundColor: color.surface },
   retryButtonText: { color: color.primaryStrong, fontSize: 13, fontWeight: "800" },
-  callDock: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.xl, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.lineInverse, backgroundColor: color.call },
+  callDock: { paddingHorizontal: space.lg, paddingTop: space.sm + 4, paddingBottom: space.sm + 4, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.lineInverse, backgroundColor: color.call },
   modeSwitch: { alignSelf: "center", flexDirection: "row", backgroundColor: color.callRaised, borderRadius: radius.pill, padding: 4, marginBottom: space.md },
   modeButton: { minWidth: 76, minHeight: 36, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   modeButtonActive: { backgroundColor: color.primary },
@@ -2499,7 +2520,7 @@ const styles = StyleSheet.create({
   endButton: { width: 54, height: 54, borderRadius: radius.pill, backgroundColor: color.danger, alignItems: "center", justifyContent: "center" },
   endButtonText: { color: color.accentInk, fontSize: 30, lineHeight: 32 },
   endButtonPlaceholder: { width: 54, height: 54 },
-  voiceButton: { width: 80, height: 80, borderRadius: radius.pill, backgroundColor: color.actionDark, alignItems: "center", justifyContent: "center" },
+  voiceButton: { width: 64, height: 64, borderRadius: radius.pill, backgroundColor: color.actionDark, alignItems: "center", justifyContent: "center" },
   voiceButtonListening: { boxShadow: "0 0 0 10px rgba(47,85,212,0.18)" },
   voiceButtonText: { color: color.accentInk, fontSize: 34, fontWeight: "800" },
   voiceGuide: { color: color.mutedInverse, fontSize: 13, fontWeight: "600", marginTop: space.sm },
@@ -2545,11 +2566,11 @@ const styles = StyleSheet.create({
   reportAvatar: { width: 72, height: 72, borderRadius: radius.pill, backgroundColor: color.beflySoft, borderWidth: 3, borderColor: color.warning },
   topEndButton: { minWidth: 44, height: 44, borderRadius: radius.pill, backgroundColor: color.danger, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
   topEndButtonText: { color: color.accentInk, fontSize: 13, fontWeight: "800" },
-  dockAuxButton: { width: 56, height: 56, borderRadius: radius.pill, backgroundColor: color.callRaised, alignItems: "center", justifyContent: "center" },
+  dockAuxButton: { width: 48, height: 48, borderRadius: radius.pill, backgroundColor: color.callRaised, alignItems: "center", justifyContent: "center" },
   confirmActions: { flexDirection: "row", gap: space.sm },
-  confirmSecondary: { flex: 1, minHeight: 56, borderRadius: radius.md, backgroundColor: color.callRaised, borderWidth: 1, borderColor: color.lineInverse, alignItems: "center", justifyContent: "center" },
+  confirmSecondary: { flex: 1, minHeight: 50, borderRadius: radius.md, backgroundColor: color.callRaised, borderWidth: 1, borderColor: color.lineInverse, alignItems: "center", justifyContent: "center" },
   confirmSecondaryText: { color: color.inkInverse, fontSize: 15, fontWeight: "800" },
-  confirmPrimary: { flex: 1, minHeight: 56, borderRadius: radius.md, backgroundColor: color.primary, alignItems: "center", justifyContent: "center" },
+  confirmPrimary: { flex: 1, minHeight: 50, borderRadius: radius.md, backgroundColor: color.primary, alignItems: "center", justifyContent: "center" },
   confirmPrimaryText: { color: color.accentInk, fontSize: 15, fontWeight: "800" },
   idleNotice: { gap: 8, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 16 },
   idleTrack: { height: 4, borderRadius: 2, overflow: "hidden", marginTop: 2 },
@@ -2573,8 +2594,8 @@ const styles = StyleSheet.create({
   questionEnglishCompact: { fontSize: 21, lineHeight: 27 },
   promptBlockCompact: { padding: space.md, minHeight: 136 },
   promptTextCompact: { fontSize: 23, lineHeight: 31 },
-  callDockCompact: { paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: space.md },
-  voiceButtonCompact: { width: 68, height: 68 },
+  callDockCompact: { paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: space.sm },
+  voiceButtonCompact: { width: 58, height: 58 },
 });
 
 const lightCallStyles = StyleSheet.create({

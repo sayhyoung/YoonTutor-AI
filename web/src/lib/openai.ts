@@ -35,18 +35,22 @@ export async function callOpenAiText(input: string, maxOutputTokens = 240): Prom
 // 멀티턴(대화) 호출. input에 role/content 메시지 배열을 그대로 전달한다.
 // (소크라테스식 튜터처럼 developer 지시 + user/assistant 히스토리를 유지할 때 사용)
 export type OpenAiInputMessage = { role: "developer" | "user" | "assistant"; content: string };
+// reasoningEffort: "none"이면 생각 단계를 건너뛰어 1~1.5초 빨라진다(통화 중 짧은 응답용).
+export type ReasoningEffort = "none" | "low" | "medium" | "high";
 export async function callOpenAiMessages(
   input: OpenAiInputMessage[],
   maxOutputTokens = 700,
   model?: string,
+  reasoningEffort?: ReasoningEffort,
 ): Promise<string> {
-  return callOpenAiResponses(input, maxOutputTokens, model);
+  return callOpenAiResponses(input, maxOutputTokens, model, reasoningEffort);
 }
 
 async function callOpenAiResponses(
   input: string | OpenAiInputMessage[],
   maxOutputTokens: number,
   model?: string,
+  reasoningEffort?: ReasoningEffort,
 ): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -58,6 +62,7 @@ async function callOpenAiResponses(
       model: model ?? process.env.OPENAI_MODEL ?? "gpt-5.2",
       input,
       max_output_tokens: maxOutputTokens,
+      ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     }),
   });
 

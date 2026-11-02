@@ -56,6 +56,8 @@ export async function POST(request: Request) {
         1200,
         // 통화 중 지연을 줄이려면 더 빠른 모델을 따로 지정할 수 있다(없으면 OPENAI_MODEL).
         process.env.CALL_REVIEW_FREE_TALK_MODEL || undefined,
+        // 통화처럼 바로 답해야 해서 생각 단계를 건너뛴다.
+        "none",
       ),
       TIMEOUT_MS,
     );

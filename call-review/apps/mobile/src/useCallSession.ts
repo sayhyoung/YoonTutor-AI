@@ -3,8 +3,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CallPhase, CallPlan, ConversationTurn, InputMode } from "@yoon-call/shared";
 import {
   alternativeAnswerMessage,
+  blankAnswerTarget,
   FREE_TALK_EXPRESSIONS,
   gradeReviewAnswer,
+  gradeSentenceTyped,
+  isCloseMiss,
+  isNearSpelling,
+  isSentence,
   MAX_REVIEW_ATTEMPTS,
   reviewHint,
 } from "@yoon-call/shared";
@@ -35,20 +40,15 @@ export type SessionServices = {
   prepareSpeech?: (questionEn: string) => Promise<void>;
 };
 
-// 복습 표현을 틀렸을 때 고르는 멘트. 같은 멘트가 연달아 나오지 않게 한다.
-export const RETRY_MESSAGES = [
-  "아, 살짝 아쉬워요",
-  "거의 맞혔어요",
-  "비슷하긴 한데 정답은 아니에요",
-  "조금만 더 하면 돼요",
-  "아깝다! 한 끗 차이예요",
-  "좋은 시도였어요",
-  "거의 다 왔어요",
-] as const;
+// 복습 표현을 틀렸을 때 고르는 멘트. 정답에 가까운 답(철자 한두 글자, 단어 대부분 일치)에만 "거의"류를 쓰고,
+// 먼 답에는 가깝다고 하지 않는다. 같은 멘트가 연달아 나오지 않게 한다.
+export const NEAR_RETRY_MESSAGES = ["거의 맞혔어요", "조금만 더 하면 돼요", "아깝다! 한 끗 차이예요", "거의 다 왔어요"] as const;
+export const RETRY_MESSAGES = ["아, 아쉬워요", "좋은 시도였어요", "괜찮아요, 다시 해 봐요", "천천히 다시 떠올려 볼까요?"] as const;
 
-export function pickRetryMessage(previous?: string, random: () => number = Math.random): string {
-  const choices = RETRY_MESSAGES.filter((message) => message !== previous);
-  return choices[Math.floor(random() * choices.length)] ?? RETRY_MESSAGES[0];
+export function pickRetryMessage(previous?: string, random: () => number = Math.random, near = false): string {
+  const pool: readonly string[] = near ? NEAR_RETRY_MESSAGES : RETRY_MESSAGES;
+  const choices = pool.filter((message) => message !== previous);
+  return choices[Math.floor(random() * choices.length)] ?? pool[0]!;
 }
 
 // 축약형·대소문자·문장부호만 다르게 말했을 때 고르는 멘트. 정답이므로 "거의"·"대체로"처럼 틀린 듯한 말은 쓰지 않는다.
@@ -88,14 +88,14 @@ const INTRO_LINE =
 const QUESTION_SETTLE_MS = 1500;
 // Preview only: long enough to read the connection checklist.
 const CONNECT_PREVIEW_MS = 1800;
-// 음성으로 답하면 들은 말을 잠깐 보여 준 뒤 이 시간이 지나면 저절로 보낸다(잘못 들었을 때만 학생이 고친다).
-export const AUTO_SEND_MS = 2500;
 // AI 질문을 이보다 오래 기다리지 않고 템플릿 질문을 쓴다.
 const TURN_TIMEOUT_MS = 9000;
 // 첫 질문은 통화 시작 때 미리 만들어 두고, 대화에 들어갈 때 이만큼만 더 기다린다.
 const FIRST_TURN_WAIT_MS = 2500;
 // 질문 글자와 음성이 함께 나오도록 음성을 받아 둘 때까지 '입력 중'을 보여 준다. 너무 늦으면 글자부터 띄운다.
 const SPEECH_READY_WAIT_MS = 5000;
+// 마지막 대답을 보여 주는 시간.
+const LAST_REPLY_SHOW_MS = 1800;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
@@ -361,15 +361,6 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     }
   }
 
-  // 들은 말 확인 단계: 학생이 고치지 않으면 잠시 뒤 그대로 보낸다.
-  const submitRef = useRef(submitAnswer);
-  submitRef.current = submitAnswer;
-  useEffect(() => {
-    if (voiceState !== "review" || !heardText) return;
-    const timer = setTimeout(() => submitRef.current(heardText), AUTO_SEND_MS);
-    return () => clearTimeout(timer);
-  }, [heardText, voiceState]);
-
   function beginOrStopVoice() {
     if (voiceState === "idle") {
       void startListening();
@@ -392,8 +383,13 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     const nextTurnIndex = freeTalkTurnIndex + 1;
     const fallback = plan.freeTalk.turns[nextTurnIndex];
     if (nextTurnIndex >= plan.freeTalk.maxTurns || !fallback) {
-      // 마지막 답 뒤에는 바로 결과로 가지 않고 베플리가 인사하는 마무리 화면을 잠깐 보여 준다.
+      // 마지막 답도 화면에 '내 답변'으로 잠깐 보여 준(베플리는 맞장구) 뒤 마무리 인사 화면으로 간다.
+      const current = generation.current;
       setFinishReason("completed");
+      setTurnLoading(true);
+      await new Promise((resolve) => setTimeout(resolve, LAST_REPLY_SHOW_MS));
+      if (current !== generation.current) return;
+      setTurnLoading(false);
       setPhase("closing");
       return;
     }
@@ -444,7 +440,14 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       setCoachLine(line);
     };
 
-    const grade = gradeReviewAnswer(value, target.answerEn);
+    // 문장 문항을 글자로 답할 때는 빈칸 단어만 써도 된다. 말할 때는 문장 전체로 채점한다.
+    const sentence = isSentence(target.answerEn);
+    const typedSentence = sentence && inputMode === "text";
+    const grade = typedSentence ? gradeSentenceTyped(value, target.answerEn) : gradeReviewAnswer(value, target.answerEn);
+    // 틀렸을 때 가까운지 견줄 대상(글자로 빈칸만 쓴 답은 빈칸 단어와 비교한다).
+    const compareTo = typedSentence && !value.trim().includes(" ") ? blankAnswerTarget(target.answerEn) : target.answerEn;
+    const near = isCloseMiss(value, compareTo);
+    const misspelled = isNearSpelling(value, compareTo);
     if (grade !== "wrong") {
       const hinted = !decided && ((wrongCounts.current[index] ?? 0) > 0 || helped.current[index] === true);
       const message = hinted
@@ -458,11 +461,13 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
 
     // 정답을 이미 알려 준 뒤 다시 말해 본 답은 결과를 바꾸지 않고 정답만 다시 보여 준다.
     if (decided) {
-      finish(decided, { kind: "retry", answer: value, message: remember(pickRetryMessage(lastRetryMessage.current)) }, "괜찮아요. 같이 다시 볼까요?");
+      finish(decided, { kind: "retry", answer: value, message: remember(pickRetryMessage(lastRetryMessage.current, Math.random, near)) }, "괜찮아요. 같이 다시 볼까요?");
       return;
     }
 
-    if (services.checkAnswer) {
+    // 뜻이 맞는 다른 표현인지 AI에게 묻는 건 단어 문항만(문장은 듣고 따라 말하기라 다른 표현을 받지 않는다).
+    // 철자만 틀린 답도 묻지 않는다(오타를 "그것도 맞는 말"이라고 하지 않게).
+    if (services.checkAnswer && !sentence && !misspelled) {
       setCheckingAnswer(true);
       const acceptable = await withTimeout(
         services
@@ -489,15 +494,15 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     const wrong = (wrongCounts.current[index] ?? 0) + 1;
     wrongCounts.current[index] = wrong;
     if (wrong >= MAX_REVIEW_ATTEMPTS) {
-      finish("retry", { kind: "retry", answer: value, message: remember(pickRetryMessage(lastRetryMessage.current)) }, "괜찮아요. 같이 다시 볼까요?");
+      finish("retry", { kind: "retry", answer: value, message: remember(pickRetryMessage(lastRetryMessage.current, Math.random, near)) }, "괜찮아요. 같이 다시 볼까요?");
       return;
     }
     helped.current[index] = true;
     setReviewFeedback({
       kind: "hint",
       answer: value,
-      message: remember(pickRetryMessage(lastRetryMessage.current)),
-      hint: reviewHint(target.answerEn, wrong === 1 ? 1 : 2),
+      message: misspelled ? remember("철자가 조금 달라요") : remember(pickRetryMessage(lastRetryMessage.current, Math.random, near)),
+      hint: reviewHint(target.answerEn, wrong === 1 ? 1 : 2, inputMode === "text" ? "type" : "speak"),
     });
     setCoachLine("힌트를 보고 다시 말해 볼까요?");
   }
@@ -592,13 +597,6 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     },
     retryVoice: () => {
       void startListening();
-    },
-    // 잘못 들었을 때 들은 말을 글자 입력창에 옮겨 직접 고친다(자동 보내기는 멈춘다).
-    editHeardText: () => {
-      setTypedText(heardText);
-      setHeardText("");
-      setVoiceState("idle");
-      setInputMode("text");
     },
     chooseAnswer: submitAnswer,
     toggleChoiceAssist: () => setChoiceAssistOpen((current) => !current),
