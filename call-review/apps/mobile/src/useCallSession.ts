@@ -3,7 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CallPhase, CallPlan, ConversationTurn, InputMode } from "@yoon-call/shared";
 import {
   alternativeAnswerMessage,
+  BAD_WORDS_FEEDBACK,
   blankAnswerTarget,
+  containsBadWords,
   FREE_TALK_EXPRESSIONS,
   gradeReviewAnswer,
   gradeSentenceTyped,
@@ -96,6 +98,8 @@ const TURN_TIMEOUT_MS = 9000;
 const FIRST_TURN_WAIT_MS = 2500;
 // 질문 글자와 음성이 함께 나오도록 음성을 받아 둘 때까지 '입력 중'을 보여 준다. 너무 늦으면 글자부터 띄운다.
 const SPEECH_READY_WAIT_MS = 5000;
+// 복습 문항을 맞히면 정답 카드를 이만큼 보여 준 뒤 저절로 다음 표현으로 넘어간다.
+const AUTO_NEXT_MS = 1600;
 // 마지막 대답을 보여 주는 시간.
 const LAST_REPLY_SHOW_MS = 1800;
 
@@ -171,6 +175,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   // 짧은 대화 소재(첫 질문에서 정해짐). 후속 질문은 이 소재에 이어서 묻는다.
   const talkTopic = useRef<string | undefined>(undefined);
   const supportByQuestion = useRef(new Map<string, GeneratedSupport>());
+  const autoNext = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isCallSurface =
     phase === "incoming" ||
@@ -392,6 +397,10 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
         setVoiceError("잘 들리지 않았어요. 한 번 더 말해 볼까요?");
         return;
       }
+      if (containsBadWords(text)) {
+        warnBadWords();
+        return;
+      }
       // 짧은 대화는 들은 말을 확인하지 않고 바로 대답으로 보내 다음 질문으로 넘어간다.
       // 복습 문항도 들은 말이 정답이면 바로 채점한다. 틀렸을 때만 잘못 들었을 수 있으니 확인을 받는다.
       if (phase === "free-talk" || (target && gradeReviewAnswer(text, target.answerEn) !== "wrong")) {
@@ -451,8 +460,20 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     showTurn(nextTurnIndex, next);
   }
 
+  // 욕설·나쁜 말: 채점하지 않고(틀린 횟수에도 넣지 않음) 기록에도 남기지 않은 채 주의만 준다.
+  function warnBadWords() {
+    setHeardText("");
+    setTypedText("");
+    setVoiceState("idle");
+    setVoiceError(BAD_WORDS_FEEDBACK);
+  }
+
   function submitAnswer(value: string) {
     if (!value.trim() || checkingAnswer) return;
+    if (containsBadWords(value)) {
+      warnBadWords();
+      return;
+    }
     setHintOpen(false);
     setHeardText("");
     setTypedText("");
@@ -503,6 +524,12 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
           ? remember(pickCloseMessage(lastRetryMessage.current))
           : undefined;
       finish(hinted ? "hinted" : "correct", { kind: "correct", answer: value, ...(message ? { message } : {}) }, "좋아요! 아주 자연스러워요.");
+      // 맞히면 버튼을 누르지 않아도 잠시 뒤 다음 표현(마지막이면 짧은 대화)으로 넘어간다.
+      if (autoNext.current) clearTimeout(autoNext.current);
+      autoNext.current = setTimeout(() => {
+        autoNext.current = null;
+        if (current === generation.current) continueReview();
+      }, AUTO_NEXT_MS);
       return;
     }
 
@@ -580,6 +607,8 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   }
 
   function continueReview() {
+    if (autoNext.current) clearTimeout(autoNext.current);
+    autoNext.current = null;
     setReviewFeedback(null);
     setCarriedHint(null);
     if (targetIndex + 1 >= plan.targets.length) {

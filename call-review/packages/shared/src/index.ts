@@ -368,6 +368,26 @@ export function gradeSentenceTyped(answer: string, answerEn: string): ReviewGrad
   return gradeReviewAnswer(answer, blankAnswerTarget(answerEn));
 }
 
+// 욕설·나쁜 말 걸러내기. 학생 답(말·글자)에 있으면 채점·AI로 보내지 않고 주의를 준다.
+// 정상 단어를 잘못 잡지 않도록 영어는 단어 단위로, 한국어는 띄어쓰기를 지운 뒤 확실한 표현만 찾는다.
+const BAD_ENGLISH =
+  /\b(f+u+c+k+\w*|f[*#@]+c?k\w*|f[*#]{2,}\w*|motherf\w+|shit|shits|shitty|shitting|bullshit|s[*#]{2,}t|bitch|bitches|bitchy|b[*#]{2,}h|asshole|assholes|a[*#]{2,}hole|bastards?|dickheads?|pussy|cunts?|sluts?|whores?|fag|fags|faggots?|retards?|retarded|nigga|niggas|nigger|niggers|wtf|stfu|dumbass|jackass|piss off|son of a bitch|kill yourself|kys)\b/i;
+const BAD_KOREAN = [
+  "씨발", "시발", "씨바", "씨팔", "ㅅㅂ", "ㅆㅂ", "병신", "븅신", "ㅂㅅ", "개새끼", "개새기", "새끼야", "존나", "좆",
+  "지랄", "ㅈㄹ", "미친놈", "미친년", "미친새끼", "닥쳐", "꺼져", "엿먹어", "썅", "염병", "느금마", "니애미",
+];
+
+export function containsBadWords(text: string): boolean {
+  const plain = plainText(text);
+  const english = plain.toLowerCase().replace(/[0]/g, "o").replace(/[1!]/g, "i").replace(/[3]/g, "e").replace(/[$]/g, "s").replace(/@(?=\w)/g, "a");
+  if (BAD_ENGLISH.test(plain) || BAD_ENGLISH.test(english)) return true;
+  // 욕과 글자가 겹치는 보통 낱말(시발점·시발역)은 먼저 지운다.
+  const compact = plain.replace(/[\s.,!?~^*_\-]/g, "").replace(/시발(점|역)/g, "");
+  return BAD_KOREAN.some((word) => compact.includes(word));
+}
+
+export const BAD_WORDS_FEEDBACK = "앗, 그런 말은 쓰지 않아요. 바르고 고운 말로 다시 대답해 볼까요?";
+
 // 복습 한 문항에서 답할 수 있는 횟수. 1·2번째 오답에는 힌트를 주고, 3번째 오답이면 정답을 알려 주고 넘어간다.
 export const MAX_REVIEW_ATTEMPTS = 3;
 

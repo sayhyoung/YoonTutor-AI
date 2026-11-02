@@ -33,7 +33,7 @@ import type {
   InputMode,
   TeacherScheduleSettings,
 } from "@yoon-call/shared";
-import { isSentence, MAX_REVIEW_ATTEMPTS, sentenceBlanks } from "@yoon-call/shared";
+import { BAD_WORDS_FEEDBACK, isSentence, MAX_REVIEW_ATTEMPTS, sentenceBlanks } from "@yoon-call/shared";
 
 import {
   type CallReviewRepository,
@@ -339,10 +339,16 @@ function pickByKey<T>(list: readonly T[], key: string): T {
   return list[hash % list.length]!;
 }
 
-function reviewSpeech(target: { id: string; answerEn: string }): { direction: string; sentence: string | null } {
-  return isSentence(target.answerEn)
-    ? { direction: SENTENCE_DIRECTION, sentence: target.answerEn.trim() }
-    : { direction: pickByKey(WORD_DIRECTIONS, target.id), sentence: null };
+// 안내는 첫 단어 문항·첫 문장 문항에서만 한다(매 문항 같은 말이 반복되지 않게). 문장은 늘 원어민 음성을 들려준다.
+function reviewSpeech(
+  target: { id: string; answerEn: string },
+  targets: readonly { id: string; answerEn: string }[],
+): { direction: string | null; sentence: string | null } {
+  const sentence = isSentence(target.answerEn);
+  const firstOfKind = targets.find((item) => isSentence(item.answerEn) === sentence)?.id === target.id;
+  return sentence
+    ? { direction: firstOfKind ? SENTENCE_DIRECTION : null, sentence: target.answerEn.trim() }
+    : { direction: firstOfKind ? pickByKey(WORD_DIRECTIONS, target.id) : null, sentence: null };
 }
 
 // 안내와 문장 사이 잠깐 쉬는 시간.
@@ -488,8 +494,8 @@ function CallReviewApp({
     for (const filler of TALK_FILLERS) void prefetchSpeech(filler, "en-US", speechSource);
     void prefetchSpeech(CLOSING_LINE_EN, "en-US", speechSource);
     for (const target of data.plan.targets) {
-      const line = reviewSpeech(target);
-      void prefetchSpeech(line.direction, "en-US", speechSource);
+      const line = reviewSpeech(target, data.plan.targets);
+      if (line.direction) void prefetchSpeech(line.direction, "en-US", speechSource);
       if (line.sentence) void prefetchSpeech(line.sentence, "en-US", speechSource);
     }
   }, [data.plan.targets, greetingLine, preparingCall, speechSource, voiceGuideOn]);
@@ -527,21 +533,25 @@ function CallReviewApp({
   }, [talkReplies]);
 
   // 복습 단계도 표현이 바뀔 때마다 바로 읽어 준다(영어 안내 → 문장이면 원어민 음성으로 문장).
-  const reviewPrompt = session.phase === "review" && session.target ? reviewSpeech(session.target) : null;
+  const reviewPrompt = session.phase === "review" && session.target ? reviewSpeech(session.target, data.plan.targets) : null;
   useEffect(() => {
     if (!reviewPrompt || !voiceGuideOn || !session.target) return;
     const targetId = session.target.id;
     const sentence = reviewPrompt.sentence;
     let pause: ReturnType<typeof setTimeout> | null = null;
+    const readSentence = () => {
+      // 그사이 학생이 말하기 시작했거나 다음 표현으로 넘어갔으면 문장을 읽지 않는다.
+      const current = sessionRef.current;
+      if (!sentence || current.phase !== "review" || current.target?.id !== targetId || current.voiceState !== "idle" || current.reviewFeedback) return;
+      speak(sentence, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
+    };
+    if (!reviewPrompt.direction) {
+      readSentence();
+      return;
+    }
     speak(reviewPrompt.direction, "en-US", () => setSpeaking(true), () => {
       setSpeaking(false);
-      if (!sentence) return;
-      pause = setTimeout(() => {
-        // 그사이 학생이 말하기 시작했거나 다음 표현으로 넘어갔으면 문장을 읽지 않는다.
-        const current = sessionRef.current;
-        if (current.phase !== "review" || current.target?.id !== targetId || current.voiceState !== "idle" || current.reviewFeedback) return;
-        speak(sentence, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
-      }, DIRECTION_PAUSE_MS);
+      pause = setTimeout(readSentence, DIRECTION_PAUSE_MS);
     }, speechSource);
     return () => {
       if (pause) clearTimeout(pause);
@@ -629,7 +639,8 @@ function CallReviewApp({
       speak(session.coachLine, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
     } else if (reviewPrompt) {
       // 다시 듣기: 문장 문항은 원어민 문장만, 단어 문항은 영어 질문을 다시 들려준다.
-      speak(reviewPrompt.sentence ?? reviewPrompt.direction, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
+      const line = reviewPrompt.sentence ?? reviewPrompt.direction ?? pickByKey(WORD_DIRECTIONS, session.target?.id ?? "");
+      speak(line, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
     }
   };
   const sessionRef = useRef(session);
@@ -1820,7 +1831,7 @@ function CallScreen(props: CallScreenProps) {
 
         {props.voiceError ? (
           <View style={[styles.voiceErrorCard, { backgroundColor: t.surface2 }]} accessibilityLiveRegion="assertive">
-            <Icon name="mic-off" size={20} color={t.ink2} />
+            <Icon name={props.voiceError === BAD_WORDS_FEEDBACK ? "hint" : "mic-off"} size={20} color={props.voiceError === BAD_WORDS_FEEDBACK ? t.beflyInk : t.ink2} />
             <Text style={[styles.voiceErrorText, { color: t.ink }]}>{props.voiceError}</Text>
           </View>
         ) : null}
@@ -1946,10 +1957,10 @@ function CallScreen(props: CallScreenProps) {
 
       <View style={[styles.callDock, compact && styles.callDockCompact, light && lightCallStyles.dock]}>
         {feedback?.kind === "correct" ? (
-          <Pressable accessibilityRole="button" onPress={props.onContinueReview} style={({ pressed }) => [styles.confirmPrimary, styles.nextButton, { backgroundColor: t.action }, pressed && styles.buttonPressed]}>
-            <Text style={styles.confirmPrimaryText}>{props.isLastTarget ? "베플리와 짧게 대화하기" : "다음 표현"}</Text>
-            <Icon name="send" size={20} strokeWidth={2.4} color={color.accentInk} />
-          </Pressable>
+          // 맞히면 잠시 뒤 저절로 넘어가므로 버튼 대신 안내만 둔다.
+          <View style={styles.autoNextRow} accessibilityLiveRegion="polite">
+            <Text style={[styles.autoNextText, { color: t.actionInk }]}>{props.isLastTarget ? "이제 베플리와 짧게 대화해요…" : "다음 표현으로 넘어가요…"}</Text>
+          </View>
         ) : feedback?.kind === "retry" ? (
           <View style={styles.confirmActions}>
             <Pressable accessibilityRole="button" onPress={props.onRetryReview} style={({ pressed }) => [styles.confirmSecondary, light && lightCallStyles.utilityButton, pressed && styles.buttonPressed]}>
@@ -2522,6 +2533,8 @@ const styles = StyleSheet.create({
   promptText: { color: color.inkInverse, fontFamily: font.display, fontSize: 30, lineHeight: 40, fontWeight: "700", letterSpacing: -0.6 },
   promptGuide: { color: color.mutedInverse, fontSize: 13, lineHeight: 19, marginTop: space.xs },
   promptMeaning: { color: color.mutedInverse, fontSize: 16, lineHeight: 23 },
+  autoNextRow: { minHeight: 50, alignItems: "center", justifyContent: "center" },
+  autoNextText: { fontSize: 15, fontWeight: "700" },
   carriedHint: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginTop: space.xs },
   carriedHintText: { flex: 1, fontSize: 14, lineHeight: 20 },
   hintPanel: { backgroundColor: color.callHint, borderRadius: radius.md, padding: space.md, borderWidth: 1, borderColor: color.warning, gap: space.xs },

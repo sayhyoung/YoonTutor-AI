@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { alternativeAnswerMessage, buildCallPlanFromLearningItems, gradeSentenceTyped, isCloseMiss, isNearSpelling, sentenceBlanks, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
+import { alternativeAnswerMessage, containsBadWords, buildCallPlanFromLearningItems, gradeSentenceTyped, isCloseMiss, isNearSpelling, sentenceBlanks, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
 
 function item(answerEn: string, sourceType: "word" | "sentence", studiedAt: string): LearningHistoryItem {
   return {
@@ -262,5 +262,19 @@ describe("call order", () => {
       freeTalk: buildTemplateFreeTalk([]),
     });
     assert.deepEqual(plan.targets.map((target) => target.answerEn), ["school", "He is from China."]);
+  });
+});
+
+describe("containsBadWords", () => {
+  it("catches English and Korean swear words, including censored and spaced ones", () => {
+    for (const text of ["fuck you", "F*ck", "this is shit", "You bitch!", "sh1t", "wtf", "씨발", "시 발", "병신아", "ㅅㅂ", "개새끼"]) {
+      assert.equal(containsBadWords(text), true, text);
+    }
+  });
+
+  it("leaves ordinary answers alone", () => {
+    for (const text of ["I'm in class.", "My assistant teacher", "Scunthorpe", "He is from China.", "I took a shower.", "Dick and Jane", "새해 복 많이 받아", "시발점"]) {
+      assert.equal(containsBadWords(text), false, text);
+    }
   });
 });

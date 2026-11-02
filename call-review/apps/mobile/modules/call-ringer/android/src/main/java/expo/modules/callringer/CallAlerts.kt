@@ -176,7 +176,9 @@ object CallAlerts {
       // 확인을 누르기 전까지 지워지지 않고, 쓰는 중에는 화면 위에 계속 떠 있다(전체 화면 알림 방식).
       .setOngoing(true)
       .setAutoCancel(true)
-      .setFullScreenIntent(openApp(context, "yooncall://home?reminder=1", 7), true)
+      // 전체 화면 알림이 앱을 저절로 열 때는 확인한 것으로 보지 않는다(reminder=shown). 그래야 알림이 남는다.
+      // 학생이 알림을 직접 누르면(reminder=1) 확인한 것으로 본다.
+      .setFullScreenIntent(openApp(context, "yooncall://home?reminder=shown", 7), true)
       .setContentIntent(openApp(context, "yooncall://home?reminder=1", 8))
       .addAction(0, "확인했어요", broadcast(context, ACTION_DISMISS_REMINDER, 9))
     notify(context, REMINDER_ID, builder)
