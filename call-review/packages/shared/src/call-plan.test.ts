@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { alternativeAnswerMessage, gradeSentenceTyped, isCloseMiss, isNearSpelling, sentenceBlanks, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
+import { alternativeAnswerMessage, buildCallPlanFromLearningItems, gradeSentenceTyped, isCloseMiss, isNearSpelling, sentenceBlanks, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
 
 function item(answerEn: string, sourceType: "word" | "sentence", studiedAt: string): LearningHistoryItem {
   return {
@@ -249,5 +249,18 @@ describe("near misses and typed blanks", () => {
 
   it("gives typed hints for the blank word", () => {
     assert.equal(reviewHint("He is from China.", 2, "type"), "빈칸 단어 모양이에요. c _ _ _ _");
+  });
+});
+
+describe("call order", () => {
+  it("always asks words before sentences, keeping the order inside each group", () => {
+    const plan = buildCallPlanFromLearningItems({
+      id: "p",
+      studentId: "s",
+      scheduledAtLabel: "",
+      items: [item("He is from China.", "sentence", "2026-11-02T00:00:00.000Z"), item("school", "word", "2026-11-01T00:00:00.000Z")],
+      freeTalk: buildTemplateFreeTalk([]),
+    });
+    assert.deepEqual(plan.targets.map((target) => target.answerEn), ["school", "He is from China."]);
   });
 });

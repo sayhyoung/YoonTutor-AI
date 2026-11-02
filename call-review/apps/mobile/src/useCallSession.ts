@@ -377,8 +377,8 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
         submitAnswer(freeTalkTurn.previewVoiceAnswer);
         return;
       }
-      setHeardText(target?.answerEn ?? "");
-      setVoiceState("review");
+      // 프리뷰의 가짜 인식 결과는 늘 정답이라, 실제와 같이 확인 없이 바로 채점한다.
+      submitAnswer(target?.answerEn ?? "");
       return;
     }
     const current = generation.current;
@@ -392,8 +392,9 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
         setVoiceError("잘 들리지 않았어요. 한 번 더 말해 볼까요?");
         return;
       }
-      // 짧은 대화는 들은 말을 확인하지 않고 바로 대답으로 보내 다음 질문으로 넘어간다(복습 문항만 확인 단계를 둔다).
-      if (phase === "free-talk") {
+      // 짧은 대화는 들은 말을 확인하지 않고 바로 대답으로 보내 다음 질문으로 넘어간다.
+      // 복습 문항도 들은 말이 정답이면 바로 채점한다. 틀렸을 때만 잘못 들었을 수 있으니 확인을 받는다.
+      if (phase === "free-talk" || (target && gradeReviewAnswer(text, target.answerEn) !== "wrong")) {
         submitAnswer(text);
         return;
       }

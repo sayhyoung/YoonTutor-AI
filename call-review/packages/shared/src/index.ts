@@ -169,7 +169,9 @@ export function buildCallPlanFromLearningItems({
   maxTargets = MAX_CALL_TARGETS,
   practiced = [],
 }: BuildCallPlanInput): CallPlan {
-  const selected = selectCallItems(items, practiced, maxTargets).items;
+  // 고르는 순서(우선순위)는 그대로 두고, 통화에서는 단어 복습을 문장 복습보다 먼저 묻는다.
+  const picked = selectCallItems(items, practiced, maxTargets).items;
+  const selected = [...picked.filter((item) => item.sourceType === "word"), ...picked.filter((item) => item.sourceType !== "word")];
 
   return {
     id,
