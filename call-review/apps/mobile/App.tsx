@@ -327,19 +327,27 @@ function LoginScreen({
 
 type SaveStatus = "idle" | "saving" | "saved" | "failed";
 
-// 통화 상태를 서버에 보낼 결과 형식으로 바꾼다. 판정 전에 끝난 표현은 skipped.
-function reviewPromptText(promptKo: string): string {
-  // 문장 표현은 이미 마침표로 끝나므로 중복 문장부호를 지운다("출신이에요.. 영어로" 방지).
-  return `${promptKo.trim().replace(/[.!?。]+$/, "")}. 영어로 말해 볼까요?`;
+// 복습 문항에서 읽어 줄 말. 문제(한국어 뜻·빈칸 문장)는 화면에 있으니 안내는 영어로 한다.
+// 단어: 영어 질문만, 문장: 영어 안내 뒤 원어민 음성으로 문장을 들려준다.
+const WORD_DIRECTIONS = ["How do you say this in English?", "Can you say this in English?", "What's this in English?"];
+const SENTENCE_DIRECTION = "Listen and repeat the entire sentence.";
+
+function pickByKey<T>(list: readonly T[], key: string): T {
+  let hash = 0;
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return list[hash % list.length]!;
 }
 
-// 복습 문항에서 읽어 줄 말. 단어는 한국어 뜻을 묻고, 문장은 본학습처럼 영어 문장을 원어민 음성으로 들려준다.
-function reviewSpeech(target: { promptKo: string; answerEn: string }): { text: string; language: "ko-KR" | "en-US" } {
+function reviewSpeech(target: { id: string; answerEn: string }): { direction: string; sentence: string | null } {
   return isSentence(target.answerEn)
-    ? { text: target.answerEn.trim(), language: "en-US" }
-    : { text: reviewPromptText(target.promptKo), language: "ko-KR" };
+    ? { direction: SENTENCE_DIRECTION, sentence: target.answerEn.trim() }
+    : { direction: pickByKey(WORD_DIRECTIONS, target.id), sentence: null };
 }
 
+// 안내와 문장 사이 잠깐 쉬는 시간.
+const DIRECTION_PAUSE_MS = 350;
+
+// 통화 상태를 서버에 보낼 결과 형식으로 바꾼다. 판정 전에 끝난 표현은 skipped.
 function buildReportPayload(
   plan: CallPlan,
   session: ReturnType<typeof useCallSession>,
@@ -474,9 +482,11 @@ function CallReviewApp({
     if (!preparingCall || !voiceGuideOn) return;
     void prefetchSpeech(greetingLine.en, "en-US", speechSource);
     for (const filler of TALK_FILLERS) void prefetchSpeech(filler, "en-US", speechSource);
+    void prefetchSpeech(CLOSING_LINE_EN, "en-US", speechSource);
     for (const target of data.plan.targets) {
       const line = reviewSpeech(target);
-      void prefetchSpeech(line.text, line.language, speechSource);
+      void prefetchSpeech(line.direction, "en-US", speechSource);
+      if (line.sentence) void prefetchSpeech(line.sentence, "en-US", speechSource);
     }
   }, [data.plan.targets, greetingLine, preparingCall, speechSource, voiceGuideOn]);
 
@@ -512,13 +522,28 @@ function CallReviewApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [talkReplies]);
 
-  // 복습 단계도 표현이 바뀔 때마다 바로 읽어 준다(단어: 한국어 문제, 문장: 영어 문장).
+  // 복습 단계도 표현이 바뀔 때마다 바로 읽어 준다(영어 안내 → 문장이면 원어민 음성으로 문장).
   const reviewPrompt = session.phase === "review" && session.target ? reviewSpeech(session.target) : null;
   useEffect(() => {
-    if (!reviewPrompt || !voiceGuideOn) return;
-    speak(reviewPrompt.text, reviewPrompt.language, () => setSpeaking(true), () => setSpeaking(false), speechSource);
+    if (!reviewPrompt || !voiceGuideOn || !session.target) return;
+    const targetId = session.target.id;
+    const sentence = reviewPrompt.sentence;
+    let pause: ReturnType<typeof setTimeout> | null = null;
+    speak(reviewPrompt.direction, "en-US", () => setSpeaking(true), () => {
+      setSpeaking(false);
+      if (!sentence) return;
+      pause = setTimeout(() => {
+        // 그사이 학생이 말하기 시작했거나 다음 표현으로 넘어갔으면 문장을 읽지 않는다.
+        const current = sessionRef.current;
+        if (current.phase !== "review" || current.target?.id !== targetId || current.voiceState !== "idle" || current.reviewFeedback) return;
+        speak(sentence, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
+      }, DIRECTION_PAUSE_MS);
+    }, speechSource);
+    return () => {
+      if (pause) clearTimeout(pause);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reviewPrompt?.text, session.target, setSpeaking, speechSource, voiceGuideOn]);
+  }, [reviewPrompt?.direction, reviewPrompt?.sentence, session.target, setSpeaking, speechSource, voiceGuideOn]);
 
   // 연결 뒤 베플리 인사를 영어로 읽고, 끝나면(음성을 껐으면 잠시 뒤) 복습을 시작한다.
   const greeting = session.phase === "greeting";
@@ -599,7 +624,8 @@ function CallReviewApp({
     if (session.phase === "free-talk") {
       speak(session.coachLine, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
     } else if (reviewPrompt) {
-      speak(reviewPrompt.text, reviewPrompt.language, () => setSpeaking(true), () => setSpeaking(false), speechSource);
+      // 다시 듣기: 문장 문항은 원어민 문장만, 단어 문항은 영어 질문을 다시 들려준다.
+      speak(reviewPrompt.sentence ?? reviewPrompt.direction, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
     }
   };
   const sessionRef = useRef(session);
@@ -830,6 +856,7 @@ function CallReviewApp({
             sourceLabel={session.target.sourceLabel}
             answerEn={session.target.answerEn}
             reviewFeedback={session.reviewFeedback}
+            carriedHint={session.carriedHint}
             checkingAnswer={session.checkingAnswer}
             questionMeaningKo={
               session.phase === "free-talk"
@@ -1508,6 +1535,7 @@ type CallScreenProps = {
   sourceLabel: string;
   answerEn: string;
   reviewFeedback: ReviewFeedback | null;
+  carriedHint: string | null;
   // 뜻이 맞는 다른 답인지 서버 AI가 판정하는 중.
   checkingAnswer: boolean;
   questionMeaningKo?: string;
@@ -1753,7 +1781,7 @@ function CallScreen(props: CallScreenProps) {
                 <Text style={[styles.questionEnglish, light && lightCallStyles.strongText]} accessibilityLabel={`빈칸이 있는 문장: ${sentence.masked.replace(/_+/g, "빈칸")}`}>{sentence.masked}</Text>
                 <Text style={[styles.promptMeaning, light && lightCallStyles.mutedText]}>{props.promptKo}</Text>
                 <Text style={[styles.promptGuide, light && lightCallStyles.mutedText]}>
-                  {props.inputMode === "text" ? "빈칸에 들어갈 단어만 써도 돼요." : "베플리가 읽어 준 문장을 빈칸까지 모두 말해 보세요."}
+                  {props.inputMode === "text" ? "빈칸에 들어갈 단어만 써도 돼요." : "원어민 음성을 듣고 빈칸까지 문장 전체를 말해 보세요."}
                 </Text>
               </>
             ) : (
@@ -1762,6 +1790,12 @@ function CallScreen(props: CallScreenProps) {
                 <Text style={[styles.promptGuide, light && lightCallStyles.mutedText]}>영어로 말해 볼까요?</Text>
               </>
             )}
+            {props.carriedHint && !feedback ? (
+              <View style={[styles.carriedHint, { backgroundColor: t.beflySoft }]} accessibilityLabel={`힌트: ${props.carriedHint}`}>
+                <Icon name="hint" size={16} color={t.beflyInk} />
+                <Text style={[styles.carriedHintText, { color: t.ink }]}>{props.carriedHint}</Text>
+              </View>
+            ) : null}
           </View>
         )}
 
@@ -2484,6 +2518,8 @@ const styles = StyleSheet.create({
   promptText: { color: color.inkInverse, fontFamily: font.display, fontSize: 30, lineHeight: 40, fontWeight: "700", letterSpacing: -0.6 },
   promptGuide: { color: color.mutedInverse, fontSize: 13, lineHeight: 19, marginTop: space.xs },
   promptMeaning: { color: color.mutedInverse, fontSize: 16, lineHeight: 23 },
+  carriedHint: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginTop: space.xs },
+  carriedHintText: { flex: 1, fontSize: 14, lineHeight: 20 },
   hintPanel: { backgroundColor: color.callHint, borderRadius: radius.md, padding: space.md, borderWidth: 1, borderColor: color.warning, gap: space.xs },
   hintLabel: { color: color.warning, fontSize: 12, fontWeight: "800" },
   hintText: { color: color.inkInverse, fontSize: 15, lineHeight: 22 },

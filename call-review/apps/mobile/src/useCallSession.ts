@@ -134,6 +134,8 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     useState<FinishReason>("completed");
   const [coachLine, setCoachLine] = useState(INTRO_LINE);
   const [reviewFeedback, setReviewFeedback] = useState<ReviewFeedback | null>(null);
+  // 다시 말하려고 피드백 카드를 닫을 때 그 카드의 힌트만 문제 칸에 남겨 둔다(표현이 바뀌면 지운다).
+  const [carriedHint, setCarriedHint] = useState<string | null>(null);
   // 표현마다 처음 확정된 결과가 남는다(정답 공개 뒤 다시 말해 맞혀도 바뀌지 않음).
   const [reviewOutcomes, setReviewOutcomes] = useState<Record<number, ReviewOutcome>>({});
   // 표현마다 학생이 말한 답(순서대로).
@@ -267,6 +269,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     setHomeSection("home");
     setCoachLine(INTRO_LINE);
     setReviewFeedback(null);
+    setCarriedHint(null);
     setReviewOutcomes({});
     setReviewAttempts({});
     setCheckingAnswer(false);
@@ -307,6 +310,12 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   async function startListening() {
     setVoiceError(null);
     setHeardText("");
+    // 다시 말하기 시작하면 앞 답의 피드백 카드는 닫는다(힌트는 문제 칸에 남긴다).
+    if (phase === "review" && reviewFeedback && reviewFeedback.kind !== "correct") {
+      const hint = reviewFeedback.kind === "hint" ? reviewFeedback.hint : undefined;
+      if (hint) setCarriedHint(hint);
+      setReviewFeedback(null);
+    }
     if (!services.voice) {
       setVoiceState("listening");
       return;
@@ -459,6 +468,13 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       return;
     }
 
+    // 문장을 말로 답할 때 빈칸 단어만 말했으면(맞는 단어) 오답으로 세지 않고 문장 전체로 다시 말하게 한다.
+    if (sentence && !typedSentence && gradeReviewAnswer(value, blankAnswerTarget(target.answerEn)) !== "wrong") {
+      setReviewFeedback({ kind: "hint", answer: value, message: "단어는 맞았어요! 이번엔 전체 문장으로 다시 말해 봐요." });
+      setCoachLine("전체 문장으로 다시 말해 볼까요?");
+      return;
+    }
+
     // 정답을 이미 알려 준 뒤 다시 말해 본 답은 결과를 바꾸지 않고 정답만 다시 보여 준다.
     if (decided) {
       finish(decided, { kind: "retry", answer: value, message: remember(pickRetryMessage(lastRetryMessage.current, Math.random, near)) }, "괜찮아요. 같이 다시 볼까요?");
@@ -527,6 +543,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
 
   function continueReview() {
     setReviewFeedback(null);
+    setCarriedHint(null);
     if (targetIndex + 1 >= plan.targets.length) {
       void enterFreeTalk();
       return;
@@ -555,6 +572,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     finishReason,
     coachLine,
     reviewFeedback,
+    carriedHint,
     reviewOutcomes,
     isCallSurface,
     target,
