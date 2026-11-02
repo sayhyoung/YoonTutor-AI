@@ -336,7 +336,41 @@ function firstLetter(answerEn: string): string {
   return answerEn.trim().match(/[A-Za-z]/)?.[0]?.toLowerCase() ?? "";
 }
 
-// 1번째 오답: 길이·첫 단어로 감을 잡게 한다. 2번째 오답: 철자 모양(g _ _ d)을 보여 준다. 정답 전체는 말하지 않는다.
+// 문장 복습은 본학습처럼 베플리가 읽어 주는 문장을 따라 말하되, 핵심 단어 1~2개를 비워 보여 준다.
+// 비우는 단어: 관사·대명사·be동사 같은 기능어가 아닌 3글자 이상 단어 중 긴 것(짧은 문장 1개, 6단어 이상 2개).
+const FUNCTION_WORDS = new Set(
+  ("a an the is am are was were be been being do does did to of in on at for from with by about into over under " +
+    "and or but so if then than i you he she it we they me him her us them my your his its our their mine yours " +
+    "this that these those there here what who when where why how which can could will would shall should may might must " +
+    "not no yes have has had very too also just some any all one").split(" "),
+);
+const BLANK = "_____";
+
+export function isSentence(answerEn: string): boolean {
+  return !isWord(answerEn);
+}
+
+export function sentenceBlanks(answerEn: string): { masked: string; blanks: string[] } {
+  const tokens = answerEn.trim().split(/\s+/).filter(Boolean);
+  const cores = tokens.map((token) => token.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ""));
+  const candidates = cores
+    .map((core, index) => ({ core, index }))
+    .filter(({ core }) => /^[A-Za-z]{3,}$/.test(core) && !FUNCTION_WORDS.has(core.toLowerCase()));
+  const pool = candidates.length > 0 ? candidates : cores.map((core, index) => ({ core, index })).filter(({ core }) => /^[A-Za-z]{2,}$/.test(core));
+  const count = tokens.length >= 6 ? 2 : 1;
+  const picked = new Set(
+    [...pool]
+      .sort((a, b) => b.core.length - a.core.length || b.index - a.index)
+      .slice(0, count)
+      .map(({ index }) => index),
+  );
+  const masked = tokens.map((token, index) => (picked.has(index) ? token.replace(cores[index]!, BLANK) : token)).join(" ");
+  const blanks = [...picked].sort((a, b) => a - b).map((index) => cores[index]!);
+  return { masked, blanks };
+}
+
+// 단어 — 1번째 오답: 길이로 감을 잡게 하고, 2번째 오답: 철자 모양(g _ _ d)을 보여 준다. 정답 전체는 말하지 않는다.
+// 문장 — 1번째 오답: 빈칸 단어의 첫 글자, 2번째 오답: 문장 전체를 보여 주고 따라 읽게 한다.
 export function reviewHint(answerEn: string, level: 1 | 2): string {
   const words = answerEn.trim().split(/\s+/).filter(Boolean);
   if (words.length <= 1) {
@@ -346,10 +380,11 @@ export function reviewHint(answerEn: string, level: 1 | 2): string {
     const shape = [...word].map((char, index) => (index === 0 || !/[A-Za-z]/.test(char) ? char : "_")).join(" ");
     return `${letterWithRo(firstLetter(word))} 시작해요. ${shape}`;
   }
-  const plain = answerWords(answerEn);
-  if (level === 1) return `${plain.length}개 단어로 된 문장이에요. "${plain[0]} …"로 시작해요.`;
-  const shape = plain.map((word) => `${word[0]}${"_".repeat(Math.max(word.length - 1, 0))}`).join(" ");
-  return `이런 모양이에요. ${shape}`;
+  if (level === 1) {
+    const starts = sentenceBlanks(answerEn).blanks.map((word) => `"${word[0]!.toLowerCase()}…"`);
+    return `빈칸 단어는 ${starts.join(", ")}로 시작해요. 다시 듣고 문장 전체를 말해 보세요.`;
+  }
+  return `문장을 보고 그대로 따라 읽어 보세요. ${answerEn.trim()}`;
 }
 
 // 뜻은 맞지만 이번 레슨에서 배운 표현이 아닐 때(good 자리에 nice). 오답으로 세지 않고 다시 말해 보게 한다.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { alternativeAnswerMessage, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
+import { alternativeAnswerMessage, sentenceBlanks, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
 
 function item(answerEn: string, sourceType: "word" | "sentence", studiedAt: string): LearningHistoryItem {
   return {
@@ -190,8 +190,8 @@ describe("reviewHint", () => {
     assert.equal(reviewHint("good", 1), "4글자짜리 영어 단어예요. 뜻을 다시 떠올려 볼까요?");
     assert.equal(reviewHint("good", 2), "g로 시작해요. g _ _ _");
     assert.equal(reviewHint("nice", 2).startsWith("n으로"), true);
-    assert.equal(reviewHint("He is from China.", 1), '4개 단어로 된 문장이에요. "He …"로 시작해요.');
-    assert.equal(reviewHint("He is from China.", 2), "이런 모양이에요. H_ i_ f___ C____");
+    assert.equal(reviewHint("He is from China.", 1), '빈칸 단어는 "c…"로 시작해요. 다시 듣고 문장 전체를 말해 보세요.');
+    assert.equal(reviewHint("He is from China.", 2), "문장을 보고 그대로 따라 읽어 보세요. He is from China.");
   });
 
   it("explains an acceptable alternative word", () => {
@@ -212,5 +212,17 @@ describe("selectCallItems with hinted outcomes", () => {
     ]);
     assert.equal(selection.mode, "review");
     assert.deepEqual(selection.items.map((item) => item.answerEn), ["good"]);
+  });
+});
+
+describe("sentenceBlanks", () => {
+  it("blanks one key word in a short sentence and two in a longer one, never function words", () => {
+    assert.deepEqual(sentenceBlanks("He is from China."), { masked: "He is from _____.", blanks: ["China"] });
+    assert.deepEqual(sentenceBlanks("I usually get up at seven."), { masked: "I _____ get up at _____.", blanks: ["usually", "seven"] });
+    assert.deepEqual(sentenceBlanks("Do you like movies?"), { masked: "Do you like _____?", blanks: ["movies"] });
+  });
+
+  it("still blanks something when every word is short", () => {
+    assert.equal(sentenceBlanks("I am ok.").blanks.length, 1);
   });
 });
