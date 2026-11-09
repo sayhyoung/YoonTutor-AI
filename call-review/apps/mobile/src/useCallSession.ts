@@ -100,8 +100,14 @@ const FIRST_TURN_WAIT_MS = 2500;
 const SPEECH_READY_WAIT_MS = 5000;
 // 복습 문항을 맞히면 정답 카드를 이만큼 보여 준 뒤 저절로 다음 표현으로 넘어간다.
 const AUTO_NEXT_MS = 1600;
-// 마지막 대답을 보여 주는 시간.
-const LAST_REPLY_SHOW_MS = 1800;
+// 짧은 대화 마지막 대답 뒤 베플리의 칭찬. 대답을 보여 준 채 칭찬을 말하고 나서 마무리 인사로 넘어간다.
+export const TALK_PRAISES: { en: string; ko: string }[] = [
+  { en: "Good job! You did great today.", ko: "잘했어요! 오늘 정말 잘했어요." },
+  { en: "Very good! I enjoyed talking with you.", ko: "아주 좋아요! 대화가 즐거웠어요." },
+  { en: "Great answer! Well done.", ko: "좋은 대답이에요! 잘했어요." },
+  { en: "Nice! You speak English so well.", ko: "멋져요! 영어로 정말 잘 말하네요." },
+  { en: "Awesome! That was a great talk.", ko: "최고예요! 정말 좋은 대화였어요." },
+];
 
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
@@ -154,6 +160,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     useState<FinishReason>("completed");
   const [coachLine, setCoachLine] = useState(INTRO_LINE);
   const [reviewFeedback, setReviewFeedback] = useState<ReviewFeedback | null>(null);
+  const [talkPraise, setTalkPraise] = useState<{ en: string; ko: string } | null>(null);
   // 다시 말하려고 피드백 카드를 닫을 때 그 카드의 힌트만 문제 칸에 남겨 둔다(표현이 바뀌면 지운다).
   const [carriedHint, setCarriedHint] = useState<string | null>(null);
   // 표현마다 처음 확정된 결과가 남는다(정답 공개 뒤 다시 말해 맞혀도 바뀌지 않음).
@@ -197,7 +204,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
   useEffect(() => {
     // 질문을 읽어 주는 동안·다음 질문을 만드는 동안·말하는 동안에는 세지 않는다.
     // 읽기가 끝나면 다시 시작해 학생에게 온전한 시간을 준다.
-    if (phase !== "free-talk" || voiceState !== "idle" || turnLoading || speaking) {
+    if (phase !== "free-talk" || voiceState !== "idle" || turnLoading || speaking || talkPraise) {
       return;
     }
     const startedAt = Date.now() + QUESTION_SETTLE_MS;
@@ -222,6 +229,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     choiceAssistOpen,
     turnLoading,
     speaking,
+    talkPraise,
   ]);
 
   const expressions = useMemo(
@@ -312,6 +320,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     setCoachLine(INTRO_LINE);
     setReviewFeedback(null);
     setCarriedHint(null);
+    setTalkPraise(null);
     setReviewOutcomes({});
     setReviewAttempts({});
     setCheckingAnswer(false);
@@ -439,14 +448,9 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     const nextTurnIndex = freeTalkTurnIndex + 1;
     const fallback = plan.freeTalk.turns[nextTurnIndex];
     if (nextTurnIndex >= plan.freeTalk.maxTurns || !fallback) {
-      // 마지막 답도 화면에 '내 답변'으로 잠깐 보여 준(베플리는 맞장구) 뒤 마무리 인사 화면으로 간다.
-      const current = generation.current;
+      // 마지막 대답은 화면에 남겨 두고 베플리가 칭찬한다. 칭찬을 다 말하면(App) finishTalk로 마무리 인사에 간다.
       setFinishReason("completed");
-      setTurnLoading(true);
-      await new Promise((resolve) => setTimeout(resolve, LAST_REPLY_SHOW_MS));
-      if (current !== generation.current) return;
-      setTurnLoading(false);
-      setPhase("closing");
+      setTalkPraise(TALK_PRAISES[Math.floor(Math.random() * TALK_PRAISES.length)]!);
       return;
     }
     const current = generation.current;
@@ -481,6 +485,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     setVoiceError(null);
 
     if (phase === "free-talk") {
+      if (talkPraise) return;
       const history = [...conversationTurns, { questionEn: freeTalkTurn.questionEn, answer: value }];
       setConversationTurns(history);
       void advanceFreeTalk(history);
@@ -640,6 +645,11 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     coachLine,
     reviewFeedback,
     carriedHint,
+    talkPraise,
+    finishTalk: () => {
+      setTalkPraise(null);
+      setPhase((current) => (current === "free-talk" ? "closing" : current));
+    },
     reviewOutcomes,
     isCallSurface,
     target,

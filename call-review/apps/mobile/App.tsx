@@ -74,6 +74,7 @@ import {
   type SessionServices,
   type ReviewOutcome,
   type VoiceState,
+  TALK_PRAISES,
   useCallSession,
 } from "./src/useCallSession";
 import { useCallReviewData } from "./src/useCallReviewData";
@@ -492,6 +493,7 @@ function CallReviewApp({
     if (!preparingCall || !voiceGuideOn) return;
     void prefetchSpeech(greetingLine.en, "en-US", speechSource);
     for (const filler of TALK_FILLERS) void prefetchSpeech(filler, "en-US", speechSource);
+    for (const praise of TALK_PRAISES) void prefetchSpeech(praise.en, "en-US", speechSource);
     void prefetchSpeech(CLOSING_LINE_EN, "en-US", speechSource);
     for (const target of data.plan.targets) {
       const line = reviewSpeech(target, data.plan.targets);
@@ -526,7 +528,8 @@ function CallReviewApp({
   // 짧은 대화에서 학생이 답하면 다음 질문을 만드는 동안 바로 짧게 맞장구친다(전화처럼 빈틈 없이).
   const talkReplies = session.phase === "free-talk" ? session.conversationTurns.length : 0;
   useEffect(() => {
-    if (!talkReplies || !voiceGuideOn) return;
+    // 마지막 대답에는 맞장구 대신 칭찬(아래)을 한다.
+    if (!talkReplies || talkReplies >= data.plan.freeTalk.maxTurns || !voiceGuideOn) return;
     const filler = TALK_FILLERS[(talkReplies + session.callId.length) % TALK_FILLERS.length]!;
     speak(filler, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -558,6 +561,31 @@ function CallReviewApp({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewPrompt?.direction, reviewPrompt?.sentence, session.target, setSpeaking, speechSource, voiceGuideOn]);
+
+  // 짧은 대화 마지막 대답 뒤: 학생 대답을 보여 둔 채 베플리가 칭찬하고, 다 말하면 잠시 뒤 마무리 인사로 간다.
+  const praise = session.talkPraise;
+  const finishTalkRef = useRef(session.finishTalk);
+  finishTalkRef.current = session.finishTalk;
+  useEffect(() => {
+    if (!praise) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const shownAt = Date.now();
+    const finishSoon = (ms: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => finishTalkRef.current(), Math.max(ms, PRAISE_MIN_MS - (Date.now() - shownAt)));
+    };
+    finishSoon(voiceGuideOn ? PRAISE_FALLBACK_MS : PRAISE_SILENT_MS);
+    if (voiceGuideOn) {
+      speak(praise.en, "en-US", () => setSpeaking(true), () => {
+        setSpeaking(false);
+        finishSoon(PRAISE_AFTER_SPEECH_MS);
+      }, speechSource);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [praise]);
 
   // 연결 뒤 베플리 인사를 영어로 읽고, 끝나면(음성을 껐으면 잠시 뒤) 복습을 시작한다.
   const greeting = session.phase === "greeting";
@@ -889,6 +917,7 @@ function CallReviewApp({
                 : []
             }
             choiceAssistOpen={session.choiceAssistOpen}
+            talkPraise={session.talkPraise}
             previousReply={
               session.phase === "free-talk"
                 ? session.conversationReplies[
@@ -1462,6 +1491,12 @@ function ConnectingScreen({
   );
 }
 
+// 마지막 대답 칭찬을 보여 주는 시간. 학생 대답과 칭찬을 읽을 틈을 준다.
+const PRAISE_MIN_MS = 2600;
+const PRAISE_AFTER_SPEECH_MS = 900;
+const PRAISE_SILENT_MS = 2800;
+const PRAISE_FALLBACK_MS = 7000;
+
 // 짧은 대화 맞장구. 학생 대답이 무엇이든 어울리는 중립적인 말만 쓴다.
 const TALK_FILLERS = ["Oh, I see.", "Okay.", "Uh-huh.", "Got it.", "Mm, okay."];
 
@@ -1558,6 +1593,7 @@ type CallScreenProps = {
   choiceOptions: ConversationChoice[];
   choiceAssistOpen: boolean;
   previousReply?: string;
+  talkPraise: { en: string; ko: string } | null;
   inputMode: InputMode;
   captionsOn: boolean;
   voiceState: VoiceState;
@@ -1626,6 +1662,7 @@ function CallScreen(props: CallScreenProps) {
   const transcribing = props.voiceState === "transcribing";
   const preparing = props.voiceState === "preparing";
   const feedback = !isChat ? props.reviewFeedback : null;
+  const wrappingUp = isChat && Boolean(props.talkPraise);
   const sentence = !isChat && isSentence(props.answerEn) ? sentenceBlanks(props.answerEn) : null;
   const auxOpen = isChat ? props.choiceAssistOpen : props.hintOpen;
   const onAux = isChat ? props.onToggleChoiceAssist : props.onToggleHint;
@@ -1722,7 +1759,7 @@ function CallScreen(props: CallScreenProps) {
         contentContainerStyle={[styles.dialogueContent, compact && styles.dialogueContentCompact]}
         showsVerticalScrollIndicator={false}
       >
-        {props.previousReply ? (
+        {props.previousReply && !wrappingUp ? (
           <View style={styles.learnerBubble}>
             <Text style={styles.learnerLabel}>내 답변</Text>
             <Text style={styles.learnerText}>{props.previousReply}</Text>
@@ -1780,7 +1817,24 @@ function CallScreen(props: CallScreenProps) {
           </View>
         ) : null}
 
-        {isChat ? (
+        {wrappingUp && props.talkPraise ? (
+          // 마지막 질문 아래에 학생 대답과 베플리의 칭찬을 차례로 보여 준다.
+          <>
+            {props.previousReply ? (
+              <View style={styles.learnerBubble}>
+                <Text style={styles.learnerLabel}>내 답변</Text>
+                <Text style={styles.learnerText}>{props.previousReply}</Text>
+              </View>
+            ) : null}
+            <View style={[styles.reviewFeedbackCard, { backgroundColor: t.okSoft }]} accessibilityLiveRegion="polite" accessibilityLabel="베플리의 칭찬">
+              <Image source={befly.review.correct} style={styles.reviewFeedbackAvatar} accessible={false} />
+              <View style={styles.reviewFeedbackCopy}>
+                <Text style={[styles.reviewFeedbackAnswer, { color: t.okInk }]}>{props.talkPraise.en}</Text>
+                <Text style={[styles.praiseKo, { color: t.ink }]}>{props.talkPraise.ko}</Text>
+              </View>
+            </View>
+          </>
+        ) : isChat ? (
           <View style={[styles.replyCue, { backgroundColor: t.actionSoft }]} accessibilityLiveRegion="polite">
             <Icon name="mic" size={20} color={t.actionInk} />
             <Text style={[styles.replyCueTitle, { color: t.actionInk }]}>이제 영어로 대답해요</Text>
@@ -1956,7 +2010,11 @@ function CallScreen(props: CallScreenProps) {
       )}
 
       <View style={[styles.callDock, compact && styles.callDockCompact, light && lightCallStyles.dock]}>
-        {feedback?.kind === "correct" ? (
+        {wrappingUp ? (
+          <View style={styles.autoNextRow} accessibilityLiveRegion="polite">
+            <Text style={[styles.autoNextText, { color: t.actionInk }]}>베플리가 대화를 마무리하고 있어요…</Text>
+          </View>
+        ) : feedback?.kind === "correct" ? (
           // 맞히면 잠시 뒤 저절로 넘어가므로 버튼 대신 안내만 둔다.
           <View style={styles.autoNextRow} accessibilityLiveRegion="polite">
             <Text style={[styles.autoNextText, { color: t.actionInk }]}>{props.isLastTarget ? "이제 베플리와 짧게 대화해요…" : "다음 표현으로 넘어가요…"}</Text>
@@ -2534,6 +2592,7 @@ const styles = StyleSheet.create({
   promptGuide: { color: color.mutedInverse, fontSize: 13, lineHeight: 19, marginTop: space.xs },
   promptMeaning: { color: color.mutedInverse, fontSize: 16, lineHeight: 23 },
   autoNextRow: { minHeight: 50, alignItems: "center", justifyContent: "center" },
+  praiseKo: { fontSize: 15, lineHeight: 22 },
   autoNextText: { fontSize: 15, fontWeight: "700" },
   carriedHint: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginTop: space.xs },
   carriedHintText: { flex: 1, fontSize: 14, lineHeight: 20 },
