@@ -322,6 +322,124 @@ export function gradeReviewAnswer(answer: string, expected: string): ReviewGrade
   return options.some((option) => sameMeaningForm(answer, option)) ? "close" : "wrong";
 }
 
+// ---- 영어 한 줄 일기 ----
+// 학생이 오늘 있었던 일을 한국어(글·말)나 사진으로 알려 주면 AI가 영어 일기 문장 3개(쉬움·보통·도전)를 추천하고,
+// 고른 문장을 듣고 따라 말한 뒤 하루 한 줄로 저장한다. 담당 교사가 보고 댓글을 남기며, 다음 전화에서 다시 연습한다.
+
+export const DIARY_MOODS = [
+  { key: "happy", emoji: "😊", label: "좋았어" },
+  { key: "excited", emoji: "😆", label: "신났어" },
+  { key: "yummy", emoji: "😋", label: "맛있었어" },
+  { key: "proud", emoji: "😎", label: "뿌듯했어" },
+  { key: "tired", emoji: "😴", label: "피곤했어" },
+  { key: "sad", emoji: "😢", label: "속상했어" },
+] as const;
+export type DiaryMood = (typeof DIARY_MOODS)[number]["key"];
+
+export const DIARY_LEVEL_LABELS = { easy: "쉬움", standard: "보통", challenge: "도전" } as const;
+export type DiaryLevel = keyof typeof DIARY_LEVEL_LABELS;
+
+// BFF diary.ts DiaryEntryView와 같다.
+export type DiaryEntry = {
+  id: string;
+  date: string;
+  source: "text" | "voice" | "photo";
+  noteKo: string | null;
+  mood: DiaryMood | null;
+  sentenceEn: string;
+  meaningKo: string;
+  level: DiaryLevel;
+  usedWord: string | null;
+  practice: { attempts: number; passed: boolean; heard?: string };
+  createdAt: string;
+  updatedAt: string;
+  teacherComment?: { body: string; teacherName: string | null; at: string };
+  commentReadAt?: string;
+};
+
+export const DIARY_CALL_LABEL = "일기 문장";
+const DIARY_RECENT_DAYS = 7;
+
+// 다음 전화에서 다시 말해 볼 일기: 최근 7일 일기 중, 쓴(고친) 뒤로 아직 통화에서 연습하지 않은 가장 최근 것 하나.
+export function pickDiaryForCall(entries: DiaryEntry[], practiced: PracticeRecord[] = [], now = new Date()): DiaryEntry | null {
+  const since = new Date(now.getTime() - DIARY_RECENT_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  return (
+    [...entries]
+      .filter((entry) => entry.updatedAt >= since)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .find(
+        (entry) =>
+          !practiced.some(
+            (record) => expressionKey(record.answerEn) === expressionKey(entry.sentenceEn) && record.practicedAt > entry.updatedAt,
+          ),
+      ) ?? null
+  );
+}
+
+// 통화 문항 맨 뒤(문장 복습 뒤)에 일기 문장을 넣는다. 문항 수 상한(10)은 지킨다.
+export function addDiaryTarget(targets: LearningTarget[], entry: DiaryEntry | null, maxTargets = MAX_CALL_TARGETS): LearningTarget[] {
+  if (!entry || targets.some((target) => expressionKey(target.answerEn) === expressionKey(entry.sentenceEn))) return targets;
+  return [
+    ...targets.slice(0, maxTargets - 1),
+    {
+      id: `diary-${entry.id}`,
+      sourceLabel: DIARY_CALL_LABEL,
+      promptKo: entry.meaningKo,
+      answerEn: entry.sentenceEn,
+      hint: "내가 쓴 영어 일기 문장이에요. 다시 듣고 따라 말해 보세요.",
+    },
+  ];
+}
+
+// ---- 영어 한 줄 일기: 듣고 따라 말하기 ----
+
+// 따라 말하기 결과. 문장 단어마다 말했는지(순서대로 맞은 단어) 표시하고, 거의 다 말했으면 통과.
+export type RepeatResult = { words: { text: string; said: boolean }[]; ratio: number; passed: boolean };
+
+// 주어+'s는 대부분 is로 말한다(It's = It is). 소유격(Mom's)은 그대로 둔다.
+const PRONOUN_IS = /\b(it|that|he|she|what|there|here|who|where|this)'s\b/g;
+
+function repeatWords(text: string): string[] {
+  let value = plainText(text).toLowerCase().replace(PRONOUN_IS, "$1 is");
+  for (const [pattern, replacement] of CONTRACTIONS) value = value.replace(pattern, replacement);
+  return canonicalWords(value).split(" ").filter(Boolean);
+}
+
+export function repeatMatch(expected: string, heard: string): RepeatResult {
+  const tokens = expected.trim().split(/\s+/).filter(Boolean);
+  // 화면 낱말(token) 하나가 여러 비교 낱말이 될 수 있다(didn't → did not).
+  const want = tokens.flatMap((token, index) => repeatWords(token).map((word) => ({ word, index })));
+  if (want.length === 0) return { words: tokens.map((text) => ({ text, said: false })), ratio: 0, passed: false };
+  if (gradeReviewAnswer(heard, expected) !== "wrong") {
+    return { words: tokens.map((text) => ({ text, said: true })), ratio: 1, passed: true };
+  }
+  const have = repeatWords(heard);
+  // 최장 공통 부분열로 순서대로 말한 낱말을 찾는다.
+  const table = Array.from({ length: want.length + 1 }, () => new Array<number>(have.length + 1).fill(0));
+  for (let i = want.length - 1; i >= 0; i -= 1) {
+    for (let j = have.length - 1; j >= 0; j -= 1) {
+      table[i]![j] = want[i]!.word === have[j] ? table[i + 1]![j + 1]! + 1 : Math.max(table[i + 1]![j]!, table[i]![j + 1]!);
+    }
+  }
+  const matched = new Set<number>();
+  for (let i = 0, j = 0; i < want.length && j < have.length; ) {
+    if (want[i]!.word === have[j]) {
+      matched.add(i);
+      i += 1;
+      j += 1;
+    } else if (table[i + 1]![j]! >= table[i]![j + 1]!) i += 1;
+    else j += 1;
+  }
+  const missedTokens = new Set(want.filter((_, position) => !matched.has(position)).map(({ index }) => index));
+  const missing = want.length - matched.size;
+  return {
+    words: tokens.map((text, index) => ({ text, said: !missedTokens.has(index) && want.some((item) => item.index === index) })),
+    ratio: matched.size / want.length,
+    // 짧은 문장은 한 낱말, 긴 문장은 다섯 낱말에 하나까지 빠져도 통과.
+    passed: missing <= Math.max(1, Math.floor(want.length * 0.2)),
+  };
+}
+
 function letters(text: string): string {
   return plainText(text).toLowerCase().replace(/[^a-z0-9]/g, "");
 }

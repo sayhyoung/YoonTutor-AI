@@ -35,7 +35,14 @@ export function dueEvents(schedule: CallScheduleInput, from: Date, to: Date): Du
 export type PushContent = {
   title: string;
   body: string;
-  data: { kind: "call-review"; type: DispatchKind | "message"; messageId?: string; title?: string; message?: string };
+  data: {
+    kind: "call-review";
+    type: DispatchKind | "message" | "diary";
+    messageId?: string;
+    entryId?: string;
+    title?: string;
+    message?: string;
+  };
   dataOnly?: boolean;
   // 이 시간이 지나도록 기기에 전달하지 못하면 버린다(지난 전화가 뒤늦게 울리지 않게).
   ttlSeconds?: number;
@@ -49,6 +56,15 @@ export function buildTeacherMessage(body: string, teacherName: string | null, me
     title: teacherName ? `${teacherName} 선생님의 메시지` : "선생님의 메시지",
     body,
     data: { kind: "call-review", type: "message", ...(messageId ? { messageId } : {}) },
+  };
+}
+
+// 교사가 학생의 영어 한 줄 일기에 남긴 댓글 알림. 앱은 entryId로 그 일기를 연다.
+export function buildDiaryComment(body: string, teacherName: string | null, entryId: string): PushContent {
+  return {
+    title: teacherName ? `${teacherName} 선생님이 영어 일기에 댓글을 남겼어요` : "선생님이 영어 일기에 댓글을 남겼어요",
+    body,
+    data: { kind: "call-review", type: "diary", entryId },
   };
 }
 

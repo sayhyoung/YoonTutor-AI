@@ -21,7 +21,7 @@ export function OPTIONS(request: Request) {
   return preflight(request, METHODS);
 }
 
-// 학생 영어 답변 음성 → 텍스트. Azure가 설정돼 있으면 Azure, 아니면 OpenAI.
+// 학생 영어 답변(또는 일기용 한국어 말) 음성 → 텍스트. Azure가 설정돼 있으면 Azure, 아니면 OpenAI.
 // 오디오는 변환에만 쓰고 저장하지 않는다.
 export async function POST(request: Request) {
   const headers = { "Cache-Control": "private, no-store", ...corsHeaders(request, METHODS) };
@@ -34,10 +34,13 @@ export async function POST(request: Request) {
   }
 
   let audio: Blob | null = null;
+  // 영어 일기에서 "오늘 있었던 일"을 한국어로 말할 때만 lang=ko. 없으면 예전처럼 영어.
+  let language: "en" | "ko" = "en";
   try {
     const form = await request.formData();
     const file = form.get("audio");
     if (file instanceof Blob) audio = file;
+    if (form.get("lang") === "ko") language = "ko";
   } catch {
     return NextResponse.json({ error: "녹음을 읽지 못했어요." }, { status: 400, headers });
   }
@@ -52,7 +55,9 @@ export async function POST(request: Request) {
   const uploadedExtension = audio instanceof File ? audio.name.match(/\.(aac|wav|m4a|mp4|webm|ogg|mp3)$/i)?.[1] : undefined;
   const fileName = uploadedExtension ? `answer.${uploadedExtension.toLowerCase()}` : audioFileName(audio.type);
   try {
-    const text = useAzure ? await transcribeWithAzure(audio, fileName) : await transcribeWithOpenAi(audio, fileName);
+    const text = useAzure
+      ? await transcribeWithAzure(audio, fileName, language)
+      : await transcribeWithOpenAi(audio, fileName, language);
     return NextResponse.json({ text, engine: useAzure ? "azure" : "openai" }, { headers });
   } catch (error) {
     console.error("[stt] 음성 인식 실패:", error instanceof Error ? error.message : "unknown");

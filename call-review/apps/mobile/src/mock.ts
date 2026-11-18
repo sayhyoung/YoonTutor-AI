@@ -1,11 +1,15 @@
 import type {
   CallHistoryEntry,
   CallReport,
+  DiaryEntry,
+  DiaryMood,
   FreeTalkPlan,
   LearningHistoryItem,
   TeacherScheduleSettings,
 } from "@yoon-call/shared";
 import { buildCallPlanFromLearningItems } from "@yoon-call/shared";
+
+import type { DiarySuggestion } from "./callReviewApi";
 
 const previewLearningItems: LearningHistoryItem[] = [
   {
@@ -148,3 +152,68 @@ export const previewHistory: CallHistoryEntry[] = [
     expressions: ["usually", "every day", "habit"],
   },
 ];
+
+// 프리뷰 일기장: 어제 쓴 일기 하나(선생님 댓글이 달려 있음).
+function previewDay(daysAgo: number) {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000 - daysAgo * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+export const previewDiary: DiaryEntry[] = [
+  {
+    id: previewDay(1),
+    date: previewDay(1),
+    source: "text",
+    noteKo: "학교 끝나고 친구랑 떡볶이 먹었는데 너무 매웠어",
+    mood: "yummy",
+    sentenceEn: "After school, I ate tteokbokki with my friend.",
+    meaningKo: "학교 끝나고 친구랑 떡볶이를 먹었다.",
+    level: "standard",
+    usedWord: "school",
+    practice: { attempts: 2, passed: true },
+    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    teacherComment: {
+      body: "떡볶이 정말 맛있었겠다! After school을 잘 썼어요.",
+      teacherName: "김윤",
+      at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    },
+  },
+];
+
+// 프리뷰 문장 추천(서버 AI 대신). 기분·사진 여부로 고른다.
+export function previewDiarySuggestions(mood: DiaryMood | null, photo: boolean): DiarySuggestion[] {
+  if (photo) {
+    return [
+      { level: "easy", sentenceEn: "I ate a big cake.", meaningKo: "큰 케이크를 먹었다.", usedWord: null },
+      { level: "standard", sentenceEn: "I ate a birthday cake with my family.", meaningKo: "가족과 생일 케이크를 먹었다.", usedWord: null },
+      {
+        level: "challenge",
+        sentenceEn: "My family had a birthday party, and the cake was so sweet.",
+        meaningKo: "가족과 생일 파티를 했는데 케이크가 정말 달았다.",
+        usedWord: null,
+      },
+    ];
+  }
+  if (mood === "tired" || mood === "sad") {
+    return [
+      { level: "easy", sentenceEn: "I was tired today.", meaningKo: "오늘은 피곤했다.", usedWord: null },
+      { level: "standard", sentenceEn: "I had a long day at school.", meaningKo: "학교에서 긴 하루를 보냈다.", usedWord: null },
+      {
+        level: "challenge",
+        sentenceEn: "I was tired after school, so I went to bed early.",
+        meaningKo: "학교가 끝나고 피곤해서 일찍 잤다.",
+        usedWord: null,
+      },
+    ];
+  }
+  return [
+    { level: "easy", sentenceEn: "I played soccer today.", meaningKo: "오늘 축구를 했다.", usedWord: null },
+    { level: "standard", sentenceEn: "I played soccer with my friends after school.", meaningKo: "학교가 끝나고 친구들과 축구를 했다.", usedWord: null },
+    {
+      level: "challenge",
+      sentenceEn: "We played soccer after school, and I scored a goal!",
+      meaningKo: "학교가 끝나고 축구를 했는데 내가 골을 넣었다!",
+      usedWord: null,
+    },
+  ];
+}

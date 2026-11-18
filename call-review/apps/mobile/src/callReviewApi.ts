@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import type { DiaryEntry, DiaryLevel, DiaryMood } from "@yoon-call/shared";
 import * as SecureStore from "expo-secure-store";
 import { File } from "expo-file-system";
 
@@ -222,10 +223,12 @@ export async function checkAlternativeAnswer(token: string, body: AnswerCheckReq
   return response.acceptable === true;
 }
 
-// 녹음 파일(uri)을 BFF로 올려 영어 텍스트로 바꾼다. 웹은 blob URL, 네이티브는 파일 uri.
-export async function transcribeAnswer(token: string, uri: string): Promise<string> {
+// 녹음 파일(uri)을 BFF로 올려 텍스트로 바꾼다. 웹은 blob URL, 네이티브는 파일 uri.
+// language: 영어 답변은 en(기본), 영어 일기의 "오늘 있었던 일" 말하기는 ko.
+export async function transcribeAnswer(token: string, uri: string, language: "en" | "ko" = "en"): Promise<string> {
   if (!callReviewApiBaseUrl) throw new ApiError("서버 주소가 설정되지 않았어요.", 0);
   const form = new FormData();
+  if (language === "ko") form.append("lang", "ko");
   if (Platform.OS === "web") {
     const blob = await fetch(uri).then((response) => response.blob());
     form.append("audio", blob, blob.type.includes("webm") ? "answer.webm" : "answer.m4a");
@@ -301,4 +304,48 @@ export function ttsSource(token: string, text: string, language: "en" | "ko") {
   if (!callReviewApiBaseUrl) return null;
   const query = `text=${encodeURIComponent(text)}&lang=${language}`;
   return { uri: `${callReviewApiBaseUrl}/api/call-review/tts?${query}`, headers: { Authorization: `Bearer ${token}` } };
+}
+
+// ---- 영어 한 줄 일기 ----
+
+export type DiarySuggestion = { level: DiaryLevel; sentenceEn: string; meaningKo: string; usedWord: string | null };
+
+// 사진은 기기에서 줄인 JPEG(base64). 서버는 문장을 만드는 데만 쓰고 저장하지 않는다.
+export type DiarySuggestBody = {
+  noteKo?: string;
+  mood?: DiaryMood;
+  photo?: { data: string; mimeType: "image/jpeg" };
+  learnedWords?: string[];
+};
+
+export type DiarySavePayload = {
+  source: DiaryEntry["source"];
+  noteKo: string | null;
+  mood: DiaryMood | null;
+  sentenceEn: string;
+  meaningKo: string;
+  level: DiaryLevel;
+  usedWord: string | null;
+  practice: DiaryEntry["practice"];
+};
+
+export async function suggestDiary(token: string, body: DiarySuggestBody): Promise<DiarySuggestion[]> {
+  return (await request<{ suggestions: DiarySuggestion[] }>("/api/call-review/diary/suggest", { method: "POST", token, body })).suggestions;
+}
+
+export async function fetchDiary(token: string): Promise<DiaryEntry[]> {
+  return (await request<{ entries: DiaryEntry[] }>("/api/call-review/diary", { token })).entries ?? [];
+}
+
+export async function saveDiary(token: string, payload: DiarySavePayload): Promise<DiaryEntry> {
+  return (await request<{ entry: DiaryEntry }>("/api/call-review/diary", { method: "POST", token, body: payload })).entry;
+}
+
+export async function readDiaryComment(token: string, id: string): Promise<DiaryEntry> {
+  const response = await request<{ entry: DiaryEntry }>(`/api/call-review/diary/${encodeURIComponent(id)}`, {
+    method: "POST",
+    token,
+    body: { action: "read-comment" },
+  });
+  return response.entry;
 }

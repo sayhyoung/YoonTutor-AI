@@ -20,10 +20,11 @@ function azureTranscribeUrl(): string {
 
 type AzureFastTranscription = { combinedPhrases?: { text?: string }[] };
 
-export async function transcribeWithAzure(audio: Blob, fileName: string): Promise<string> {
+// language: 학생 영어 답변은 en, 영어 일기의 "오늘 있었던 일" 말하기는 ko.
+export async function transcribeWithAzure(audio: Blob, fileName: string, language: SpeechLanguage = "en"): Promise<string> {
   const form = new FormData();
   form.append("audio", audio, fileName);
-  form.append("definition", JSON.stringify({ locales: ["en-US"], profanityFilterMode: "Masked" }));
+  form.append("definition", JSON.stringify({ locales: [language === "ko" ? "ko-KR" : "en-US"], profanityFilterMode: "Masked" }));
   const response = await fetch(azureTranscribeUrl(), {
     method: "POST",
     headers: { "Ocp-Apim-Subscription-Key": process.env.AZURE_SPEECH_KEY ?? "" },
@@ -34,11 +35,11 @@ export async function transcribeWithAzure(audio: Blob, fileName: string): Promis
   return (data.combinedPhrases ?? []).map((phrase) => phrase.text ?? "").join(" ").trim();
 }
 
-export async function transcribeWithOpenAi(audio: Blob, fileName: string): Promise<string> {
+export async function transcribeWithOpenAi(audio: Blob, fileName: string, language: SpeechLanguage = "en"): Promise<string> {
   const form = new FormData();
   form.append("file", audio, fileName);
   form.append("model", process.env.OPENAI_STT_MODEL ?? "whisper-1");
-  form.append("language", "en");
+  form.append("language", language);
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },

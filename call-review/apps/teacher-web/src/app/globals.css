@@ -1281,6 +1281,7 @@ tbody tr.selected {
 
 .source-chip.word { color: var(--color-primary-strong); background: var(--color-primary-soft); }
 .source-chip.sentence { color: oklch(40% 0.12 155); background: oklch(93% 0.05 155); }
+.source-chip.diary { color: oklch(45% 0.14 45); background: oklch(94% 0.05 60); }
 
 .report-page { display: grid; }
 
@@ -1979,3 +1980,88 @@ tbody tr.selected {
     transform: none;
   }
 }
+
+/* 영어 한 줄 일기(리포트) */
+.diary-panel { margin-top: var(--space-lg); }
+
+.diary-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--rule-thin) solid var(--color-rule);
+}
+
+.diary-item {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-md) 0;
+  border-bottom: var(--rule-thin) solid var(--color-rule);
+}
+
+.diary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.diary-meta strong { color: var(--color-ink); font-size: var(--text-sm); }
+
+.diary-chip {
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-pill);
+  color: var(--color-muted);
+  background: var(--color-paper-2);
+  font-weight: 800;
+}
+
+.diary-chip.ok { color: var(--color-success); }
+
+.diary-sentence {
+  margin: var(--space-xs) 0 0;
+  color: var(--color-ink);
+  font-size: var(--text-lg);
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.diary-meaning,
+.diary-note {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.diary-note span { font-weight: 700; }
+
+.diary-comment {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-top: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+}
+
+.diary-comment p { margin: 0; line-height: 1.5; }
+
+.diary-comment small { color: var(--color-muted); font-size: var(--text-xs); }
+
+.diary-comment-form {
+  display: grid;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.diary-comment-form textarea {
+  padding: var(--space-sm) var(--space-md);
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.diary-more { margin-top: var(--space-sm); }

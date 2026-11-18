@@ -30,10 +30,11 @@ import type {
   CallHistoryEntry,
   CallPlan,
   ConversationChoice,
+  DiaryEntry,
   InputMode,
   TeacherScheduleSettings,
 } from "@yoon-call/shared";
-import { BAD_WORDS_FEEDBACK, isSentence, MAX_REVIEW_ATTEMPTS, sentenceBlanks } from "@yoon-call/shared";
+import { BAD_WORDS_FEEDBACK, DIARY_MOODS, isSentence, MAX_REVIEW_ATTEMPTS, sentenceBlanks } from "@yoon-call/shared";
 
 import {
   type CallReviewRepository,
@@ -56,11 +57,13 @@ import { Icon, type IconName } from "./src/icons";
 import { LearningStatusSection } from "./src/LearningStatusSection";
 import { MessageInbox } from "./src/TeacherMessages";
 import { CallRinger } from "./modules/call-ringer";
+import { DiaryScreen, type DiaryServices } from "./src/DiaryScreen";
 import { useTeacherMessages } from "./src/useTeacherMessages";
 import type { MessageReaction, TeacherMessage } from "./src/callReviewApi";
 import {
   currentPushToken,
   getPushToken,
+  onDiaryCommentNotification,
   onIncomingCallNotification,
   onTeacherMessageNotification,
   savePushToken,
@@ -157,6 +160,9 @@ function DataApp({
       registerPush={repository.registerPush?.bind(repository)}
       speechSource={repository.speechSource?.bind(repository)}
       messageService={messageService}
+      suggestDiary={repository.suggestDiary?.bind(repository)}
+      saveDiary={repository.saveDiary?.bind(repository)}
+      readDiaryComment={repository.readDiaryComment?.bind(repository)}
     />
   );
 }
@@ -399,6 +405,9 @@ function CallReviewApp({
   registerPush,
   speechSource,
   messageService,
+  suggestDiary,
+  saveDiary,
+  readDiaryComment,
 }: {
   data: CallReviewSnapshot;
   onLogout?: () => void;
@@ -407,10 +416,13 @@ function CallReviewApp({
   generateQuestion?: SessionServices["generateQuestion"];
   generateSupport?: SessionServices["generateSupport"];
   checkAnswer?: SessionServices["checkAnswer"];
-  transcribe?: (uri: string) => Promise<string>;
+  transcribe?: (uri: string, language?: "en" | "ko") => Promise<string>;
   registerPush?: (pushToken: string) => Promise<boolean>;
   speechSource?: RemoteSpeechSource;
   messageService: Parameters<typeof useTeacherMessages>[0];
+  suggestDiary?: DiaryServices["suggest"];
+  saveDiary?: DiaryServices["save"];
+  readDiaryComment?: DiaryServices["readComment"];
 }) {
   const capture = useVoiceCapture();
   const teacherMessages = useTeacherMessages(messageService);
@@ -442,6 +454,24 @@ function CallReviewApp({
     });
     return () => subscription.remove();
   }, [openedHistory]);
+
+  // 영어 한 줄 일기(홈 카드에서 연다). 일기장 목록은 저장·댓글 읽음을 바로 반영하려고 따로 들고 있는다.
+  const [diaryOpen, setDiaryOpen] = useState(false);
+  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>(data.diary);
+  useEffect(() => setDiaryEntries(data.diary), [data.diary]);
+  const diaryServices = useMemo<DiaryServices>(
+    () => ({ suggest: suggestDiary, save: saveDiary, readComment: readDiaryComment, transcribe, capture, speechSource }),
+    [capture, readDiaryComment, saveDiary, speechSource, suggestDiary, transcribe],
+  );
+  // 복습 단어 중 몇 개를 추천 문장에 자연스럽게 넣어 보게 한다.
+  const learnedWords = useMemo(
+    () => data.plan.targets.map((target) => target.answerEn.trim()).filter((answer) => /^[A-Za-z][A-Za-z'-]*$/.test(answer)).slice(0, 5),
+    [data.plan.targets],
+  );
+  // 전화가 오면(홈을 벗어나면) 일기 화면은 닫는다.
+  useEffect(() => {
+    if (session.phase !== "home") setDiaryOpen(false);
+  }, [session.phase]);
 
   // Android 뒤로 가기: 앱을 끄지 않고 한 단계 앞 화면으로 간다. 통화 중에는 실제 전화처럼
   // 바로 끊지 않고 끝낼지 묻는다(끝내면 종료 버튼과 같이 결과 화면 → 홈). 홈에서는 기본 동작(앱 닫기).
@@ -766,6 +796,16 @@ function CallReviewApp({
     [reloadMessages],
   );
 
+  // 선생님이 일기에 댓글을 남긴 알림: 받으면 일기를 다시 불러오고, 눌러서 열었으면(홈에 있을 때) 일기장을 연다.
+  useEffect(
+    () =>
+      onDiaryCommentNotification((tapped) => {
+        onRefresh?.();
+        if (tapped && sessionRef.current.phase === "home") setDiaryOpen(true);
+      }),
+    [onRefresh],
+  );
+
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   // 저장할 때 서버가 짧은 대화를 보고 만든 피드백.
   const [talkFeedback, setTalkFeedback] = useState<string | null>(null);
@@ -836,6 +876,16 @@ function CallReviewApp({
               onRetrySave={() => {}}
               onDone={() => setOpenedHistory(null)}
             />
+          ) : diaryOpen ? (
+            <DiaryScreen
+              darkMode={darkMode}
+              entries={diaryEntries}
+              learnedWords={learnedWords}
+              services={diaryServices}
+              onEntriesChange={setDiaryEntries}
+              onSaved={() => onRefresh?.()}
+              onBack={() => setDiaryOpen(false)}
+            />
           ) : session.homeSection === "home" ? (
             <HomeScreen
               darkMode={darkMode}
@@ -846,6 +896,10 @@ function CallReviewApp({
               onOpenMyPage={session.openMyPage}
               onStart={session.showIncomingCall}
               unreadMessages={teacherMessages.messages.filter((message) => !message.readAt).length}
+              diaryEnabled={Boolean(suggestDiary)}
+              diaryToday={diaryEntries.find((entry) => entry.date === todayKst()) ?? null}
+              unreadDiaryComments={diaryEntries.filter((entry) => entry.teacherComment && !entry.commentReadAt).length}
+              onOpenDiary={() => setDiaryOpen(true)}
             />
           ) : (
             <MyPageScreen
@@ -1024,6 +1078,10 @@ function HomeScreen({
   onOpenMyPage,
   onStart,
   unreadMessages,
+  diaryEnabled,
+  diaryToday,
+  unreadDiaryComments,
+  onOpenDiary,
 }: {
   darkMode: boolean;
   onToggleAppearance: () => void;
@@ -1034,6 +1092,11 @@ function HomeScreen({
   onStart: () => void;
   // 아직 읽지 않은 선생님 메시지 수(마이페이지 버튼에 표시).
   unreadMessages: number;
+  // 영어 한 줄 일기 카드: 오늘 쓴 일기(없으면 null)와 아직 안 읽은 선생님 댓글 수.
+  diaryEnabled: boolean;
+  diaryToday: DiaryEntry | null;
+  unreadDiaryComments: number;
+  onOpenDiary: () => void;
 }) {
   return (
     <View style={styles.homeScreen}>
@@ -1081,10 +1144,36 @@ function HomeScreen({
         </View>
         <Text style={[styles.homeReviewDescription,darkMode && darkAppStyles.mutedText]}>{reviewCount > 0 ? `표현 ${reviewCount}개를 복습하고, 베플리의 영어 질문에 짧게 대답하면 끝나요.` : "최근 학습에서 다시 볼 단어·문장이 없어요. 새로 학습하면 여기에 모여요."}</Text>
       </View>
+
+      {diaryEnabled ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`영어 한 줄 일기 ${diaryToday ? "보기, 오늘 일기를 썼어요" : "쓰기"}${unreadDiaryComments > 0 ? `, 선생님 새 댓글 ${unreadDiaryComments}개` : ""}`}
+          onPress={onOpenDiary}
+          style={({ pressed }) => [styles.homeDiaryCard, darkMode && darkAppStyles.card, pressed && styles.utilityPressed]}
+        >
+          <View style={styles.homeDiaryIcon}><Icon name="book" size={22} color={color.primaryStrong} /></View>
+          <View style={styles.homeDiaryCopy}>
+            <View style={styles.homeDiaryTitleRow}>
+              <Text style={[styles.homeSectionTitle, darkMode && darkAppStyles.strongText]}>영어 한 줄 일기</Text>
+              {unreadDiaryComments > 0 ? <View style={styles.homeDiaryBadge}><Text style={styles.homeDiaryBadgeText}>새 댓글 {unreadDiaryComments}</Text></View> : null}
+            </View>
+            <Text numberOfLines={2} style={[diaryToday ? styles.homeDiarySentence : styles.homeReviewSub, darkMode && (diaryToday ? darkAppStyles.strongText : darkAppStyles.mutedText)]}>
+              {diaryToday ? `${DIARY_MOODS.find((mood) => mood.key === diaryToday.mood)?.emoji ?? "✏️"} ${diaryToday.sentenceEn}` : "오늘 있었던 일을 영어 한 줄로 남겨요"}
+            </Text>
+          </View>
+          <Icon name="chevron-right" size={20} color={darkMode ? color.mutedInverse : color.muted} />
+        </Pressable>
+      ) : null}
     </ScrollView>
     <View style={[styles.homeBottom, darkMode && darkAppStyles.surface]}><Pressable accessibilityRole="button" accessibilityState={{ disabled: reviewCount === 0 }} disabled={reviewCount === 0} onPress={onStart} style={({pressed}) => [styles.homeAnswerButton,reviewCount === 0 && styles.homeAnswerButtonDisabled,pressed && styles.buttonPressed]}><Icon name="phone" size={22} color={color.surface} strokeWidth={2.2} /><Text style={styles.homeAnswerButtonText}>{reviewCount > 0 ? "지금 전화받기" : "오늘은 복습할 표현이 없어요"}</Text></Pressable></View>
     </View>
   );
+}
+
+// 일기 날짜는 한국 날짜(서버와 같은 기준).
+function todayKst() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 // "19:30" -> "오후 7:30", matching the home card's scheduled-call label.
@@ -2406,6 +2495,13 @@ const styles = StyleSheet.create({
   homeStatNumber: { color: color.ink, fontFamily: font.englishBold, fontSize: 34, lineHeight: 40 },
   homeStatUnit: { color: color.ink, fontFamily: font.body, fontSize: 15 },
   homeReviewDescription: { color: color.muted, fontSize: 14, lineHeight: 22 },
+  homeDiaryCard: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 20, backgroundColor: color.surface, padding: 16 },
+  homeDiaryIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: color.primarySoft, alignItems: "center", justifyContent: "center" },
+  homeDiaryCopy: { flex: 1, gap: 4 },
+  homeDiaryTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  homeDiaryBadge: { backgroundColor: color.danger, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2 },
+  homeDiaryBadgeText: { color: color.surface, fontSize: 11, fontWeight: "600" },
+  homeDiarySentence: { color: color.ink, fontFamily: font.english, fontSize: 15, lineHeight: 21 },
   reportScreen: { flex: 1 },
   resultChipRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   resultChip: { alignSelf: "flex-start", borderRadius: 99, backgroundColor: color.successSoft, paddingHorizontal: 12, paddingVertical: 7 },

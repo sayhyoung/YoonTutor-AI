@@ -22,7 +22,11 @@ export type IconName =
   | "person"
   | "back"
   | "sound-off"
-  | "chevron-right";
+  | "chevron-right"
+  | "photo"
+  | "camera"
+  | "book"
+  | "pencil";
 
 export function Icon({
   name,
@@ -108,6 +112,23 @@ export function Icon({
       {name === "back" && <Path d="M15 5l-7 7 7 7" {...stroke} />}
       {name === "sound-off" && <Path d="M4 9v6h4l5 4V5L8 9H4zM16.5 9.5l5 5M21.5 9.5l-5 5" {...stroke} />}
       {name === "chevron-right" && <Path d="M9 5l7 7-7 7" {...stroke} />}
+      {name === "photo" && (
+        <>
+          <Rect x={3} y={5} width={18} height={14} rx={2.5} {...stroke} />
+          <Circle cx={8.5} cy={10} r={1.5} {...stroke} />
+          <Path d="M21 16l-5-5-8 8" {...stroke} />
+        </>
+      )}
+      {name === "camera" && (
+        <>
+          <Path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" {...stroke} />
+          <Circle cx={12} cy={13} r={3.5} {...stroke} />
+        </>
+      )}
+      {name === "book" && (
+        <Path d="M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5M12 6.5c2-1.5 5-2 8-1.5v13c-3-.5-6 0-8 1.5M12 6.5v13" {...stroke} />
+      )}
+      {name === "pencil" && <Path d="M4 20l1-4L16 5l3 3L8 19l-4 1zM14 7l3 3" {...stroke} />}
     </Svg>
   );
 }

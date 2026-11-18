@@ -34,7 +34,11 @@ export async function callOpenAiText(input: string, maxOutputTokens = 240): Prom
 
 // 멀티턴(대화) 호출. input에 role/content 메시지 배열을 그대로 전달한다.
 // (소크라테스식 튜터처럼 developer 지시 + user/assistant 히스토리를 유지할 때 사용)
-export type OpenAiInputMessage = { role: "developer" | "user" | "assistant"; content: string };
+// content는 글만 보내거나, 글과 사진을 함께 보낼 때 부분 배열로 보낸다(사진은 data URL, detail low면 빠르고 싸다).
+export type OpenAiContentPart =
+  | { type: "input_text"; text: string }
+  | { type: "input_image"; image_url: string; detail?: "low" | "high" | "auto" };
+export type OpenAiInputMessage = { role: "developer" | "user" | "assistant"; content: string | OpenAiContentPart[] };
 // reasoningEffort: "none"이면 생각 단계를 건너뛰어 1~1.5초 빨라진다(통화 중 짧은 응답용).
 export type ReasoningEffort = "none" | "low" | "medium" | "high";
 export async function callOpenAiMessages(

@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { kstToIso, selectCallItems } from "@yoon-call/shared";
+import { type DiaryEntry, kstToIso, MAX_CALL_TARGETS, pickDiaryForCall, selectCallItems } from "@yoon-call/shared";
 
 import { analyzeReports, coachSummary } from "./analytics";
 import { formatDateTime } from "./format";
+import { DiaryPanel } from "./diary-panel";
 import { MessageComposer } from "./message-composer";
 import { DailyBarsLegend, OUTCOME_SEGMENTS } from "./report-parts";
 import { Donut, Kpi, StackedBars, TrendLine } from "./charts";
@@ -42,6 +43,8 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
   const [data, setData] = useState<StudentReportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openReportId, setOpenReportId] = useState<string | null>(null);
+  // 일기 칸이 불러온 영어 일기. 최근 일기 한 줄은 다음 통화 맨 뒤 문항으로 들어간다(학생 앱과 같은 규칙).
+  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +69,13 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
     [data],
   );
   // 다음 통화 예정 표현: 학생 앱과 같은 출제 규칙(새 차시 오답 → 복습 필요 → 돌아가며 다시 보기, 최대 10개).
+  const practiced = useMemo(
+    () =>
+      (data?.reports ?? []).flatMap((report) =>
+        report.targets.map((target) => ({ answerEn: target.answerEn, outcome: target.outcome, practicedAt: report.endedAt })),
+      ),
+    [data],
+  );
   const planned = useMemo(() => {
     if (!data?.upcoming) return null;
     const candidates = data.upcoming.items.flatMap((item) =>
@@ -84,11 +94,15 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
           ]
         : [],
     );
-    const practiced = (data.reports ?? []).flatMap((report) =>
-      report.targets.map((target) => ({ answerEn: target.answerEn, outcome: target.outcome, practicedAt: report.endedAt })),
-    );
     return selectCallItems(candidates, practiced);
-  }, [data, student.customerNo]);
+  }, [data, practiced, student.customerNo]);
+  const plannedDiary = useMemo(() => {
+    const entry = pickDiaryForCall(diaryEntries, practiced);
+    return entry && !planned?.items.some((item) => item.answerEn.trim().toLowerCase() === entry.sentenceEn.trim().toLowerCase())
+      ? entry
+      : null;
+  }, [diaryEntries, planned, practiced]);
+  const plannedItems = planned ? planned.items.slice(0, plannedDiary ? MAX_CALL_TARGETS - 1 : MAX_CALL_TARGETS) : [];
   const plannedNote =
     planned?.mode === "new"
       ? "새로 학습한 차시의 오답"
@@ -221,13 +235,13 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
                 <h2>다음 통화 예정 표현</h2>
                 <p>
                   {planned
-                    ? `${plannedNote} ${planned.items.length}개 · 학습 오답 ${data.upcoming?.total ?? 0}개 중`
+                    ? `${plannedNote} ${plannedItems.length}개${plannedDiary ? " + 영어 일기 1개" : ""} · 학습 오답 ${data.upcoming?.total ?? 0}개 중`
                     : "학습 데이터를 불러오지 못했어요"}
                 </p>
               </div>
-              {planned && planned.items.length > 0 ? (
+              {planned && (plannedItems.length > 0 || plannedDiary) ? (
                 <ul className="upcoming-list">
-                  {planned.items.map((item) => (
+                  {plannedItems.map((item) => (
                     <li key={item.id}>
                       <span className={`source-chip ${item.sourceType}`}>{item.sourceType === "word" ? "단어" : "문장"}</span>
                       <div>
@@ -236,6 +250,15 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
                       </div>
                     </li>
                   ))}
+                  {plannedDiary ? (
+                    <li key={`diary-${plannedDiary.id}`}>
+                      <span className="source-chip diary">일기</span>
+                      <div>
+                        <span className="missed-en" lang="en">{plannedDiary.sentenceEn}</span>
+                        <span className="missed-ko">{plannedDiary.meaningKo}</span>
+                      </div>
+                    </li>
+                  ) : null}
                 </ul>
               ) : planned ? (
                 <p className="chart-empty">조회 기간에 틀린 단어·문장이 없어요.</p>
@@ -317,6 +340,7 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
             )}
           </section>
 
+          <DiaryPanel student={student} onEntries={setDiaryEntries} />
           <MessageComposer student={student} />
         </>
       ) : null}
