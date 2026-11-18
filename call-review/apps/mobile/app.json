@@ -54,7 +54,7 @@
         {
           "photosPermission": "영어 일기 문장을 만들 사진을 고르려면 사진 접근이 필요해요. 사진은 문장을 만드는 데만 쓰고 저장하지 않아요.",
           "cameraPermission": "영어 일기 문장을 만들 사진을 찍으려면 카메라가 필요해요. 사진은 문장을 만드는 데만 쓰고 저장하지 않아요.",
-          "microphonePermission": false
+          "microphonePermission": "베플리 선생님과 영어로 말하려면 마이크가 필요해요. 녹음한 소리는 글자로 바꾼 뒤 저장하지 않아요."
         }
       ],
       "expo-font",
