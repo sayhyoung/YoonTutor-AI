@@ -3,6 +3,7 @@
 // 사진은 기기에서 줄여 문장 추천 요청에만 보내고, 기기에 남은 사본은 바로 지운다(서버도 저장하지 않음).
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   Alert,
   Animated,
   BackHandler,
@@ -115,10 +116,6 @@ type Palette = {
   accent: string;
   accentSoft: string;
   line: string;
-  // 녹음 중 표시(빨강).
-  rec: string;
-  recSoft: string;
-  recInk: string;
 };
 
 const LIGHT: Palette = {
@@ -130,9 +127,6 @@ const LIGHT: Palette = {
   accent: color.primaryStrong,
   accentSoft: color.primarySoft,
   line: color.line,
-  rec: color.danger,
-  recSoft: "#FDECEC",
-  recInk: "#9F1F1F",
 };
 
 const DARK: Palette = {
@@ -144,9 +138,6 @@ const DARK: Palette = {
   accent: color.actionInkDark,
   accentSoft: color.actionSoftDark,
   line: color.lineInverse,
-  rec: "#F06464",
-  recSoft: "#3A1D20",
-  recInk: "#FFB4B4",
 };
 
 function TypingDots({ tint }: { tint: string }) {
@@ -174,44 +165,50 @@ function TypingDots({ tint }: { tint: string }) {
   );
 }
 
-// 녹음이 켜져 있음을 분명히 보여 준다: 퍼지는 빨간 점, 녹음 시간, 안내.
-function RecordingIndicator({ palette, hint }: { palette: Palette; hint: string }) {
-  const pulse = useRef(new Animated.Value(0)).current;
-  const [seconds, setSeconds] = useState(0);
+// 녹음 중 표시: 통화 화면처럼 움직이는 파형과 '듣고 있어요'만 보여 준다.
+const SIGNAL_LEVELS = [10, 18, 26, 16, 30, 22, 12, 24, 32, 20, 14, 22];
+
+function ListeningSignal({ palette }: { palette: Palette }) {
+  const values = useRef(SIGNAL_LEVELS.map(() => new Animated.Value(0))).current;
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    const timer = setInterval(() => setSeconds((value) => value + 1), 1000);
+    let cancelled = false;
+    let loops: Animated.CompositeAnimation[] = [];
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
+      if (reduce || cancelled) return;
+      loops = values.map((value, index) =>
+        Animated.loop(
+          Animated.sequence([
+            Animated.delay((index % 5) * 120),
+            Animated.timing(value, { toValue: 1, duration: 500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+            Animated.timing(value, { toValue: 0, duration: 500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          ]),
+        ),
+      );
+      loops.forEach((loop) => loop.start());
+    });
     return () => {
-      loop.stop();
-      clearInterval(timer);
+      cancelled = true;
+      loops.forEach((loop) => loop.stop());
     };
-  }, [pulse]);
-  const ring = {
-    opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
-    transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.4] }) }],
-  };
-  const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  }, [values]);
   return (
-    <View
-      style={[styles.recording, { backgroundColor: palette.recSoft, borderColor: palette.rec }]}
-      accessibilityLiveRegion="polite"
-      accessibilityLabel={`마이크가 켜졌어요. 녹음 중이에요. ${hint}`}
-    >
-      <View style={styles.recDotWrap}>
-        <Animated.View style={[styles.recRing, { backgroundColor: palette.rec }, ring]} />
-        <View style={[styles.recDot, { backgroundColor: palette.rec }]} />
+    <View style={styles.listeningRow} accessibilityLiveRegion="polite" accessibilityLabel="듣고 있어요">
+      <View style={styles.signal} accessible={false}>
+        {values.map((value, index) => (
+          <Animated.View
+            key={index}
+            style={[
+              styles.signalBar,
+              {
+                height: SIGNAL_LEVELS[index],
+                backgroundColor: palette.accent,
+                transform: [{ scaleY: value.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] }) }],
+              },
+            ]}
+          />
+        ))}
       </View>
-      <View style={styles.recCopy}>
-        <Text style={[styles.recTitle, { color: palette.recInk }]}>마이크가 켜졌어요 · 녹음 중</Text>
-        <Text style={[styles.small, { color: palette.recInk }]}>{hint}</Text>
-      </View>
-      <Text style={[styles.recTime, { color: palette.recInk }]}>{time}</Text>
+      <Text style={[styles.listeningText, { color: palette.accent }]}>듣고 있어요</Text>
     </View>
   );
 }
@@ -713,12 +710,7 @@ export function DiaryScreen({
                   onPress={choosePhoto}
                 />
               </View>
-              {voice === "listening" ? (
-                <RecordingIndicator
-                  palette={palette}
-                  hint={noteLang === "ko" ? "오늘 있었던 일을 말한 뒤 ‘다 말했어요’를 눌러요." : "영어로 말한 뒤 ‘다 말했어요’를 눌러요."}
-                />
-              ) : null}
+              {voice === "listening" ? <ListeningSignal palette={palette} /> : null}
               {photo ? (
                 <View style={[styles.photoCard, card]}>
                   <Image source={{ uri: photo.previewUri }} style={styles.photo} accessibilityLabel="고른 사진" />
@@ -878,7 +870,7 @@ export function DiaryScreen({
           </View>
 
           {recording ? (
-            <RecordingIndicator palette={palette} hint="문장을 따라 말한 뒤 ‘다 말했어요’를 눌러요." />
+            <ListeningSignal palette={palette} />
           ) : heard ? (
             <View style={[styles.card, card, passed && { borderColor: color.success }]} accessibilityLiveRegion="polite">
               <View style={styles.feedbackRow}>
@@ -914,7 +906,7 @@ export function DiaryScreen({
           ) : null}
           {canSpeak ? (
             <PrimaryButton
-              tone={recording ? "danger" : canSave ? "secondary" : "primary"}
+              tone={recording || !canSave ? "primary" : "secondary"}
               label={recording ? "다 말했어요" : voice === "transcribing" ? "알아듣는 중…" : heard ? "다시 녹음하기" : "따라 말하기"}
               icon={recording ? "stop" : "mic"}
               disabled={voice === "transcribing" || saving}
@@ -1041,13 +1033,13 @@ function ToolButton({
       style={({ pressed }) => [
         styles.toolButton,
         { backgroundColor: palette.card, borderColor: palette.line },
-        active && { backgroundColor: color.danger, borderColor: color.danger },
+        active && { backgroundColor: palette.accent, borderColor: palette.accent },
         disabled && styles.disabled,
         pressed && styles.pressed,
       ]}
     >
-      <Icon name={icon} size={20} color={active ? color.surface : palette.accent} />
-      <Text style={[styles.toolText, { color: active ? color.surface : palette.ink }]}>{label}</Text>
+      <Icon name={icon} size={20} color={active ? palette.card : palette.accent} />
+      <Text style={[styles.toolText, { color: active ? palette.card : palette.ink }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -1066,7 +1058,7 @@ function PrimaryButton({
   label: string;
   icon: "pencil" | "send" | "mic" | "stop" | "book";
   disabled?: boolean;
-  tone?: "primary" | "secondary" | "danger";
+  tone?: "primary" | "secondary";
   onPress: () => void;
 }) {
   const secondary = tone === "secondary";
@@ -1079,7 +1071,6 @@ function PrimaryButton({
       style={({ pressed }) => [
         styles.primaryButton,
         secondary && styles.secondaryButton,
-        tone === "danger" && styles.dangerButton,
         disabled && styles.disabled,
         pressed && styles.pressed,
       ]}
@@ -1185,14 +1176,10 @@ const styles = StyleSheet.create({
     backgroundColor: color.primary,
   },
   secondaryButton: { backgroundColor: color.primarySoft },
-  dangerButton: { backgroundColor: color.danger },
-  recording: { flexDirection: "row", alignItems: "center", gap: space.md, borderWidth: 1.5, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: 14 },
-  recDotWrap: { width: 22, height: 22, alignItems: "center", justifyContent: "center" },
-  recRing: { position: "absolute", width: 22, height: 22, borderRadius: 11 },
-  recDot: { width: 14, height: 14, borderRadius: 7 },
-  recCopy: { flex: 1, gap: 2 },
-  recTitle: { fontFamily: font.semibold, fontSize: 15, lineHeight: 21 },
-  recTime: { fontFamily: font.englishBold, fontSize: 17, fontVariant: ["tabular-nums"] },
+  listeningRow: { alignItems: "center", gap: 6, paddingVertical: 4 },
+  signal: { height: 32, flexDirection: "row", alignItems: "center", gap: 4 },
+  signalBar: { width: 4, borderRadius: radius.pill },
+  listeningText: { fontFamily: font.semibold, fontSize: 15 },
   primaryText: { fontFamily: font.display, fontSize: 17, color: color.surface },
   disabled: { opacity: 0.45 },
   pressed: { opacity: 0.75 },
