@@ -1136,13 +1136,20 @@ function HomeScreen({
         <View style={styles.homeReadyStrip}><View style={styles.homeReadyDot}/><Text style={styles.homeReadyText}>통화 준비가 됐어요. 조용한 곳이면 더 좋아요.</Text></View>
       </View>
 
-      <View style={styles.homeReviewSection}>
-        <View style={styles.homeReviewHeading}><Text style={[styles.homeSectionTitle, darkMode && darkAppStyles.strongText]}>오늘 복습할 표현</Text><Text style={[styles.homeReviewSub, darkMode && darkAppStyles.mutedText]}>지난 학습에서 헷갈렸던 것</Text></View>
-        <View style={styles.homeStatsRow}>
-          <View style={[styles.homeStatCard, darkMode && darkAppStyles.card]}><Text style={[styles.homeStatLabel,darkMode && darkAppStyles.mutedText]}>단어</Text><Text style={[styles.homeStatNumber,darkMode && darkAppStyles.strongText]}>{wordCount}<Text style={[styles.homeStatUnit,darkMode && darkAppStyles.strongText]}>개</Text></Text></View>
-          <View style={[styles.homeStatCard, darkMode && darkAppStyles.card]}><Text style={[styles.homeStatLabel,darkMode && darkAppStyles.mutedText]}>문장</Text><Text style={[styles.homeStatNumber,darkMode && darkAppStyles.strongText]}>{Math.max(0, reviewCount - wordCount)}<Text style={[styles.homeStatUnit,darkMode && darkAppStyles.strongText]}>개</Text></Text></View>
+      {/* 오늘 복습할 표현: 일기 카드가 스크롤 없이 보이도록 한 장짜리 작은 카드로 보여 준다. */}
+      <View
+        accessible
+        accessibilityLabel={`오늘 복습할 표현, 단어 ${wordCount}개, 문장 ${Math.max(0, reviewCount - wordCount)}개`}
+        style={[styles.homeReviewCard, darkMode && darkAppStyles.card]}
+      >
+        <View style={styles.homeReviewHeading}>
+          <Text style={[styles.homeSectionTitle, darkMode && darkAppStyles.strongText]}>오늘 복습할 표현</Text>
+          <View style={styles.homeReviewCounts}>
+            <Text style={[styles.homeReviewCount, darkMode && darkAppStyles.mutedText]}>단어 <Text style={[styles.homeReviewCountNumber, darkMode && darkAppStyles.strongText]}>{wordCount}</Text></Text>
+            <Text style={[styles.homeReviewCount, darkMode && darkAppStyles.mutedText]}>문장 <Text style={[styles.homeReviewCountNumber, darkMode && darkAppStyles.strongText]}>{Math.max(0, reviewCount - wordCount)}</Text></Text>
+          </View>
         </View>
-        <Text style={[styles.homeReviewDescription,darkMode && darkAppStyles.mutedText]}>{reviewCount > 0 ? `표현 ${reviewCount}개를 복습하고, 베플리의 영어 질문에 짧게 대답하면 끝나요.` : "최근 학습에서 다시 볼 단어·문장이 없어요. 새로 학습하면 여기에 모여요."}</Text>
+        <Text style={[styles.homeReviewDescription, darkMode && darkAppStyles.mutedText]}>{reviewCount > 0 ? "지난 학습에서 헷갈렸던 표현을 복습해요." : "최근 학습에서 다시 볼 단어·문장이 없어요. 새로 학습하면 여기에 모여요."}</Text>
       </View>
 
       {diaryEnabled ? (
@@ -2482,19 +2489,17 @@ const styles = StyleSheet.create({
   loginButtonText: { color: color.surface, fontSize: 17, fontWeight: "700" },
   homeAnswerButtonText: { color: color.surface, fontSize: 17, fontWeight: "700" },
   homeCardMuted: { color: "#C9CCD4", fontSize: 14, lineHeight: 22 },
-  homeReadyStrip: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 14, backgroundColor: "#30343E", paddingHorizontal: 12, paddingVertical: 10 },
+  homeReadyStrip: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 14, backgroundColor: "#30343E", paddingHorizontal: 12, paddingVertical: 8 },
   homeReadyDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#3CCB86" },
   homeReadyText: { color: color.inkInverse, fontSize: 13, flex: 1 },
-  homeReviewSection: { gap: 10 },
-  homeReviewHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", gap: 8 },
+  homeReviewCard: { borderRadius: 20, backgroundColor: color.surface, paddingHorizontal: 16, paddingVertical: 14, gap: 6 },
+  homeReviewHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  homeReviewCounts: { flexDirection: "row", gap: 12 },
+  homeReviewCount: { color: color.muted, fontSize: 14 },
+  homeReviewCountNumber: { color: color.ink, fontFamily: font.englishBold, fontSize: 20 },
   homeSectionTitle: { color: color.ink, fontSize: 17, fontWeight: "700" },
   homeReviewSub: { color: color.muted, fontSize: 12, flexShrink: 1 },
-  homeStatsRow: { flexDirection: "row", gap: 10 },
-  homeStatCard: { flex: 1, borderRadius: 20, backgroundColor: color.surface, padding: 16, gap: 2 },
-  homeStatLabel: { color: color.muted, fontSize: 14 },
-  homeStatNumber: { color: color.ink, fontFamily: font.englishBold, fontSize: 34, lineHeight: 40 },
-  homeStatUnit: { color: color.ink, fontFamily: font.body, fontSize: 15 },
-  homeReviewDescription: { color: color.muted, fontSize: 14, lineHeight: 22 },
+  homeReviewDescription: { color: color.muted, fontSize: 13, lineHeight: 19 },
   homeDiaryCard: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 20, backgroundColor: color.surface, padding: 16 },
   homeDiaryIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: color.primarySoft, alignItems: "center", justifyContent: "center" },
   homeDiaryCopy: { flex: 1, gap: 4 },
@@ -2556,15 +2561,16 @@ const styles = StyleSheet.create({
   safe: { flex: 1, width: "100%", backgroundColor: color.paper },
   safeWeb: { maxWidth: 480 },
   safeCall: { backgroundColor: color.call },
-  homeContent: { padding: 20, paddingTop: 44, paddingBottom: 20, gap: 24 },
-  homeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: space.sm, gap: space.sm },
+  // 일기 카드까지 스크롤 없이 보이도록 카드 사이를 촘촘하게 둔다.
+  homeContent: { padding: 20, paddingTop: 44, paddingBottom: 16, gap: 14 },
+  homeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: space.sm },
   brandEyebrow: { color: color.muted, fontFamily: font.body, fontSize: 13, fontWeight: "700" },
   homeTitle: { color: color.ink, fontFamily: font.display, fontSize: 27, lineHeight: 35, fontWeight: "800", letterSpacing: -0.8, marginTop: space.xs },
   myButton: { minWidth: 52, height: 44, borderRadius: radius.pill, backgroundColor: color.surface, borderWidth: 1, borderColor: color.line, alignItems: "center", justifyContent: "center", paddingHorizontal: space.md },
   myButtonText: { color: color.ink, fontSize: 14, fontWeight: "700" },
   avatarSmall: { width: 48, height: 48, borderRadius: radius.pill, backgroundColor: color.primarySoft, alignItems: "center", justifyContent: "center" },
   avatarText: { color: color.primaryStrong, fontSize: 18, fontWeight: "800" },
-  nextCallCard: { backgroundColor: color.ink, borderRadius: radius.lg, padding: space.lg, gap: space.md },
+  nextCallCard: { backgroundColor: color.ink, borderRadius: radius.lg, padding: 18, gap: 12 },
   nextCallTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   cardLabel: { color: color.muted, fontSize: 13, fontWeight: "700" },
   readyBadge: { backgroundColor: color.surfaceMuted, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
