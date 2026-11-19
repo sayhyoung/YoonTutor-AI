@@ -17,6 +17,7 @@ import {
   Text,
   TextInput,
   View,
+  Vibration,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
@@ -58,6 +59,8 @@ const MIC_MESSAGE = "마이크를 쓸 수 없어요. 앱 설정에서 마이크�
 const SAVE_ANYWAY_AFTER = 2;
 
 const PRAISES = ["Great job!", "Wonderful!", "Excellent!", "Very good!", "Perfect!"];
+// 통과했지만 빠진 단어가 있을 때(완벽하다고 하지 않는다).
+const ALMOST_PRAISES = ["Good job! Almost perfect!", "Nice! Almost perfect!"];
 
 function todayKst() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -103,7 +106,20 @@ async function preparePhoto(asset: ImagePicker.ImagePickerAsset): Promise<Picked
   return { base64: result.base64, previewUri: `data:image/jpeg;base64,${result.base64}` };
 }
 
-type Palette = { page: string; card: string; soft: string; ink: string; muted: string; accent: string; accentSoft: string; line: string };
+type Palette = {
+  page: string;
+  card: string;
+  soft: string;
+  ink: string;
+  muted: string;
+  accent: string;
+  accentSoft: string;
+  line: string;
+  // 녹음 중 표시(빨강).
+  rec: string;
+  recSoft: string;
+  recInk: string;
+};
 
 const LIGHT: Palette = {
   page: color.paper,
@@ -114,6 +130,9 @@ const LIGHT: Palette = {
   accent: color.primaryStrong,
   accentSoft: color.primarySoft,
   line: color.line,
+  rec: color.danger,
+  recSoft: "#FDECEC",
+  recInk: "#9F1F1F",
 };
 
 const DARK: Palette = {
@@ -125,6 +144,9 @@ const DARK: Palette = {
   accent: color.actionInkDark,
   accentSoft: color.actionSoftDark,
   line: color.lineInverse,
+  rec: "#F06464",
+  recSoft: "#3A1D20",
+  recInk: "#FFB4B4",
 };
 
 function TypingDots({ tint }: { tint: string }) {
@@ -150,6 +172,53 @@ function TypingDots({ tint }: { tint: string }) {
       ))}
     </View>
   );
+}
+
+// 녹음이 켜져 있음을 분명히 보여 준다: 퍼지는 빨간 점, 녹음 시간, 안내.
+function RecordingIndicator({ palette, hint }: { palette: Palette; hint: string }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    const timer = setInterval(() => setSeconds((value) => value + 1), 1000);
+    return () => {
+      loop.stop();
+      clearInterval(timer);
+    };
+  }, [pulse]);
+  const ring = {
+    opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+    transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.4] }) }],
+  };
+  const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  return (
+    <View
+      style={[styles.recording, { backgroundColor: palette.recSoft, borderColor: palette.rec }]}
+      accessibilityLiveRegion="polite"
+      accessibilityLabel={`마이크가 켜졌어요. 녹음 중이에요. ${hint}`}
+    >
+      <View style={styles.recDotWrap}>
+        <Animated.View style={[styles.recRing, { backgroundColor: palette.rec }, ring]} />
+        <View style={[styles.recDot, { backgroundColor: palette.rec }]} />
+      </View>
+      <View style={styles.recCopy}>
+        <Text style={[styles.recTitle, { color: palette.recInk }]}>마이크가 켜졌어요 · 녹음 중</Text>
+        <Text style={[styles.small, { color: palette.recInk }]}>{hint}</Text>
+      </View>
+      <Text style={[styles.recTime, { color: palette.recInk }]}>{time}</Text>
+    </View>
+  );
+}
+
+// 녹음이 시작되면 짧게 진동해 알려 준다(안드로이드).
+function buzzRecordingStart() {
+  if (Platform.OS === "android") Vibration.vibrate(40);
 }
 
 export function DiaryScreen({
@@ -302,6 +371,7 @@ export function DiaryScreen({
       try {
         stopSpeaking();
         await services.capture.start();
+        buzzRecordingStart();
         setVoice("listening");
       } catch (caught) {
         setError(caught instanceof MicUnavailableError ? MIC_MESSAGE : "녹음을 시작하지 못했어요.");
@@ -409,6 +479,7 @@ export function DiaryScreen({
         stopSpeaking();
         setPlaying(null);
         await services.capture.start();
+        buzzRecordingStart();
         setVoice("listening");
       } catch (caught) {
         setError(caught instanceof MicUnavailableError ? MIC_MESSAGE : "녹음을 시작하지 못했어요.");
@@ -427,7 +498,10 @@ export function DiaryScreen({
       setAttempts((count) => count + 1);
       const graded = repeatMatch(choice.sentenceEn, text);
       setResult(graded);
-      if (graded.passed) play(PRAISES[(attempts + choice.sentenceEn.length) % PRAISES.length]!);
+      if (graded.passed) {
+        const praises = graded.words.every((word) => word.said) ? PRAISES : ALMOST_PRAISES;
+        play(praises[(attempts + choice.sentenceEn.length) % praises.length]!);
+      }
     } catch {
       setError("말한 내용을 알아듣지 못했어요. 다시 말해 볼까요?");
     } finally {
@@ -639,6 +713,12 @@ export function DiaryScreen({
                   onPress={choosePhoto}
                 />
               </View>
+              {voice === "listening" ? (
+                <RecordingIndicator
+                  palette={palette}
+                  hint={noteLang === "ko" ? "오늘 있었던 일을 말한 뒤 ‘다 말했어요’를 눌러요." : "영어로 말한 뒤 ‘다 말했어요’를 눌러요."}
+                />
+              ) : null}
               {photo ? (
                 <View style={[styles.photoCard, card]}>
                   <Image source={{ uri: photo.previewUri }} style={styles.photo} accessibilityLabel="고른 사진" />
@@ -766,7 +846,10 @@ export function DiaryScreen({
 
   if (step === "practice" && choice) {
     const passed = Boolean(result?.passed);
+    const perfect = passed && Boolean(result?.words.every((word) => word.said));
     const canSaveAnyway = !passed && (attempts >= SAVE_ANYWAY_AFTER || !canSpeak);
+    const recording = voice === "listening";
+    const canSave = passed || canSaveAnyway;
     return (
       <View style={[styles.screen, { backgroundColor: palette.page }]}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -794,15 +877,26 @@ export function DiaryScreen({
             </Pressable>
           </View>
 
-          {heard ? (
+          {recording ? (
+            <RecordingIndicator palette={palette} hint="문장을 따라 말한 뒤 ‘다 말했어요’를 눌러요." />
+          ) : heard ? (
             <View style={[styles.card, card, passed && { borderColor: color.success }]} accessibilityLiveRegion="polite">
               <View style={styles.feedbackRow}>
                 <Image source={passed ? befly.review.correct : befly.review.retry} style={styles.feedbackAvatar} accessible={false} />
                 <View style={styles.feedbackCopy}>
                   <Text style={[styles.feedbackTitle, { color: passed ? color.success : palette.ink }]}>
-                    {passed ? "잘했어요! 완벽하게 따라 말했어요." : "거의 다 왔어요! 주황색 단어를 다시 들어 봐요."}
+                    {perfect
+                      ? "완벽해요! 끝까지 정확하게 따라 말했어요."
+                      : passed
+                        ? "잘했어요! 거의 완벽했어요."
+                        : "거의 다 왔어요! 주황색 단어를 다시 들어 봐요."}
                   </Text>
-                  <Text style={[styles.small, muted]}>이렇게 들었어요: {heard}</Text>
+                  {passed && !perfect ? (
+                    <Text style={[styles.small, muted]}>주황색 단어만 다시 들어 보면 완벽해요. 다시 녹음해도 좋아요.</Text>
+                  ) : null}
+                  <Text style={[styles.small, muted]}>
+                    {attempts}번째로 말한 문장: {heard}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -810,14 +904,19 @@ export function DiaryScreen({
           {errorBox}
         </ScrollView>
         <BottomBar palette={palette}>
-          {passed || canSaveAnyway ? (
-            <PrimaryButton label={saving ? "저장하는 중…" : "일기장에 저장하기"} icon="book" disabled={saving} onPress={() => void saveDiary()} />
-          ) : null}
-          {!passed && canSpeak ? (
+          {canSave && !recording ? (
             <PrimaryButton
-              tone={canSaveAnyway ? "secondary" : "primary"}
-              label={voice === "listening" ? "다 말했어요" : voice === "transcribing" ? "알아듣는 중…" : heard ? "다시 말하기" : "따라 말하기"}
-              icon={voice === "listening" ? "stop" : "mic"}
+              label={saving ? "저장하는 중…" : "일기장에 저장하기"}
+              icon="book"
+              disabled={saving || voice !== "idle"}
+              onPress={() => void saveDiary()}
+            />
+          ) : null}
+          {canSpeak ? (
+            <PrimaryButton
+              tone={recording ? "danger" : canSave ? "secondary" : "primary"}
+              label={recording ? "다 말했어요" : voice === "transcribing" ? "알아듣는 중…" : heard ? "다시 녹음하기" : "따라 말하기"}
+              icon={recording ? "stop" : "mic"}
               disabled={voice === "transcribing" || saving}
               onPress={() => void togglePracticeVoice()}
             />
@@ -967,7 +1066,7 @@ function PrimaryButton({
   label: string;
   icon: "pencil" | "send" | "mic" | "stop" | "book";
   disabled?: boolean;
-  tone?: "primary" | "secondary";
+  tone?: "primary" | "secondary" | "danger";
   onPress: () => void;
 }) {
   const secondary = tone === "secondary";
@@ -980,6 +1079,7 @@ function PrimaryButton({
       style={({ pressed }) => [
         styles.primaryButton,
         secondary && styles.secondaryButton,
+        tone === "danger" && styles.dangerButton,
         disabled && styles.disabled,
         pressed && styles.pressed,
       ]}
@@ -1085,6 +1185,14 @@ const styles = StyleSheet.create({
     backgroundColor: color.primary,
   },
   secondaryButton: { backgroundColor: color.primarySoft },
+  dangerButton: { backgroundColor: color.danger },
+  recording: { flexDirection: "row", alignItems: "center", gap: space.md, borderWidth: 1.5, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: 14 },
+  recDotWrap: { width: 22, height: 22, alignItems: "center", justifyContent: "center" },
+  recRing: { position: "absolute", width: 22, height: 22, borderRadius: 11 },
+  recDot: { width: 14, height: 14, borderRadius: 7 },
+  recCopy: { flex: 1, gap: 2 },
+  recTitle: { fontFamily: font.semibold, fontSize: 15, lineHeight: 21 },
+  recTime: { fontFamily: font.englishBold, fontSize: 17, fontVariant: ["tabular-nums"] },
   primaryText: { fontFamily: font.display, fontSize: 17, color: color.surface },
   disabled: { opacity: 0.45 },
   pressed: { opacity: 0.75 },

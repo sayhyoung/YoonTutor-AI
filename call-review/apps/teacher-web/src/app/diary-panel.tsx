@@ -1,8 +1,8 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, Fragment, useCallback, useEffect, useState } from "react";
 
-import { DIARY_LEVEL_LABELS, DIARY_MOODS, type DiaryEntry } from "@yoon-call/shared";
+import { DIARY_LEVEL_LABELS, DIARY_MOODS, type DiaryEntry, repeatMatch } from "@yoon-call/shared";
 
 import { formatDateTime } from "./format";
 import type { SaveStatus } from "./schedule-editor";
@@ -122,6 +122,11 @@ function DiaryItem({
   const [status, setStatus] = useState<SaveStatus | null>(null);
   const text = comment.replace(/\s+/g, " ").trim();
   const mood = DIARY_MOODS.find((item) => item.key === entry.mood);
+  // 따라 말하기: 마지막으로 말한 문장과 횟수. 학생 앱과 같은 채점으로 빠뜨린 단어에 밑줄을 긋는다.
+  const { attempts, passed } = entry.practice;
+  const heard = entry.practice.heard?.trim() || null;
+  const graded = heard ? repeatMatch(entry.sentenceEn, heard) : null;
+  const missed = graded ? graded.words.filter((word) => !word.said).length : 0;
 
   async function send(event: FormEvent) {
     event.preventDefault();
@@ -157,12 +162,33 @@ function DiaryItem({
         <strong>{dateLabel(entry.date)}</strong>
         {mood ? <span title={mood.label}>{mood.emoji} {mood.label}</span> : null}
         <span className="diary-chip">{DIARY_LEVEL_LABELS[entry.level]}</span>
-        <span className={`diary-chip ${entry.practice.passed ? "ok" : ""}`}>
-          {entry.practice.passed ? "따라 말하기 완료" : entry.practice.attempts > 0 ? "따라 말하기 연습" : "따라 말하기 안 함"}
+        <span className={`diary-chip ${passed ? "ok" : ""}`}>
+          {passed ? "따라 말하기 완료" : attempts > 0 ? "따라 말하기 연습" : "따라 말하기 안 함"}
+          {attempts > 0 ? ` · ${attempts}회` : ""}
         </span>
       </div>
-      <p className="diary-sentence" lang="en">{entry.sentenceEn}</p>
+      <p className="diary-sentence" lang="en">
+        {graded && missed > 0
+          ? graded.words.map((word, index) => (
+              <Fragment key={index}>
+                {word.said ? word.text : <mark className="diary-missed" title="빠뜨리거나 다르게 말한 단어">{word.text}</mark>}
+                {index < graded.words.length - 1 ? " " : ""}
+              </Fragment>
+            ))
+          : entry.sentenceEn}
+      </p>
       <p className="diary-meaning">{entry.meaningKo}</p>
+      {heard ? (
+        <p className="diary-heard">
+          <span>{attempts > 1 ? `학습자가 말한 문장 (${attempts}번 중 마지막)` : "학습자가 말한 문장"}</span>
+          <q lang="en">{heard}</q>
+          {missed > 0 ? (
+            <small>위 문장에 밑줄 친 단어는 빠뜨리거나 다르게 말했어요.</small>
+          ) : (
+            <small className="ok">모든 단어를 정확하게 따라 말했어요.</small>
+          )}
+        </p>
+      ) : null}
       <p className="diary-note">
         <span>{SOURCE_LABELS[entry.source]}</span>
         {entry.noteKo ? ` · “${entry.noteKo}”` : ""}
