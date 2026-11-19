@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#221B1F2A">
+  <item>
+    <shape android:shape="oval">
+      <solid android:color="@color/call_ringer_surface_muted" />
+    </shape>
+  </item>
+</ripple>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 잠금 화면 수신 화면(IncomingCallActivity). 색은 앱의 밝은 수신 화면(App.tsx IncomingScreen)과 맞춘다. -->
+<resources>
+  <color name="call_ringer_paper">#F6F3EE</color>
+  <color name="call_ringer_surface">#FFFFFF</color>
+  <color name="call_ringer_surface_muted">#EFEAE2</color>
+  <color name="call_ringer_line">#E3DDD3</color>
+  <color name="call_ringer_ink">#1B1F2A</color>
+  <color name="call_ringer_muted">#545A68</color>
+  <color name="call_ringer_befly">#7B4A2E</color>
+  <color name="call_ringer_befly_soft">#F3E7D9</color>
+  <color name="call_ringer_halo">#F7EDC9</color>
+  <color name="call_ringer_ripple">#E2C9AE</color>
+  <color name="call_ringer_success">#1E7F55</color>
+
+  <string name="call_ringer_kicker">윤선생 AI 전화관리</string>
+  <string name="call_ringer_title">관리 전화가 왔어요</string>
+  <string name="call_ringer_name">베플리 선생님</string>
+  <string name="call_ringer_avatar_label">헤드셋을 쓰고 손 흔드는 베플리 선생님</string>
+  <string name="call_ringer_greeting_en">Hi! Let’s talk!</string>
+  <string name="call_ringer_greeting_ko">오늘 배운 표현으로 짧게 이야기해 볼까요?</string>
+  <string name="call_ringer_later">나중에</string>
+  <string name="call_ringer_answer">전화받기</string>
+
+  <!-- 시작 창부터 배경색이 칠해지도록 windowBackground를 준다(앱 본체를 기다리는 검은 화면이 없게). -->
+  <style name="CallRingerIncomingTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+    <item name="android:windowBackground">@color/call_ringer_paper</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:navigationBarColor">@android:color/transparent</item>
+    <item name="android:windowShowWallpaper">false</item>
+  </style>
+</resources>

@@ -16,5 +16,17 @@
     <receiver
       android:name="expo.modules.callringer.CallAlertReceiver"
       android:exported="false" />
+    <!-- 잠금 화면 수신 화면(전체 화면 알림). 잠금 화면 위 표시·화면 켜기를 여기서 선언해야
+         삼성 One UI 7 등에서도 화면이 그려진다(앱 화면에서 코드로 켜면 검은 화면만 보였다). -->
+    <activity
+      android:name="expo.modules.callringer.IncomingCallActivity"
+      android:excludeFromRecents="true"
+      android:exported="false"
+      android:launchMode="singleInstance"
+      android:screenOrientation="portrait"
+      android:showWhenLocked="true"
+      android:taskAffinity="expo.modules.callringer.incoming"
+      android:theme="@style/CallRingerIncomingTheme"
+      android:turnScreenOn="true" />
   </application>
 </manifest>

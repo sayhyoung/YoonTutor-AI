@@ -84,6 +84,13 @@ object CallAlerts {
     return PendingIntent.getActivity(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
   }
 
+  // 잠금 화면·화면 꺼짐일 때 띄우는 네이티브 수신 화면(IncomingCallActivity).
+  private fun incomingScreen(context: Context): PendingIntent {
+    val intent = Intent(context, IncomingCallActivity::class.java)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION)
+    return PendingIntent.getActivity(context, 10, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+  }
+
   private fun broadcast(context: Context, action: String, requestCode: Int): PendingIntent {
     val intent = Intent(context, CallAlertReceiver::class.java).setAction(action)
     return PendingIntent.getBroadcast(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -114,7 +121,8 @@ object CallAlerts {
       .setOngoing(true)
       .setAutoCancel(false)
       .setTimeoutAfter(RING_TIMEOUT_MS)
-      .setFullScreenIntent(openApp(context, "yooncall://incoming-call", 1), true)
+      // 잠금 화면에서는 네이티브 수신 화면이 바로 뜬다. 폰을 쓰는 중이면 위쪽 알림으로 오고, 누르면 앱 수신 화면.
+      .setFullScreenIntent(incomingScreen(context), true)
       .setContentIntent(openApp(context, "yooncall://incoming-call", 2))
       .addAction(0, "거절", broadcast(context, ACTION_DECLINE, 3))
       .addAction(0, "받기", openApp(context, "yooncall://incoming-call?answer=1", 4))
@@ -130,6 +138,12 @@ object CallAlerts {
     cancel(context, INCOMING_ID)
     val alarm = context.getSystemService(AlarmManager::class.java)
     alarm?.cancel(broadcast(context, ACTION_RING_TIMEOUT, 5))
+    IncomingCallActivity.close()
+  }
+
+  // 수신 화면에서 전화받기를 누른 뒤 앱이 켜지는 동안 벨소리만 멈춘다('울리는 중' 상태와 시간 초과는 그대로).
+  fun silence(context: Context) {
+    cancel(context, INCOMING_ID)
   }
 
   fun isRinging(context: Context) = prefs(context).getBoolean(KEY_RINGING, false)
