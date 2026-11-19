@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDiaryInput,
+  isEnglishNote,
   kstDate,
   MAX_PHOTO_BASE64,
   parseDiaryComment,
@@ -84,6 +85,29 @@ describe("parseDiarySuggestions", () => {
       ],
     });
     expect(parseDiarySuggestions(raw, request)?.map((item) => item.sentenceEn)).toEqual(["I ate cake.", "I ate a big cake with my mom."]);
+  });
+
+  it("marks the student's own corrected sentence only when the note was English", () => {
+    const raw = JSON.stringify({
+      suggestions: [
+        { level: "easy", sentenceEn: "I ate tteokbokki.", meaningKo: "떡볶이를 먹었다.", mine: true },
+        { level: "standard", sentenceEn: "I ate tteokbokki with my friend.", meaningKo: "친구와 떡볶이를 먹었다.", mine: true },
+        { level: "challenge", sentenceEn: "After school, I ate spicy tteokbokki with my friend.", meaningKo: "학교 끝나고 친구와 매운 떡볶이를 먹었다.", mine: false },
+      ],
+    });
+    const english = parseDiarySuggestions(raw, { ...request, noteKo: "i eat tteokbokki with friend" });
+    expect(english?.map((item) => item.mine)).toEqual([true, false, false]);
+    expect(parseDiarySuggestions(raw, request)?.every((item) => !item.mine)).toBe(true);
+  });
+});
+
+describe("isEnglishNote", () => {
+  it("treats a note with Latin letters and no Hangul as the student's English try", () => {
+    expect(isEnglishNote("I played soccer.")).toBe(true);
+    expect(isEnglishNote("오늘 soccer 했어")).toBe(false);
+    expect(isEnglishNote("ㅋㅋ")).toBe(false);
+    expect(isEnglishNote("123")).toBe(false);
+    expect(isEnglishNote(null)).toBe(false);
   });
 });
 

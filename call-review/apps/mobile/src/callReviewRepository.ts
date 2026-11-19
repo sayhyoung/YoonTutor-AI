@@ -155,7 +155,7 @@ export const previewCallReviewRepository: CallReviewRepository = {
   async suggestDiary(body) {
     // 서버 AI 대신 기분·사진 여부로 고른 예시 문장(화면 확인용). 기다리는 화면도 보이게 잠시 쉰다.
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    return previewDiarySuggestions(body.mood ?? null, Boolean(body.photo));
+    return previewDiarySuggestions(body.mood ?? null, Boolean(body.photo), body.noteKo ?? null);
   },
   async saveDiary(payload) {
     const date = previewToday();

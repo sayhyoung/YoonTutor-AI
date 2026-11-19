@@ -1,4 +1,4 @@
-// 영어 한 줄 일기. 일기장(오늘·지난 일기, 선생님 댓글) → 쓰기(한국어 글·말, 사진, 기분) →
+// 영어 한 줄 일기. 일기장(오늘·지난 일기, 선생님 댓글) → 쓰기(한글이나 영어로 글·말, 사진, 기분) →
 // 추천 문장 고르기(쉬움·보통·도전) → 듣고 따라 말하기 → 저장. 일기는 담당 선생님도 본다.
 // 사진은 기기에서 줄여 문장 추천 요청에만 보내고, 기기에 남은 사본은 바로 지운다(서버도 저장하지 않음).
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -68,6 +68,11 @@ function dateLabel(date: string) {
   if (!year || !month || !day) return date;
   const weekday = "일월화수목금토"[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
   return `${month}월 ${day}일 ${weekday}요일`;
+}
+
+// 대소문자·문장부호를 뺀 비교용 문장(내가 쓴 영어와 고친 문장이 같은지 볼 때).
+function sentenceKey(text: string) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function moodOf(key: DiaryMood | null) {
@@ -170,6 +175,8 @@ export function DiaryScreen({
   const [step, setStep] = useState<Step>("book");
   const [note, setNote] = useState("");
   const [noteBySpeech, setNoteBySpeech] = useState(false);
+  // 한글로 쓸지 영어로 쓸지(말로 하기 언어·안내 문구). 영어로 쓰면 베플리가 고친 문장을 '내 문장'으로 보여 준다.
+  const [noteLang, setNoteLang] = useState<"ko" | "en">("ko");
   const [mood, setMood] = useState<DiaryMood | null>(null);
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -287,7 +294,7 @@ export function DiaryScreen({
     setStep("write");
   };
 
-  // ---- 쓰기: 한국어로 말하기 ----
+  // ---- 쓰기: 한글·영어로 말하기 ----
   const toggleNoteVoice = async () => {
     if (!services.transcribe || voice === "transcribing") return;
     setError(null);
@@ -304,7 +311,7 @@ export function DiaryScreen({
     setVoice("transcribing");
     try {
       const uri = await services.capture.stop();
-      const text = uri ? (await services.transcribe(uri, "ko")).trim() : "";
+      const text = uri ? (await services.transcribe(uri, noteLang)).trim() : "";
       if (!text) setError("잘 못 들었어요. 다시 말해 볼까요?");
       else {
         setNote((current) => (current ? `${current} ${text}` : text).slice(0, MAX_NOTE));
@@ -518,7 +525,7 @@ export function DiaryScreen({
               <Image source={befly.home} style={styles.introAvatar} accessibilityLabel="베플리 선생님" />
               <View style={styles.introCopy}>
                 <Text style={[styles.introTitle, ink]}>오늘 있었던 일을 영어 한 줄로 남겨요</Text>
-                <Text style={[styles.body, muted]}>한국어로 쓰거나 말하면, 베플리가 영어 문장을 추천해 줘요.</Text>
+                <Text style={[styles.body, muted]}>한글이나 영어로 쓰거나 말하면, 베플리가 영어 문장을 추천해 줘요.</Text>
               </View>
             </View>
           )}
@@ -568,7 +575,31 @@ export function DiaryScreen({
           ) : (
             <>
               <Text style={[styles.prompt, ink]}>오늘 어떤 일이 있었어요?</Text>
-              <Text style={[styles.body, muted]}>한국어로 한 줄 써 주세요. 말로 하거나 사진을 올려도 돼요.</Text>
+              <View style={[styles.langRow, { backgroundColor: palette.soft }]} accessibilityRole="radiogroup" accessibilityLabel="쓸 말">
+                {(["ko", "en"] as const).map((lang) => {
+                  const active = noteLang === lang;
+                  return (
+                    <Pressable
+                      key={lang}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: active, disabled: voice !== "idle" }}
+                      disabled={voice !== "idle"}
+                      onPress={() => {
+                        setNoteLang(lang);
+                        setError(null);
+                      }}
+                      style={({ pressed }) => [styles.langOption, active && { backgroundColor: palette.card }, pressed && styles.pressed]}
+                    >
+                      <Text style={[styles.langText, active ? { color: palette.accent } : muted]}>{lang === "ko" ? "한글로 쓰기" : "영어로 쓰기"}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[styles.body, muted]}>
+                {noteLang === "ko"
+                  ? "한 줄로 써 주세요. 말로 하거나 사진을 올려도 돼요."
+                  : "영어로 한 줄 써 보세요. 틀려도 괜찮아요, 베플리가 고쳐 줘요."}
+              </Text>
               <View style={[styles.inputCard, card]}>
                 <TextInput
                   accessibilityLabel="오늘 있었던 일"
@@ -578,7 +609,9 @@ export function DiaryScreen({
                     setNote(value);
                     setError(null);
                   }}
-                  placeholder="예) 학교 끝나고 친구랑 떡볶이를 먹었어"
+                  autoCorrect={noteLang === "ko"}
+                  spellCheck={noteLang === "ko"}
+                  placeholder={noteLang === "ko" ? "예) 학교 끝나고 친구랑 떡볶이를 먹었어" : "e.g. I ate tteokbokki with my friend."}
                   placeholderTextColor={palette.muted}
                   style={[styles.input, ink]}
                   value={note}
@@ -592,7 +625,7 @@ export function DiaryScreen({
                   <ToolButton
                     palette={palette}
                     icon={voice === "listening" ? "stop" : "mic"}
-                    label={voice === "listening" ? "다 말했어요" : voice === "transcribing" ? "알아듣는 중…" : "말로 하기"}
+                    label={voice === "listening" ? "다 말했어요" : voice === "transcribing" ? "알아듣는 중…" : noteLang === "ko" ? "말로 하기" : "영어로 말하기"}
                     active={voice === "listening"}
                     disabled={voice === "transcribing"}
                     onPress={() => void toggleNoteVoice()}
@@ -673,15 +706,21 @@ export function DiaryScreen({
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {header}
           <Text style={[styles.prompt, ink]}>마음에 드는 문장을 골라요</Text>
-          <Text style={[styles.body, muted]}>스피커를 누르면 원어민 음성으로 들을 수 있어요.</Text>
+          <Text style={[styles.body, muted]}>
+            {suggestions.some((item) => item.mine)
+              ? "‘내 문장’은 내가 쓴 영어를 베플리가 고친 거예요. 스피커를 누르면 원어민 음성으로 들을 수 있어요."
+              : "스피커를 누르면 원어민 음성으로 들을 수 있어요."}
+          </Text>
           {suggestions.map((item, index) => {
             const active = selected === index;
+            const written = note.replace(/\s+/g, " ").trim();
+            const changed = Boolean(item.mine && written) && sentenceKey(written) !== sentenceKey(item.sentenceEn);
             return (
               <Pressable
                 key={`${item.level}-${item.sentenceEn}`}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: active }}
-                accessibilityLabel={`${DIARY_LEVEL_LABELS[item.level]} 문장, ${item.sentenceEn}, ${item.meaningKo}`}
+                accessibilityLabel={`${item.mine ? "내 문장, " : ""}${DIARY_LEVEL_LABELS[item.level]} 문장, ${item.sentenceEn}, ${item.meaningKo}`}
                 onPress={() => setSelected(index)}
                 style={({ pressed }) => [
                   styles.card,
@@ -692,6 +731,11 @@ export function DiaryScreen({
               >
                 <View style={styles.rowBetween}>
                   <View style={styles.levelRow}>
+                    {item.mine ? (
+                      <View style={[styles.levelChip, { backgroundColor: palette.accent }]}>
+                        <Text style={[styles.levelText, { color: palette.card }]}>내 문장</Text>
+                      </View>
+                    ) : null}
                     <View style={[styles.levelChip, { backgroundColor: active ? palette.card : palette.soft }]}>
                       <Text style={[styles.levelText, { color: palette.accent }]}>{DIARY_LEVEL_LABELS[item.level]}</Text>
                     </View>
@@ -703,6 +747,11 @@ export function DiaryScreen({
                 </View>
                 <Text style={[styles.sentence, ink]}>{item.sentenceEn}</Text>
                 <Text style={[styles.body, muted]}>{item.meaningKo}</Text>
+                {changed ? (
+                  <Text style={[styles.small, muted]}>
+                    내가 쓴 문장: <Text style={styles.written}>{written}</Text>
+                  </Text>
+                ) : null}
               </Pressable>
             );
           })}
@@ -978,6 +1027,10 @@ const styles = StyleSheet.create({
   input: { fontFamily: font.body, fontSize: 17, lineHeight: 25, minHeight: 76, textAlignVertical: "top", padding: 0 },
   counter: { fontFamily: font.body, fontSize: 12, alignSelf: "flex-end" },
   toolRow: { flexDirection: "row", gap: space.sm },
+  langRow: { flexDirection: "row", borderRadius: radius.pill, padding: 4, gap: 4 },
+  langOption: { flex: 1, minHeight: 40, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
+  langText: { fontFamily: font.semibold, fontSize: 14 },
+  written: { fontFamily: font.english, textDecorationLine: "line-through" },
   toolButton: {
     flex: 1,
     flexDirection: "row",

@@ -308,7 +308,8 @@ export function ttsSource(token: string, text: string, language: "en" | "ko") {
 
 // ---- 영어 한 줄 일기 ----
 
-export type DiarySuggestion = { level: DiaryLevel; sentenceEn: string; meaningKo: string; usedWord: string | null };
+// mine: 학생이 영어로 직접 쓴 문장을 베플리가 고친 것(영어로 썼을 때 하나).
+export type DiarySuggestion = { level: DiaryLevel; sentenceEn: string; meaningKo: string; usedWord: string | null; mine?: boolean };
 
 // 사진은 기기에서 줄인 JPEG(base64). 서버는 문장을 만드는 데만 쓰고 저장하지 않는다.
 export type DiarySuggestBody = {

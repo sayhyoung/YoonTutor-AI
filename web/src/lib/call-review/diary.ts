@@ -38,7 +38,13 @@ export type DiarySuggestRequest = {
   learnedWords: string[];
 };
 
-export type DiarySuggestion = { level: DiaryLevel; sentenceEn: string; meaningKo: string; usedWord: string | null };
+// mine: 학생이 영어로 직접 쓴 문장을 고친 것(영어로 썼을 때 하나만).
+export type DiarySuggestion = { level: DiaryLevel; sentenceEn: string; meaningKo: string; usedWord: string | null; mine: boolean };
+
+// 학생 메모는 한국어나 영어로 쓴다. 한글이 없고 알파벳이 있으면 학생이 직접 써 본 영어 문장으로 본다.
+export function isEnglishNote(note: string | null): boolean {
+  return Boolean(note && !/[\u3131-\u318E\uAC00-\uD7A3]/.test(note) && /[A-Za-z]/.test(note));
+}
 
 export type DiaryPractice = { attempts: number; passed: boolean; heard?: string };
 export type DiaryTeacherComment = { body: string; teacherName: string | null; teacherNo: string; at: string };
@@ -139,17 +145,19 @@ export function parseDiarySuggestRequest(
 }
 
 const SUGGEST_JSON =
-  '{"suggestions": [3 objects in this order: {"level": "easy" | "standard" | "challenge", "sentenceEn": string, "meaningKo": string, "usedWord": string | null}]}';
+  '{"suggestions": [3 objects in this order: {"level": "easy" | "standard" | "challenge", "sentenceEn": string, "meaningKo": string, "usedWord": string | null, "mine": boolean}]}';
 
 export function buildDiaryInstructions(): string {
   return [
     "You help a Korean elementary or middle school student keep a one-line English diary.",
-    "From what the student tells you about today (a short Korean note, a mood, and/or a photo), write 3 diary sentences the student could write about their own day, in the first person, past tense for what happened:",
+    "From what the student tells you about today (a short note in Korean or English, a mood, and/or a photo), write 3 diary sentences the student could write about their own day, in the first person, past tense for what happened:",
     '- "easy": 4-7 words, CEFR A1, very common words.',
     '- "standard": 6-10 words, CEFR A1-A2.',
     '- "challenge": 8-14 words, CEFR A2-B1, may join two ideas with and, because or so.',
     "Each is exactly ONE natural sentence that sounds like a real diary line about the student's experience or feeling. Stay faithful to what the student said; do not invent big facts (small natural details are fine).",
     'With a photo, write about the student\'s experience with what is in it (e.g. "I ate a big chocolate cake with my family."), never a plain description of the picture ("This is a cake."). Never mention or guess names, faces, school names, addresses or other personal details from the photo or note.',
+    'If the note is written in English, it is the student\'s own try at the diary line. Make the suggestion whose level is closest to it a corrected version of the student\'s sentence: keep their idea and their words, and fix only what is wrong (grammar, tense, spelling, word choice). If it is already correct, keep it as it is. Set "mine": true on that one only. The other two are different-level sentences about the same thing.',
+    'If the note is in Korean or there is no note, set "mine": false on all three.',
     'If learned words are given, use ONE of them in a sentence only when it fits naturally and put it in "usedWord" (otherwise null).',
     'For each sentence write its natural Korean meaning in plain diary style (e.g. "오늘 가족과 큰 초콜릿 케이크를 먹었다.") in "meaningKo".',
     "If the student seems sad or upset, keep the sentences gentle and honest.",
@@ -162,7 +170,7 @@ export function buildDiaryInstructions(): string {
 
 export function buildDiaryInput(request: DiarySuggestRequest): OpenAiContentPart[] {
   const lines = [
-    `Student's note (Korean): ${request.noteKo ? JSON.stringify(request.noteKo) : "(none — use the photo)"}`,
+    `Student's note (${isEnglishNote(request.noteKo) ? "English, the student's own try" : "Korean"}): ${request.noteKo ? JSON.stringify(request.noteKo) : "(none — use the photo)"}`,
     `Mood: ${request.mood ? DIARY_MOODS[request.mood] : "(not given)"}`,
     `Photo: ${request.photo ? "attached" : "none"}`,
     `Learned words: ${request.learnedWords.length ? request.learnedWords.join(", ") : "(none)"}`,
@@ -196,6 +204,8 @@ export function parseDiarySuggestions(raw: string, request: DiarySuggestRequest)
   if (!body || !Array.isArray(body.suggestions)) return null;
   if (body.suggestions.length === 0) return [];
   const learned = new Map(request.learnedWords.map((word) => [word.toLowerCase(), word]));
+  // 학생이 영어로 썼을 때만 '내 문장'을 하나 표시한다.
+  let mineLeft = isEnglishNote(request.noteKo);
   const seen = new Set<string>();
   const suggestions: DiarySuggestion[] = [];
   (body.suggestions as unknown[]).slice(0, 3).forEach((value, index) => {
@@ -206,7 +216,9 @@ export function parseDiarySuggestions(raw: string, request: DiarySuggestRequest)
     seen.add(sentenceKey(sentenceEn));
     const word = typeof item.usedWord === "string" ? learned.get(item.usedWord.trim().toLowerCase()) : undefined;
     const usedWord = word && sentenceKey(sentenceEn).includes(sentenceKey(word)) ? word : null;
-    suggestions.push({ level: isLevel(item.level) ? item.level : DIARY_LEVELS[index]!, sentenceEn, meaningKo, usedWord });
+    const mine = mineLeft && item.mine === true;
+    if (mine) mineLeft = false;
+    suggestions.push({ level: isLevel(item.level) ? item.level : DIARY_LEVELS[index]!, sentenceEn, meaningKo, usedWord, mine });
   });
   if (suggestions.length < 2) return null;
   const order = (level: DiaryLevel) => DIARY_LEVELS.indexOf(level);

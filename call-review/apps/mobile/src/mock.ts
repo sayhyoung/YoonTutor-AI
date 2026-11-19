@@ -181,7 +181,20 @@ export const previewDiary: DiaryEntry[] = [
 ];
 
 // 프리뷰 문장 추천(서버 AI 대신). 기분·사진 여부로 고른다.
-export function previewDiarySuggestions(mood: DiaryMood | null, photo: boolean): DiarySuggestion[] {
+export function previewDiarySuggestions(mood: DiaryMood | null, photo: boolean, note: string | null = null): DiarySuggestion[] {
+  // 영어로 직접 쓴 메모면 그 문장을 고친 것을 '내 문장'으로 넣는다.
+  if (note && !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(note) && /[A-Za-z]/.test(note)) {
+    return [
+      { level: "easy", sentenceEn: "I ate tteokbokki.", meaningKo: "떡볶이를 먹었다.", usedWord: null },
+      { level: "standard", sentenceEn: "I ate tteokbokki with my friend after school.", meaningKo: "학교 끝나고 친구와 떡볶이를 먹었다.", usedWord: null, mine: true },
+      {
+        level: "challenge",
+        sentenceEn: "After school, I ate spicy tteokbokki with my friend, and it was delicious.",
+        meaningKo: "학교 끝나고 친구와 매운 떡볶이를 먹었는데 정말 맛있었다.",
+        usedWord: null,
+      },
+    ];
+  }
   if (photo) {
     return [
       { level: "easy", sentenceEn: "I ate a big cake.", meaningKo: "큰 케이크를 먹었다.", usedWord: null },
