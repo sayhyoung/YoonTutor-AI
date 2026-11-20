@@ -26,6 +26,14 @@ export class ApiError extends Error {
   }
 }
 
+// 서버에 닿지 못한 오류(인터넷 끊김·불안정, status 0). 말하기 실패를 '못 알아들었어요'로 보여 주면
+// 아이는 발음 탓인 줄 알고 같은 말을 되풀이하므로, 이때는 연결 안내를 따로 보여 준다.
+export function isConnectionError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 0;
+}
+
+export const CONNECTION_TROUBLE = "인터넷 연결이 불안정해요.";
+
 // 토큰은 기기 보안 저장소에 둔다. 웹 프리뷰에는 보안 저장소가 없어 localStorage를 쓴다.
 export const tokenStorage = {
   async get(): Promise<string | null> {

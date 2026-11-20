@@ -33,7 +33,14 @@ import {
   type RepeatResult,
 } from "@yoon-call/shared";
 
-import { ApiError, type DiarySavePayload, type DiarySuggestBody, type DiarySuggestion } from "./callReviewApi";
+import {
+  ApiError,
+  CONNECTION_TROUBLE,
+  type DiarySavePayload,
+  type DiarySuggestBody,
+  type DiarySuggestion,
+  isConnectionError,
+} from "./callReviewApi";
 import { befly } from "./befly";
 import { Icon } from "./icons";
 import { color, font, radius, space } from "./theme";
@@ -403,8 +410,12 @@ export function DiaryScreen({
         setNote((current) => (current ? `${current} ${text}` : text).slice(0, MAX_NOTE));
         setNoteBySpeech(true);
       }
-    } catch {
-      setError("말한 내용을 알아듣지 못했어요. 글자로 써도 돼요.");
+    } catch (caught) {
+      setError(
+        isConnectionError(caught)
+          ? `${CONNECTION_TROUBLE} 잠시 뒤 다시 말하거나 글자로 써 주세요.`
+          : "말한 내용을 알아듣지 못했어요. 글자로 써도 돼요.",
+      );
     } finally {
       setVoice("idle");
     }
@@ -518,8 +529,12 @@ export function DiaryScreen({
         const praises = graded.words.every((word) => word.said) ? PRAISES : ALMOST_PRAISES;
         play(praises[(attempts + choice.sentenceEn.length) % praises.length]!);
       }
-    } catch {
-      setError("말한 내용을 알아듣지 못했어요. 다시 말해 볼까요?");
+    } catch (caught) {
+      setError(
+        isConnectionError(caught)
+          ? `${CONNECTION_TROUBLE} 잠시 뒤 다시 말해 볼까요?`
+          : "말한 내용을 알아듣지 못했어요. 다시 말해 볼까요?",
+      );
     } finally {
       setVoice("idle");
     }

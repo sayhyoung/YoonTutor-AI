@@ -16,7 +16,14 @@ import {
   reviewHint,
 } from "@yoon-call/shared";
 
-import type { AnswerCheckRequest, FreeTalkTurnRequest, GeneratedQuestion, GeneratedSupport } from "./callReviewApi";
+import {
+  type AnswerCheckRequest,
+  CONNECTION_TROUBLE,
+  type FreeTalkTurnRequest,
+  type GeneratedQuestion,
+  type GeneratedSupport,
+  isConnectionError,
+} from "./callReviewApi";
 
 export type VoiceState = "idle" | "preparing" | "listening" | "transcribing" | "review";
 export type FinishReason = "completed" | "stopped" | "no-response";
@@ -422,7 +429,11 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       console.warn("[voice] 음성 인식 실패", error);
       if (current !== generation.current) return;
       setVoiceState("idle");
-      setVoiceError("말한 내용을 알아듣지 못했어요. 다시 말하거나 글자로 답해 주세요.");
+      setVoiceError(
+        isConnectionError(error)
+          ? `${CONNECTION_TROUBLE} 잠시 뒤 다시 말하거나 글자로 답해 주세요.`
+          : "말한 내용을 알아듣지 못했어요. 다시 말하거나 글자로 답해 주세요.",
+      );
     }
   }
 
