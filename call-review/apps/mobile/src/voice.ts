@@ -82,7 +82,7 @@ export function useVoiceCapture(): VoiceCapture {
 }
 
 export type SpeechLanguage = "en-US" | "ko-KR";
-// 서버 읽어 주기(Gemini TTS) 오디오 주소. 없으면 기기 음성으로 읽는다.
+// 서버 읽어 주기(베플리 목소리) 오디오 주소. 없으면 기기 음성으로 읽는다.
 export type RemoteSpeechSource = (
   text: string,
   language: "en" | "ko",
@@ -97,6 +97,29 @@ let speakGeneration = 0;
 // Gemini 음성은 만드는 데 2~3초 걸린다. 통화 화면에 들어서기 전에 기기 캐시에 받아 두면
 // 문항이 뜨자마자 읽는다(웹은 서버 캐시만 데워 둔다).
 const prefetched = new Map<string, Promise<string | null>>();
+
+// 베플리 목소리를 바꾸면 폴더 이름을 올린다. 예전 목소리로 받아 둔 파일이 섞여 나오지 않도록
+// 옛 폴더는 앱을 켠 뒤 처음 받을 때 한 번 지운다. (v2: Azure 소년 목소리)
+const TTS_CACHE_DIR = "tts-v2";
+const LEGACY_TTS_CACHE_DIRS = ["tts"];
+let legacyCacheCleared = false;
+
+function ttsCacheDirectory(): Directory {
+  if (!legacyCacheCleared) {
+    legacyCacheCleared = true;
+    for (const name of LEGACY_TTS_CACHE_DIRS) {
+      try {
+        const legacy = new Directory(Paths.cache, name);
+        if (legacy.exists) legacy.delete();
+      } catch {
+        // 못 지워도 새 폴더만 쓰므로 괜찮다(기기 캐시라 시스템이 언젠가 비운다).
+      }
+    }
+  }
+  const directory = new Directory(Paths.cache, TTS_CACHE_DIR);
+  if (!directory.exists) directory.create({ intermediates: true, idempotent: true });
+  return directory;
+}
 
 function cacheName(key: string): string {
   let hash = 5381;
@@ -118,9 +141,7 @@ export function prefetchSpeech(text: string, language: SpeechLanguage, remote?: 
         await fetch(source.uri, { headers: source.headers });
         return null;
       }
-      const directory = new Directory(Paths.cache, "tts");
-      if (!directory.exists) directory.create({ intermediates: true, idempotent: true });
-      const file = new File(directory, cacheName(key));
+      const file = new File(ttsCacheDirectory(), cacheName(key));
       if (file.exists) return file.uri;
       const downloaded = await File.downloadFileAsync(source.uri, file, { headers: source.headers, idempotent: true });
       // 서버가 오류(JSON)를 돌려줬으면 캐시에 남기지 않는다.

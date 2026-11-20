@@ -68,11 +68,17 @@ env:
     value: enabled
   - variable: STUDY_API_LOOKBACK_DAYS      # 오답 조회 기간(일). 기본 90일이면 지난 학기 차시가 빠진다.
     value: "365"
-  - variable: AZURE_SPEECH_KEY             # 음성 인식(Azure Speech)
+  - variable: AZURE_SPEECH_KEY             # 음성 인식 + 베플리 영어 목소리(Azure Speech)
     secret: AZURE_SPEECH_KEY
   - variable: AZURE_SPEECH_REGION
     value: koreacentral
-  - variable: GEMINI_API_KEY               # 읽어 주기(Gemini TTS). 기존 GEMINI_API_KEY 시크릿은 다른 서비스용이라 전용 시크릿을 쓴다.
+  # 베플리 목소리 기본값: en-US-AnaNeural, 음 높이 -8%(소년처럼). 바꿀 때만 아래 값을 넣는다.
+  # CALL_REVIEW_TTS=gemini 면 예전 목소리(Gemini Kore)로 돌아간다.
+  # - variable: AZURE_TTS_VOICE
+  #   value: en-US-AnaNeural
+  # - variable: AZURE_TTS_PITCH
+  #   value: "-8%"
+  - variable: GEMINI_API_KEY               # 읽어 주기(Gemini TTS, 한국어·예비용). 기존 GEMINI_API_KEY 시크릿은 다른 서비스용이라 전용 시크릿을 쓴다.
     secret: CALL_REVIEW_GEMINI_API_KEY
   # 서버 푸시(FCM). Cloud Scheduler `call-review-dispatch`가 5분마다 발송 API를 부른다.
   # 끄면 앱이 기기 자체 알림(매주 반복 예약)으로 돌아간다.

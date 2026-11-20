@@ -1,6 +1,7 @@
 // 전화관리 음성 처리(서버 전용).
 // - 음성 인식(STT): Azure Speech Fast Transcription. 설정이 없으면 OpenAI 음성 인식으로 대신한다.
-// - 읽어 주기(TTS): Gemini TTS. 설정이 없거나 실패하면 앱이 기기 음성으로 읽는다.
+// - 읽어 주기(TTS): 영어는 Azure 어린이 목소리(베플리), 그 밖에는 Gemini TTS.
+//   설정이 없거나 실패하면 앱이 기기 음성으로 읽는다.
 // 키는 환경변수에서만 읽고, 오디오·텍스트는 로깅하지 않는다.
 
 export type SpeechLanguage = "en" | "ko";
@@ -61,8 +62,82 @@ export function audioFileName(type: string): string {
 
 // ---- TTS ----
 
+// 베플리는 아이 캐릭터라 Azure 어린이 목소리(en-US-AnaNeural)를 음만 조금 낮춰 소년처럼 쓴다.
+// 목소리·높이는 AZURE_TTS_VOICE·AZURE_TTS_PITCH로 바꾸고, CALL_REVIEW_TTS=gemini면 예전 목소리(Gemini)로 돌아간다.
+export const AZURE_TTS_VOICE_DEFAULT = "en-US-AnaNeural";
+export const AZURE_TTS_PITCH_DEFAULT = "-8%";
+
+export function isAzureTtsConfigured(): boolean {
+  return process.env.CALL_REVIEW_TTS !== "gemini" && Boolean(process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION);
+}
+
 export function isGeminiTtsConfigured(): boolean {
   return Boolean(process.env.GEMINI_API_KEY);
+}
+
+export function isTtsConfigured(): boolean {
+  return isAzureTtsConfigured() || isGeminiTtsConfigured();
+}
+
+// 영어만 Azure로 읽는다(영어 목소리라 한국어는 어색하다). 한국어는 Gemini가 문장에서 언어를 알아낸다.
+function usesAzure(language: SpeechLanguage): boolean {
+  return language === "en" && isAzureTtsConfigured();
+}
+
+function azureVoice() {
+  return {
+    voice: process.env.AZURE_TTS_VOICE || AZURE_TTS_VOICE_DEFAULT,
+    pitch: process.env.AZURE_TTS_PITCH || AZURE_TTS_PITCH_DEFAULT,
+  };
+}
+
+// 서버 캐시 키에 넣어, 목소리를 바꾸면 예전 목소리로 만든 오디오를 다시 쓰지 않게 한다.
+export function ttsVoiceKey(language: SpeechLanguage): string {
+  if (usesAzure(language)) {
+    const { voice, pitch } = azureVoice();
+    return `azure:${voice}:${pitch}`;
+  }
+  return `gemini:${process.env.GEMINI_TTS_VOICE || "Kore"}`;
+}
+
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+// 문장은 AI가 만든 질문일 수 있으니 SSML 특수문자를 반드시 이스케이프한다.
+export function azureSsml(text: string, voice: string, pitch: string): string {
+  return (
+    `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">` +
+    `<voice name="${escapeXml(voice)}"><prosody pitch="${escapeXml(pitch)}">${escapeXml(text)}</prosody></voice></speak>`
+  );
+}
+
+// Azure 읽어 주기 → 24kHz 16비트 mono WAV(앱이 RIFF 헤더를 확인하고 캐시한다).
+export async function synthesizeWithAzure(text: string): Promise<Buffer> {
+  const { voice, pitch } = azureVoice();
+  const response = await fetch(`https://${process.env.AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+    method: "POST",
+    headers: {
+      "Ocp-Apim-Subscription-Key": process.env.AZURE_SPEECH_KEY ?? "",
+      "Content-Type": "application/ssml+xml",
+      "X-Microsoft-OutputFormat": "riff-24khz-16bit-mono-pcm",
+      "User-Agent": "yoon-call-review",
+    },
+    body: azureSsml(text, voice, pitch),
+  });
+  if (!response.ok) throw new Error(`Azure TTS ${response.status}`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
+// Azure가 실패해도 Gemini(어른 목소리)로 바꾸지 않는다. 앱이 그 파일을 기기에 오래 저장해 목소리가 섞이기 때문이다.
+// 실패하면 앱이 그 문장만 기기 음성으로 읽고, 다음에 다시 받는다.
+export async function synthesizeSpeech(text: string, language: SpeechLanguage): Promise<Buffer> {
+  return usesAzure(language) ? synthesizeWithAzure(text) : synthesizeWithGemini(text);
 }
 
 export const GEMINI_TTS_MODEL_DEFAULT = "gemini-3.8-flash-tts";

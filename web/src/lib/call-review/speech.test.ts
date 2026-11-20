@@ -1,6 +1,39 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { audioFileName, pcmToWav, toWav } from "./speech";
+import { audioFileName, azureSsml, isTtsConfigured, pcmToWav, toWav, ttsVoiceKey } from "./speech";
+
+describe("Beppli voice (TTS)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("escapes SSML special characters in the sentence", () => {
+    const ssml = azureSsml(`Tom & Jerry's "<cat>"`, "en-US-AnaNeural", "-8%");
+    expect(ssml).toContain("Tom &amp; Jerry&apos;s &quot;&lt;cat&gt;&quot;");
+    expect(ssml).toContain('<voice name="en-US-AnaNeural"><prosody pitch="-8%">');
+  });
+
+  it("reads English with the Azure child voice when Azure is configured", () => {
+    vi.stubEnv("AZURE_SPEECH_KEY", "test-key");
+    vi.stubEnv("AZURE_SPEECH_REGION", "koreacentral");
+    vi.stubEnv("CALL_REVIEW_TTS", "");
+    vi.stubEnv("AZURE_TTS_VOICE", "");
+    vi.stubEnv("AZURE_TTS_PITCH", "");
+    vi.stubEnv("GEMINI_TTS_VOICE", "");
+    expect(isTtsConfigured()).toBe(true);
+    expect(ttsVoiceKey("en")).toBe("azure:en-US-AnaNeural:-8%");
+    expect(ttsVoiceKey("ko")).toBe("gemini:Kore");
+  });
+
+  it("falls back to the Gemini voice when switched off or Azure is missing", () => {
+    vi.stubEnv("AZURE_SPEECH_KEY", "test-key");
+    vi.stubEnv("AZURE_SPEECH_REGION", "koreacentral");
+    vi.stubEnv("CALL_REVIEW_TTS", "gemini");
+    vi.stubEnv("GEMINI_TTS_VOICE", "");
+    expect(ttsVoiceKey("en")).toBe("gemini:Kore");
+    vi.stubEnv("CALL_REVIEW_TTS", "");
+    vi.stubEnv("AZURE_SPEECH_REGION", "");
+    expect(ttsVoiceKey("en")).toBe("gemini:Kore");
+  });
+});
 
 describe("speech helpers", () => {
   it("wraps 16-bit PCM in a valid WAV header", () => {

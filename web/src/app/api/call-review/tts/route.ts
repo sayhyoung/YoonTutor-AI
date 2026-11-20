@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isGeminiTtsConfigured, synthesizeWithGemini, type SpeechLanguage } from "@/lib/call-review/speech";
+import { isTtsConfigured, synthesizeSpeech, ttsVoiceKey, type SpeechLanguage } from "@/lib/call-review/speech";
 import { corsHeaders, preflight } from "@/lib/study-api/call-review-cors";
 import { readMobileToken } from "@/lib/study-api/call-review-mobile-token";
 
@@ -17,13 +17,13 @@ export function OPTIONS(request: Request) {
   return preflight(request, METHODS);
 }
 
-// 베플리 질문 읽어 주기(Gemini TTS) → audio/wav. 설정이 없으면 503이고 앱은 기기 음성으로 읽는다.
+// 베플리 질문 읽어 주기(영어는 Azure 어린이 목소리) → audio/wav. 설정이 없으면 503이고 앱은 기기 음성으로 읽는다.
 export async function GET(request: Request) {
   const headers = { "Cache-Control": "private, no-store", ...corsHeaders(request, METHODS) };
   if (!readMobileToken(request)) {
     return NextResponse.json({ error: "로그인이 필요해요." }, { status: 401, headers });
   }
-  if (!isGeminiTtsConfigured()) {
+  if (!isTtsConfigured()) {
     return NextResponse.json({ error: "읽어 주기가 설정되지 않았어요." }, { status: 503, headers });
   }
 
@@ -34,11 +34,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "읽을 문장이 올바르지 않아요." }, { status: 400, headers });
   }
 
-  const key = `${language}:${text}`;
+  const key = `${ttsVoiceKey(language)}:${language}:${text}`;
   try {
     let audio = cache.get(key);
     if (!audio) {
-      audio = await synthesizeWithGemini(text);
+      audio = await synthesizeSpeech(text, language);
       if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
       cache.set(key, audio);
     }
