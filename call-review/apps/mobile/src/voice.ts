@@ -90,6 +90,9 @@ export type RemoteSpeechSource = (
 
 // 서버 오디오가 이 시간 안에 재생을 시작하지 못하면 기기 음성으로 바꾼다.
 const REMOTE_START_TIMEOUT_MS = 8000;
+// 받는 중인 음성 파일을 이만큼만 기다린다. 인터넷이 느려 다운로드가 멈추면 끝없이 기다리다
+// 인사말이 통째로 빠졌다. 그 전에 오지 않으면 기기 음성으로 바로 읽는다.
+const PREFETCH_WAIT_MS = 4000;
 let currentPlayer: AudioPlayer | null = null;
 // speak/stopSpeaking마다 올린다. 미리 받기를 기다리던 읽기가 그새 취소됐는지 확인한다.
 let speakGeneration = 0;
@@ -202,7 +205,17 @@ export function speak(
   // 미리 받아 둔(또는 받는 중인) 파일이 있으면 그것으로 읽고, 없으면 서버에서 바로 받는다.
   const pending = prefetched.get(`${lang}:${text}`);
   if (pending) {
+    let settled = false;
+    const giveUp = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      // 그새 다른 읽기로 바뀌었거나 멈췄으면 읽지 않는다.
+      if (generation === speakGeneration) speakWithDevice(text, language, onStart, onEnd);
+    }, PREFETCH_WAIT_MS);
     void pending.then((localUri) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(giveUp);
       if (generation === speakGeneration) playRemote(localUri ? { uri: localUri } : source, text, language, onStart, onEnd);
     });
     return;
