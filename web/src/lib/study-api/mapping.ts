@@ -26,6 +26,24 @@ function isBareChoiceAnswer(answer: string): boolean {
   return /^[0-9]+$/.test(a) || a.length <= 1;
 }
 
+const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힣]/;
+
+function hasHangul(text?: string): boolean {
+  return HANGUL.test(text ?? "");
+}
+
+// 단어 시험 방향은 교재마다 다르다. 영→한 시험은 question=영어·meaning=한국어("America"/"미국")이고,
+// 한→영 시험은 question=한국어·meaning=영어("곤충"/"insect")로 온다. 한글이 든 쪽을 뜻으로 본다.
+// 둘 다 한글이면 영어 정답이 없으므로 출제하지 않는다(english가 빈 값).
+export function wordEnglishAndMeaning(question?: string, meaning?: string): { english: string; meaning?: string } {
+  const q = question?.trim() ?? "";
+  const m = meaning?.trim() || undefined;
+  if (hasHangul(q)) {
+    return m && !hasHangul(m) ? { english: m, meaning: q } : { english: "", meaning: q };
+  }
+  return { english: q, meaning: m };
+}
+
 // dedup용 정규화 키.
 function normKey(sourceType: string, answer: string): string {
   return `${sourceType}::${answer.toLowerCase().replace(/[.?!,]/g, "").replace(/\s+/g, " ").trim()}`;
@@ -48,15 +66,16 @@ export function mapStudyResultsToLearningItems(
     // 단어 (smart-befly wordResults)
     (entry.wordResults ?? []).forEach((w, i) => {
       if (!isWrong(w.isCorrect)) return;
+      const { english, meaning } = wordEnglishAndMeaning(w.question, w.meaning);
       items.push({
         id: `word-${key}-${w.order ?? i}`,
         studentId: customerNo,
         sourceType: "word",
         sourceLabel: "단어",
         unitName,
-        promptKo: w.meaning ? `"${w.meaning}"을(를) 영어로 써봐.` : "이 단어를 영어로 써봐.",
-        answerEn: w.question ?? "",
-        meaningKo: w.meaning,
+        promptKo: meaning ? `"${meaning}"을(를) 영어로 써봐.` : "이 단어를 영어로 써봐.",
+        answerEn: english,
+        meaningKo: meaning,
         wrongAt,
       });
     });
@@ -64,6 +83,8 @@ export function mapStudyResultsToLearningItems(
     // 문장 (smart-befly sentenceResults)
     (entry.sentenceResults ?? []).forEach((s, i) => {
       if (!isWrong(s.isCorrect)) return;
+      // 정답이 한국어인 문장(해석 쓰기 등)은 영어로 다시 말하는 복습을 낼 수 없다.
+      if (hasHangul(s.correctAnswer)) return;
       items.push({
         id: `sentence-${key}-${s.order ?? i}`,
         studentId: customerNo,

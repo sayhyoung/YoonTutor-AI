@@ -582,6 +582,13 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       setCheckingAnswer(false);
       if (acceptable) {
         helped.current[index] = true;
+        // 뜻이 맞는 다른 답도 시도로 센다. 세지 않았더니 같은 말을 되풀이하면 다음 표현으로 영영 못 넘어갔다.
+        const tries = (wrongCounts.current[index] ?? 0) + 1;
+        wrongCounts.current[index] = tries;
+        if (tries >= MAX_REVIEW_ATTEMPTS) {
+          finish("retry", { kind: "retry", answer: value, message: remember("뜻은 맞았어요! 이번에 배운 표현을 같이 볼까요?") }, "괜찮아요. 같이 다시 볼까요?");
+          return;
+        }
         setReviewFeedback({ kind: "hint", answer: value, message: alternativeAnswerMessage(value, target.answerEn) });
         setCoachLine("그것도 맞는 말이에요. 다시 말해 볼까요?");
         return;

@@ -32,6 +32,31 @@ beforeEach(() => {
 describe("loadWrongAnswerItems", () => {
   const paths = () => fetchStudy.mock.calls.map((call) => String(call[0]));
 
+  it("keeps English as the answer whichever way the book's word test runs", async () => {
+    fetchStudy.mockResolvedValue({
+      customerNo: "<CUSTOMER_NO>",
+      studyResults: [
+        {
+          wordResults: [
+            { isCorrect: false, question: "habit", meaning: "습관" }, // 영→한 시험
+            { isCorrect: false, question: "곤충", meaning: "insect" }, // 한→영 시험
+            { isCorrect: false, question: "사과", meaning: "사과" }, // 영어 정답이 없으면 내지 않는다
+          ],
+          sentenceResults: [
+            { isCorrect: false, correctAnswer: "나는 숙제를 끝냈다." }, // 한국어 정답 문장은 내지 않는다
+          ],
+        },
+      ],
+    });
+    const result = await loadWrongAnswerItems({ customerNo: "<CUSTOMER_NO>", sources: "word-sentence", bms: ["HOME"] });
+
+    expect(result.items.map((item) => [item.answerEn, item.meaningKo])).toEqual([
+      ["habit", "습관"],
+      ["insect", "곤충"],
+    ]);
+    expect(result.items[1]!.promptKo).toBe('"곤충"을(를) 영어로 써봐.');
+  });
+
   it("loads only word and sentence results from Smart Befly for WYC members", async () => {
     const result = await loadWrongAnswerItems({
       customerNo: "<CUSTOMER_NO>",
