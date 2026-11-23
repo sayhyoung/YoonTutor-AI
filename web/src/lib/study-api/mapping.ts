@@ -39,9 +39,50 @@ export function wordEnglishAndMeaning(question?: string, meaning?: string): { en
   const q = question?.trim() ?? "";
   const m = meaning?.trim() || undefined;
   if (hasHangul(q)) {
-    return m && !hasHangul(m) ? { english: m, meaning: q } : { english: "", meaning: q };
+    return m && !hasHangul(m) ? { english: withoutPartOfSpeech(m), meaning: q } : { english: "", meaning: q };
   }
-  return { english: q, meaning: m };
+  return { english: withoutPartOfSpeech(q), meaning: m };
+}
+
+// 교재 단어에 붙은 품사 표시("wind (v)")는 말할 정답이 아니다.
+function withoutPartOfSpeech(english: string): string {
+  return english.replace(/\s*\((?:n|v|a|adj|adv|prep|conj|pron)\.?\)$/i, "").trim();
+}
+
+// 문장연습은 교재마다 화면이 다르다(영어 문장, 빈칸 문장, 한국어 해석). 하지만 correctAnswer는 화면 문장이 아니라
+// 학생이 말할 영어 정답 문장(교재 원본의 TEXT_SENTENCE)이라 그대로 쓴다. 숫자도 단어로 풀어 적혀 온다("sixty percent").
+// 혹시 한국어나 빈칸이 섞여 오면 영어로 말할 정답이 아니므로 출제하지 않는다.
+export function isSpeakableSentence(correctAnswer?: string): boolean {
+  const text = correctAnswer?.trim() ?? "";
+  return text.length > 0 && !hasHangul(text) && !/_{2,}/.test(text);
+}
+
+// 전화 복습은 말로 답하고 앱이 음성 인식 글자를 정답과 견준다. 교재 정답은 숫자를 단어로 적지만("sixty percent")
+// 음성 인식은 숫자로 적는다("60%"). 앱 채점은 0~20만 숫자와 단어를 같게 보므로, 그보다 큰 수·서수·연도·시각·
+// 금액·퍼센트·전화번호처럼 숫자로 적힐 표현이 든 문항은 전화 복습에 내지 않는다.
+const DIGIT_WORDS = "zero|one|two|three|four|five|six|seven|eight|nine";
+const TEEN_WORDS = "ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|ninteen";
+const ORDINAL_UNITS = "first|second|third|fourth|fifth|sixth|seventh|eighth|ninth";
+const DIGIT_PRONE_NUMBER = new RegExp(
+  [
+    "\\d",
+    "\\b(thirt|fort|fourt|fift|sixt|sevent|eight|ninet)(y\\w*|ies|ieth)\\b", // 30~99, fifties, sixtieth
+    `\\btwent(y[- ]?(${DIGIT_WORDS}|${ORDINAL_UNITS})|ies|ieth|yth)\\b`, // twenty-one, twenties
+    `\\b(${TEEN_WORDS}|twenty) (oh |o )?(${DIGIT_WORDS}|${TEEN_WORDS}|twenty|hundred)\\b`, // 연도·시각(nineteen four, ten thirty는 위에서)
+    "\\b(hundred|thousand|million|billion)(s|th)?\\b",
+    `\\b(${ORDINAL_UNITS}|tenth|eleventh|twelfth|\\w+teenth)\\b`, // 서수(2nd floor, March 16th)
+    "\\b(percent|dollars?|cents?|o['’`]clock)\\b|\\b[ap]\\.m\\.",
+    `\\bpoint (${DIGIT_WORDS})\\b`, // 소수
+    `\\b(${DIGIT_WORDS}|${TEEN_WORDS}|twenty) to (${DIGIT_WORDS}|${TEEN_WORDS}|twenty)\\b`, // 범위(2-3)
+    `\\b(${DIGIT_WORDS})( -)? (${DIGIT_WORDS})( -)? (${DIGIT_WORDS})\\b`, // 전화번호
+  ].join("|"),
+  "i",
+);
+// 순서를 말하는 First, / at first / first time은 음성 인식도 글자로 적는다.
+const ORDER_WORDS = /(^|[.!?]\s+)(first|second|third)\b,?|\bat first\b|\bfirst time\b/gi;
+
+export function hasDigitProneNumber(answerEn: string): boolean {
+  return DIGIT_PRONE_NUMBER.test(answerEn.replace(ORDER_WORDS, " "));
 }
 
 // dedup용 정규화 키.
@@ -82,9 +123,7 @@ export function mapStudyResultsToLearningItems(
 
     // 문장 (smart-befly sentenceResults)
     (entry.sentenceResults ?? []).forEach((s, i) => {
-      if (!isWrong(s.isCorrect)) return;
-      // 정답이 한국어인 문장(해석 쓰기 등)은 영어로 다시 말하는 복습을 낼 수 없다.
-      if (hasHangul(s.correctAnswer)) return;
+      if (!isWrong(s.isCorrect) || !isSpeakableSentence(s.correctAnswer)) return;
       items.push({
         id: `sentence-${key}-${s.order ?? i}`,
         studentId: customerNo,
@@ -92,7 +131,7 @@ export function mapStudyResultsToLearningItems(
         sourceLabel: "문장",
         unitName,
         promptKo: "지난번에 틀린 문장이야. 올바른 영어 문장을 다시 써봐.",
-        answerEn: s.correctAnswer ?? "",
+        answerEn: (s.correctAnswer ?? "").trim(),
         wrongAt,
       });
     });

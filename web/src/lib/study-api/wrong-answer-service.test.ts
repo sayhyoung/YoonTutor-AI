@@ -57,6 +57,63 @@ describe("loadWrongAnswerItems", () => {
     expect(result.items[1]!.promptKo).toBe('"곤충"을(를) 영어로 써봐.');
   });
 
+  it("uses correctAnswer (the book's spoken answer sentence) as the sentence to say", async () => {
+    fetchStudy.mockResolvedValue({
+      customerNo: "<CUSTOMER_NO>",
+      studyResults: [
+        {
+          wordResults: [{ isCorrect: false, question: "구불구불하다", meaning: "wind (v)" }],
+          sentenceResults: [
+            // 화면에 빈칸·한국어 해석을 보여 주는 교재도 correctAnswer는 영어 정답 문장이다.
+            { isCorrect: false, correctAnswer: " I walk the dog after school. " },
+            { isCorrect: false, correctAnswer: "It`s time to go to school." },
+            { isCorrect: false, correctAnswer: "I ______ the _____ after school." }, // 빈칸이 섞여 오면 내지 않는다
+            { isCorrect: false, correctAnswer: "나는 하루 종일 실내에서 머물렀어요." }, // 한국어가 오면 내지 않는다
+          ],
+        },
+      ],
+    });
+    const result = await loadWrongAnswerItems({ customerNo: "<CUSTOMER_NO>", sources: "word-sentence", bms: ["HOME"] });
+
+    expect(result.items.map((item) => [item.sourceType, item.answerEn])).toEqual([
+      ["word", "wind"],
+      ["sentence", "I walk the dog after school."],
+      ["sentence", "It`s time to go to school."],
+    ]);
+  });
+
+  it("leaves out items with numbers speech recognition writes as digits from phone reviews", async () => {
+    const sentences = [
+      "I have two cats.", // 0~20은 앱 채점이 맞춘다
+      "First, sweep the floor.", // 순서를 말하는 First,
+      "More than sixty percent of teens have smartphones.",
+      "It`s eight forty.",
+      "The bookstore is on the second floor.",
+      "My birthday is March sixteenth.",
+      "It was popular in the nineteen fifties.",
+      "They`re 45 dollars.",
+      "Call me at five five five - six nine eight four.",
+    ];
+    fetchStudy.mockResolvedValue({
+      customerNo: "<CUSTOMER_NO>",
+      studyResults: [
+        {
+          wordResults: [
+            { isCorrect: false, question: "habit", meaning: "습관" },
+            { isCorrect: false, question: "forty", meaning: "40" },
+          ],
+          sentenceResults: sentences.map((correctAnswer) => ({ isCorrect: false, correctAnswer })),
+        },
+      ],
+    });
+
+    const phone = await loadWrongAnswerItems({ customerNo: "<CUSTOMER_NO>", sources: "word-sentence", bms: ["HOME"] });
+    expect(phone.items.map((item) => item.answerEn)).toEqual(["habit", "I have two cats.", "First, sweep the floor."]);
+
+    const web = await loadWrongAnswerItems({ customerNo: "<CUSTOMER_NO>", sources: "all", bms: ["HOME"] });
+    expect(web.items.filter((item) => item.sourceType !== "assessment")).toHaveLength(2 + sentences.length);
+  });
+
   it("loads only word and sentence results from Smart Befly for WYC members", async () => {
     const result = await loadWrongAnswerItems({
       customerNo: "<CUSTOMER_NO>",

@@ -1,6 +1,6 @@
 import { callOpenAiText, isOpenAiEnabled } from "../openai";
 import type { LearningItem } from "../types";
-import { mapStudyResultsToLearningItems } from "./mapping";
+import { hasDigitProneNumber, mapStudyResultsToLearningItems } from "./mapping";
 import { authedStudyFetch } from "./server-fetch";
 import { type StudyQueryData, learningSourcesForBms } from "./types";
 
@@ -10,6 +10,7 @@ export type WrongAnswerQuery = {
   customerNo: string;
   from?: string | null;
   to?: string | null;
+  // word-sentence: 전화 복습(말로 답함)용. 평가와 숫자로 받아 적힐 표현이 든 문항은 뺀다.
   sources?: "all" | "word-sentence";
   // 회원의 BM 목록. 학원(숲·IGSE)이면 학원 학습 API를 조회한다. 모르면 둘 다 조회.
   bms?: (string | null | undefined)[];
@@ -128,7 +129,9 @@ export async function loadWrongAnswerItems({
         const mapped = mapStudyResultsToLearningItems(data, customerNo, idPrefix);
         items.push(
           ...mapped.filter(
-            (item) => sources === "all" || item.sourceType !== "assessment",
+            (item) =>
+              sources === "all" ||
+              (item.sourceType !== "assessment" && !hasDigitProneNumber(item.answerEn)),
           ),
         );
       }
