@@ -701,6 +701,12 @@ function CallReviewApp({
       speak(line, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
     }
   };
+  // 문장 듣기 버튼: 학생이 원할 때마다 문장을 베플리 목소리로 처음부터 다시 들려준다(음성 가이드를 꺼 두었어도).
+  const playSentence = () => {
+    const sentence = reviewPrompt?.sentence;
+    if (!sentence || session.voiceState === "listening") return;
+    speak(sentence, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
+  };
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
@@ -999,6 +1005,7 @@ function CallReviewApp({
             onToggleChoiceAssist={session.toggleChoiceAssist}
             onEnd={session.endCall}
             onReplay={replay}
+            onPlaySentence={playSentence}
             voiceGuideOn={voiceGuideOn}
             onToggleVoiceGuide={toggleVoiceGuide}
             turnLoading={session.turnLoading}
@@ -1712,6 +1719,8 @@ type CallScreenProps = {
   idleStopSeconds: number;
   idleSecondsLeft: number;
   onReplay: () => void;
+  // 문장 문항에서 문장을 다시 들려준다.
+  onPlaySentence: () => void;
   voiceGuideOn: boolean;
   onToggleVoiceGuide: () => void;
   turnLoading: boolean;
@@ -1944,6 +1953,24 @@ function CallScreen(props: CallScreenProps) {
             {sentence ? (
               <>
                 <Text style={[styles.questionEnglish, light && lightCallStyles.strongText]} accessibilityLabel={`빈칸이 있는 문장: ${sentence.masked.replace(/_+/g, "빈칸")}`}>{sentence.masked}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="문장 다시 듣기"
+                  accessibilityHint="베플리가 문장을 처음부터 다시 읽어 줘요"
+                  accessibilityState={{ disabled: listening || transcribing || preparing }}
+                  disabled={listening || transcribing || preparing}
+                  onPress={props.onPlaySentence}
+                  hitSlop={6}
+                  style={({ pressed }) => [
+                    styles.listenButton,
+                    { backgroundColor: t.actionSoft },
+                    (listening || transcribing || preparing) && styles.listenButtonDisabled,
+                    pressed && styles.utilityPressed,
+                  ]}
+                >
+                  <Icon name="replay" size={18} color={t.actionInk} />
+                  <Text style={[styles.listenButtonText, { color: t.actionInk }]}>문장 듣기</Text>
+                </Pressable>
                 <Text style={[styles.promptMeaning, light && lightCallStyles.mutedText]}>{props.promptKo}</Text>
                 <Text style={[styles.promptGuide, light && lightCallStyles.mutedText]}>
                   {props.inputMode === "text" ? "빈칸에 들어갈 단어만 써도 돼요." : "원어민 음성을 듣고 빈칸까지 문장 전체를 말해 보세요."}
@@ -2390,6 +2417,9 @@ const styles = StyleSheet.create({
   meaningKnob: { width: 14, height: 14, borderRadius: 7, backgroundColor: color.surface },
   meaningKnobOn: { alignSelf: "flex-end" },
   replayButton: { width: 44, height: 44, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
+  listenButton: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: space.xs, minHeight: 40, paddingHorizontal: space.md, borderRadius: radius.pill },
+  listenButtonDisabled: { opacity: 0.45 },
+  listenButtonText: { fontSize: 15, fontWeight: "700" },
   guideRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   guideText: { flex: 1, color: color.inkInverse, fontSize: 16, lineHeight: 23, fontWeight: "500" },
   listeningRow: { alignItems: "center", gap: 8, paddingVertical: 8 },
