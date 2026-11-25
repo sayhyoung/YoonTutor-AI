@@ -16,31 +16,80 @@ function azureTranscribeUrl(): string {
   const base =
     process.env.AZURE_SPEECH_ENDPOINT?.replace(/\/+$/, "") ??
     `https://${process.env.AZURE_SPEECH_REGION}.api.cognitive.microsoft.com`;
-  return `${base}/speechtotext/transcriptions:transcribe?api-version=2024-11-15`;
+  // 2025-10-15부터 구문 목록(phraseList)을 받는다. 2024-11-15에 보내면 400(Invalid JSON format)이다.
+  return `${base}/speechtotext/transcriptions:transcribe?api-version=2025-10-15`;
 }
 
 type AzureFastTranscription = { combinedPhrases?: { text?: string }[] };
 
-// language: 학생 영어 답변은 en, 영어 일기의 "오늘 있었던 일" 말하기는 ko.
-export async function transcribeWithAzure(audio: Blob, fileName: string, language: SpeechLanguage = "en"): Promise<string> {
+// 앱이 보낸 정답 힌트(기대하는 답)를 정리한다. 영어 글자가 있는 짧은 구만, 개수·길이를 제한한다.
+// 구문 목록은 추가 요금이 없다(Azure 요금표의 부가 기능에 없음).
+const MAX_HINTS = 10;
+const MAX_HINT_LENGTH = 160;
+const MAX_HINT_TOTAL = 800;
+
+export function cleanSpeechHints(values: unknown[]): string[] {
+  const hints: string[] = [];
+  let total = 0;
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const hint = value.replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim();
+    if (!hint || hint.length > MAX_HINT_LENGTH || !/[A-Za-z]/.test(hint) || /[가-힣]/.test(hint)) continue;
+    if (hints.includes(hint) || total + hint.length > MAX_HINT_TOTAL) continue;
+    hints.push(hint);
+    total += hint.length;
+    if (hints.length >= MAX_HINTS) break;
+  }
+  return hints;
+}
+
+async function requestAzureTranscription(audio: Blob, fileName: string, definition: Record<string, unknown>): Promise<Response> {
   const form = new FormData();
   form.append("audio", audio, fileName);
-  form.append("definition", JSON.stringify({ locales: [language === "ko" ? "ko-KR" : "en-US"], profanityFilterMode: "Masked" }));
-  const response = await fetch(azureTranscribeUrl(), {
+  form.append("definition", JSON.stringify(definition));
+  return fetch(azureTranscribeUrl(), {
     method: "POST",
     headers: { "Ocp-Apim-Subscription-Key": process.env.AZURE_SPEECH_KEY ?? "" },
     body: form,
   });
+}
+
+// language: 학생 영어 답변은 en, 영어 일기의 "오늘 있었던 일" 말하기는 ko.
+// hints: 학생이 말할 것으로 기대하는 답(복습 정답, 대화 답 예시). 아이 발음도 정답 쪽으로 알아듣게 한다.
+export async function transcribeWithAzure(
+  audio: Blob,
+  fileName: string,
+  language: SpeechLanguage = "en",
+  hints: string[] = [],
+): Promise<string> {
+  const definition: Record<string, unknown> = { locales: [language === "ko" ? "ko-KR" : "en-US"], profanityFilterMode: "Masked" };
+  let response = await requestAzureTranscription(
+    audio,
+    fileName,
+    hints.length > 0 ? { ...definition, phraseList: { phrases: hints } } : definition,
+  );
+  // 힌트 때문에 거절되면(형식 변경 등) 힌트 없이 한 번 더 알아듣는다. 학생 답을 놓치지 않는 게 먼저다.
+  if (response.status === 400 && hints.length > 0) {
+    console.warn("[stt] 정답 힌트를 Azure가 거절해 힌트 없이 다시 보냄");
+    response = await requestAzureTranscription(audio, fileName, definition);
+  }
   if (!response.ok) throw new Error(`Azure STT ${response.status}`);
   const data = (await response.json()) as AzureFastTranscription;
   return (data.combinedPhrases ?? []).map((phrase) => phrase.text ?? "").join(" ").trim();
 }
 
-export async function transcribeWithOpenAi(audio: Blob, fileName: string, language: SpeechLanguage = "en"): Promise<string> {
+export async function transcribeWithOpenAi(
+  audio: Blob,
+  fileName: string,
+  language: SpeechLanguage = "en",
+  hints: string[] = [],
+): Promise<string> {
   const form = new FormData();
   form.append("file", audio, fileName);
   form.append("model", process.env.OPENAI_STT_MODEL ?? "whisper-1");
   form.append("language", language);
+  // OpenAI는 구문 목록 대신 prompt에 기대하는 말을 적어 철자·단어를 그쪽으로 맞춘다.
+  if (hints.length > 0) form.append("prompt", hints.join(" / "));
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
@@ -63,9 +112,11 @@ export function audioFileName(type: string): string {
 // ---- TTS ----
 
 // 베플리는 아이 캐릭터라 Azure 어린이 목소리(en-US-AnaNeural)를 음만 조금 낮춰 소년처럼 쓴다.
-// 목소리·높이는 AZURE_TTS_VOICE·AZURE_TTS_PITCH로 바꾸고, CALL_REVIEW_TTS=gemini면 예전 목소리(Gemini)로 돌아간다.
+// 음을 -8%까지 낮추니 발음이 조금 뭉개진다는 의견이 있어(2026-11-25) 음을 덜 낮추고(-5%) 조금 천천히(-5%) 읽는다.
+// 목소리·높이·빠르기는 AZURE_TTS_VOICE·AZURE_TTS_PITCH·AZURE_TTS_RATE로 바꾸고, CALL_REVIEW_TTS=gemini면 예전 목소리(Gemini)로 돌아간다.
 export const AZURE_TTS_VOICE_DEFAULT = "en-US-AnaNeural";
-export const AZURE_TTS_PITCH_DEFAULT = "-8%";
+export const AZURE_TTS_PITCH_DEFAULT = "-5%";
+export const AZURE_TTS_RATE_DEFAULT = "-5%";
 
 export function isAzureTtsConfigured(): boolean {
   return process.env.CALL_REVIEW_TTS !== "gemini" && Boolean(process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION);
@@ -88,14 +139,15 @@ function azureVoice() {
   return {
     voice: process.env.AZURE_TTS_VOICE || AZURE_TTS_VOICE_DEFAULT,
     pitch: process.env.AZURE_TTS_PITCH || AZURE_TTS_PITCH_DEFAULT,
+    rate: process.env.AZURE_TTS_RATE || AZURE_TTS_RATE_DEFAULT,
   };
 }
 
 // 서버 캐시 키에 넣어, 목소리를 바꾸면 예전 목소리로 만든 오디오를 다시 쓰지 않게 한다.
 export function ttsVoiceKey(language: SpeechLanguage): string {
   if (usesAzure(language)) {
-    const { voice, pitch } = azureVoice();
-    return `azure:${voice}:${pitch}`;
+    const { voice, pitch, rate } = azureVoice();
+    return `azure:${voice}:${pitch}:${rate}`;
   }
   return `gemini:${process.env.GEMINI_TTS_VOICE || "Kore"}`;
 }
@@ -110,16 +162,16 @@ function escapeXml(text: string): string {
 }
 
 // 문장은 AI가 만든 질문일 수 있으니 SSML 특수문자를 반드시 이스케이프한다.
-export function azureSsml(text: string, voice: string, pitch: string): string {
+export function azureSsml(text: string, voice: string, pitch: string, rate = "0%"): string {
   return (
     `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">` +
-    `<voice name="${escapeXml(voice)}"><prosody pitch="${escapeXml(pitch)}">${escapeXml(text)}</prosody></voice></speak>`
+    `<voice name="${escapeXml(voice)}"><prosody pitch="${escapeXml(pitch)}" rate="${escapeXml(rate)}">${escapeXml(text)}</prosody></voice></speak>`
   );
 }
 
 // Azure 읽어 주기 → 24kHz 16비트 mono WAV(앱이 RIFF 헤더를 확인하고 캐시한다).
 export async function synthesizeWithAzure(text: string): Promise<Buffer> {
-  const { voice, pitch } = azureVoice();
+  const { voice, pitch, rate } = azureVoice();
   const response = await fetch(`https://${process.env.AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
     method: "POST",
     headers: {
@@ -128,7 +180,7 @@ export async function synthesizeWithAzure(text: string): Promise<Buffer> {
       "X-Microsoft-OutputFormat": "riff-24khz-16bit-mono-pcm",
       "User-Agent": "yoon-call-review",
     },
-    body: azureSsml(text, voice, pitch),
+    body: azureSsml(text, voice, pitch, rate),
   });
   if (!response.ok) throw new Error(`Azure TTS ${response.status}`);
   return Buffer.from(await response.arrayBuffer());

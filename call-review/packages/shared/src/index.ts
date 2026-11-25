@@ -4,6 +4,8 @@ export type CallPhase =
   | "connecting"
   | "greeting"
   | "review"
+  // 복습을 마치고 대화로 넘어가는 안내(따라 말하기가 아니라 내 생각을 말하는 시간임을 알려 준다).
+  | "talk-intro"
   | "free-talk"
   | "closing"
   | "complete";
@@ -478,6 +480,67 @@ export function isCloseMiss(answer: string, expected: string): boolean {
 // 문장 문항을 글자로 답할 때는 빈칸 단어만 써도 된다(문장 전체를 써도 된다).
 export function blankAnswerTarget(answerEn: string): string {
   return sentenceBlanks(answerEn).blanks.join(" ");
+}
+
+// 음성 인식에 미리 알려 줄 정답(Azure 구문 목록). 아이가 작게·빨리 말해도 정답 쪽으로 알아듣게 한다
+// (실험: "I'm good at drawing." → 힌트 없이 "I'm gonna try.", 힌트를 주면 정답). 틀리게 말한 답을 정답으로 바꾸지는 않았다.
+// 정답이 "Hi./Hello."처럼 여럿이면 모두, 문장이면 빈칸 단어도 함께 준다.
+const MAX_SPEECH_HINTS = 6;
+
+export function speechHintsFor(answerEn: string): string[] {
+  const options = plainText(answerEn)
+    .split(/\s*\/\s*/)
+    .map((option) => option.replace(/\s+/g, " ").trim())
+    .filter((option) => option && /[A-Za-z]/.test(option) && !/[가-힣]/.test(option));
+  const hints = new Set<string>(options);
+  for (const option of options) {
+    if (!isSentence(option)) continue;
+    const blank = blankAnswerTarget(option);
+    if (blank) hints.add(blank);
+  }
+  return [...hints].slice(0, MAX_SPEECH_HINTS);
+}
+
+// 소리가 같은 단어. 음성 인식은 정답 힌트를 줘도 단어 하나만 들으면 흔한 쪽(pair·flower·night)으로 적어서,
+// 바르게 말해도 틀렸다고 나왔다. 말로 답한 단어 문항에서만 정답으로 본다(글자로 쓴 답은 철자를 그대로 채점한다).
+const HOMOPHONE_GROUPS: string[][] = [
+  ["pear", "pair", "pare"], ["flour", "flower"], ["knight", "night"], ["right", "write"], ["sea", "see"],
+  ["son", "sun"], ["meat", "meet"], ["hour", "our"], ["know", "no"], ["knew", "new"], ["hear", "here"],
+  ["eight", "ate"], ["one", "won"], ["blue", "blew"], ["bear", "bare"], ["deer", "dear"], ["tail", "tale"],
+  ["mail", "male"], ["week", "weak"], ["road", "rode"], ["buy", "by", "bye"], ["wear", "where"],
+  ["weather", "whether"], ["hole", "whole"], ["piece", "peace"], ["plain", "plane"], ["sail", "sale"],
+  ["steal", "steel"], ["stair", "stare"], ["break", "brake"], ["cell", "sell"], ["cent", "scent", "sent"],
+  ["flu", "flew"], ["fair", "fare"], ["hair", "hare"], ["heal", "heel"], ["hi", "high"], ["knot", "not"],
+  ["made", "maid"], ["rain", "reign"], ["wait", "weight"], ["way", "weigh"], ["wood", "would"],
+  ["toe", "tow"], ["tea", "tee"], ["waist", "waste"], ["allowed", "aloud"], ["berry", "bury"],
+  ["board", "bored"], ["cereal", "serial"], ["dew", "due"], ["die", "dye"], ["fir", "fur"],
+  ["groan", "grown"], ["guessed", "guest"], ["herd", "heard"], ["higher", "hire"], ["in", "inn"],
+  ["eye", "i"], ["missed", "mist"], ["pail", "pale"], ["pain", "pane"], ["passed", "past"],
+  ["poor", "pour", "pore"], ["principal", "principle"], ["scene", "seen"], ["sole", "soul"], ["some", "sum"],
+  ["stake", "steak"], ["tide", "tied"], ["threw", "through"], ["which", "witch"], ["whine", "wine"],
+  ["wail", "whale"], ["yolk", "yoke"], ["ant", "aunt"], ["band", "banned"], ["chews", "choose"],
+];
+const HOMOPHONES = new Map<string, Set<string>>();
+for (const group of HOMOPHONE_GROUPS) for (const word of group) HOMOPHONES.set(word, new Set(group));
+
+function singleWord(text: string): string | null {
+  const words = plainText(text)
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => word.replace(/^[^a-z']+|[^a-z']+$/g, ""))
+    .filter((word) => word && !FILLERS.has(word));
+  return words.length === 1 ? words[0]! : null;
+}
+
+// 들은 단어가 정답과 소리만 같은 단어면 정답을 돌려준다. 아니면 들은 그대로 돌려준다.
+export function heardAsAnswer(heard: string, answerEn: string): string {
+  const said = singleWord(heard);
+  if (!said) return heard;
+  for (const option of expectedOptions(answerEn)) {
+    const want = singleWord(option);
+    if (want && want !== said && HOMOPHONES.get(want)?.has(said)) return option.trim();
+  }
+  return heard;
 }
 
 export function gradeSentenceTyped(answer: string, answerEn: string): ReviewGrade {

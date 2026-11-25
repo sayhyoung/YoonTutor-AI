@@ -19,11 +19,13 @@ import {
   ScrollView,
   StyleSheet,
   Text as NativeText,
+  type StyleProp,
   type TextProps,
   TextInput,
   useColorScheme,
   useWindowDimensions,
   View,
+  type ViewStyle,
 } from "react-native";
 
 import type {
@@ -76,6 +78,7 @@ import {
   type ReviewFeedback,
   type SessionServices,
   type ReviewOutcome,
+  type TalkLogEntry,
   type VoiceState,
   TALK_PRAISES,
   useCallSession,
@@ -416,7 +419,7 @@ function CallReviewApp({
   generateQuestion?: SessionServices["generateQuestion"];
   generateSupport?: SessionServices["generateSupport"];
   checkAnswer?: SessionServices["checkAnswer"];
-  transcribe?: (uri: string, language?: "en" | "ko") => Promise<string>;
+  transcribe?: (uri: string, language?: "en" | "ko", hints?: string[]) => Promise<string>;
   registerPush?: (pushToken: string) => Promise<boolean>;
   speechSource?: RemoteSpeechSource;
   messageService: Parameters<typeof useTeacherMessages>[0];
@@ -434,7 +437,9 @@ function CallReviewApp({
       generateQuestion,
       generateSupport,
       checkAnswer,
-      voice: transcribe ? { start: capture.start, stop: capture.stop, transcribe } : undefined,
+      voice: transcribe
+        ? { start: capture.start, stop: capture.stop, transcribe: (uri, hints) => transcribe(uri, "en", hints) }
+        : undefined,
       prepareSpeech: (questionEn) => (voiceGuideRef.current ? prefetchSpeech(questionEn, "en-US", speechSource) : Promise.resolve()),
     }),
     [capture, checkAnswer, generateQuestion, generateSupport, speechSource, transcribe],
@@ -491,6 +496,7 @@ function CallReviewApp({
         return true;
       case "greeting":
       case "review":
+      case "talk-intro":
       case "free-talk":
         if (session.hintOpen) {
           session.toggleHint();
@@ -519,9 +525,11 @@ function CallReviewApp({
   // 전화가 오면 복습 문항 음성을 미리 받아 둔다. 그래야 문항이 뜨자마자 읽는다.
   const preparingCall = session.phase === "incoming" || session.phase === "connecting";
   const greetingLine = useMemo(() => greetingFor(session.callId), [session.callId]);
+  const talkIntroLine = useMemo(() => talkIntroFor(session.callId), [session.callId]);
   useEffect(() => {
     if (!preparingCall || !voiceGuideOn) return;
     void prefetchSpeech(greetingLine.en, "en-US", speechSource);
+    void prefetchSpeech(talkIntroLine.en, "en-US", speechSource);
     for (const filler of TALK_FILLERS) void prefetchSpeech(filler, "en-US", speechSource);
     for (const praise of TALK_PRAISES) void prefetchSpeech(praise.en, "en-US", speechSource);
     void prefetchSpeech(CLOSING_LINE_EN, "en-US", speechSource);
@@ -530,7 +538,7 @@ function CallReviewApp({
       if (line.direction) void prefetchSpeech(line.direction, "en-US", speechSource);
       if (line.sentence) void prefetchSpeech(line.sentence, "en-US", speechSource);
     }
-  }, [data.plan.targets, greetingLine, preparingCall, speechSource, voiceGuideOn]);
+  }, [data.plan.targets, greetingLine, preparingCall, speechSource, talkIntroLine, voiceGuideOn]);
 
   // 짧은 대화 질문은 화면에 뜨면 영어로 읽어 준다. 무응답 타이머는 읽기가 끝난 뒤 센다.
   // 통화처럼 이어지게, 말로 답하는 중이면 질문을 다 읽은 뒤 마이크를 저절로 켠다.
@@ -557,10 +565,19 @@ function CallReviewApp({
 
   // 짧은 대화에서 학생이 답하면 다음 질문을 만드는 동안 바로 짧게 맞장구친다(전화처럼 빈틈 없이).
   const talkReplies = session.phase === "free-talk" ? session.conversationTurns.length : 0;
+  const talkChat = useMemo<TalkChatEntry[]>(
+    () =>
+      session.talkLog.map((entry, index) => {
+        const replies = index + 1;
+        const ack = entry.answer && replies < data.plan.freeTalk.maxTurns ? talkFiller(replies, session.callId) : undefined;
+        return ack ? { ...entry, ack } : entry;
+      }),
+    [data.plan.freeTalk.maxTurns, session.callId, session.talkLog],
+  );
   useEffect(() => {
     // 마지막 대답에는 맞장구 대신 칭찬(아래)을 한다.
     if (!talkReplies || talkReplies >= data.plan.freeTalk.maxTurns || !voiceGuideOn) return;
-    const filler = TALK_FILLERS[(talkReplies + session.callId.length) % TALK_FILLERS.length]!;
+    const filler = talkFiller(talkReplies, session.callId);
     speak(filler, "en-US", () => setSpeaking(true), () => setSpeaking(false), speechSource);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [talkReplies]);
@@ -643,6 +660,33 @@ function CallReviewApp({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [greeting]);
+
+  // 복습을 마치면 대화 시간임을 알리는 화면에서 베플리가 영어로 안내하고, 읽기가 끝나면 잠시 뒤 대화를 시작한다.
+  const talkIntro = session.phase === "talk-intro";
+  const startTalkRef = useRef(session.startTalk);
+  startTalkRef.current = session.startTalk;
+  useEffect(() => {
+    if (!talkIntro) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const shownAt = Date.now();
+    const startSoon = (ms: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => startTalkRef.current(), Math.max(ms, TALK_INTRO_MIN_MS - (Date.now() - shownAt)));
+    };
+    startSoon(voiceGuideOn ? TALK_INTRO_FALLBACK_MS : TALK_INTRO_SILENT_MS);
+    if (voiceGuideOn) {
+      speak(talkIntroLine.en, "en-US", () => setSpeaking(true), () => {
+        setSpeaking(false);
+        startSoon(TALK_INTRO_AFTER_SPEECH_MS);
+      }, speechSource);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+      stopSpeaking();
+      setSpeaking(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [talkIntro]);
 
   // 짧은 대화가 끝나면 베플리가 영어로 인사하고, 읽기가 끝나면(음성을 끈 경우엔 잠시 뒤) 결과로 넘어간다.
   // finishClosing은 렌더마다 새 함수라, 의존성에 넣으면 효과가 계속 다시 돌며 인사를 겹쳐 읽는다.
@@ -947,6 +991,9 @@ function CallReviewApp({
           />
         )}
         {session.phase === "greeting" && <GreetingScreen darkMode={darkMode} line={greetingLine} onNext={session.startLesson} />}
+        {session.phase === "talk-intro" && (
+          <TalkIntroScreen darkMode={darkMode} line={talkIntroLine} reviewCount={data.plan.targets.length} onNext={session.startTalk} />
+        )}
         {(session.phase === "review" || session.phase === "free-talk") &&
           session.target && (
           <CallScreen
@@ -978,13 +1025,7 @@ function CallReviewApp({
             }
             choiceAssistOpen={session.choiceAssistOpen}
             talkPraise={session.talkPraise}
-            previousReply={
-              session.phase === "free-talk"
-                ? session.conversationReplies[
-                    session.conversationReplies.length - 1
-                  ]
-                : undefined
-            }
+            talkLog={talkChat}
             inputMode={session.inputMode}
             captionsOn={session.captionsOn}
             voiceState={session.voiceState}
@@ -1603,6 +1644,10 @@ const PRAISE_FALLBACK_MS = 7000;
 // 짧은 대화 맞장구. 학생 대답이 무엇이든 어울리는 중립적인 말만 쓴다.
 const TALK_FILLERS = ["Oh, I see.", "Okay.", "Uh-huh.", "Got it.", "Mm, okay."];
 
+function talkFiller(replies: number, callId: string): string {
+  return TALK_FILLERS[(replies + callId.length) % TALK_FILLERS.length]!;
+}
+
 // 통화 첫인사. 짧게 하고 바로 복습으로 넘어간다. 매번 같으면 지루해서 통화마다 하나를 고른다.
 // 베플리 이름은 말하지 않는다(음성 모델이 이름을 이상하게 읽는다).
 const GREETINGS: { en: string; ko: string }[] = [
@@ -1643,6 +1688,119 @@ function GreetingScreen({ darkMode, line, onNext }: { darkMode: boolean; line: {
         style={({ pressed }) => [styles.connectingCancel, light ? lightCallStyles.raisedSurface : darkAppStyles.card, pressed && styles.buttonPressed]}
       >
         <Text style={[styles.connectingCancelText, light && lightCallStyles.strongText]}>바로 시작하기</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// 복습 → 대화 사이 안내. 아이들이 대화를 '듣고 따라 말하기'의 연장으로 알고 질문을 따라 읽는 일이 있어서(팀 의견, 2026-11-25),
+// 따라 말하는 시간이 끝났고 이제는 내 생각을 말하는 시간이라는 걸 소리와 화면으로 분명히 알린다.
+const TALK_INTROS: { en: string; ko: string }[] = [
+  { en: "Great job! Now, let's just talk. I'll ask you a question, and you tell me your answer.", ko: "잘했어요! 이제 그냥 이야기해 봐요. 내가 물어보면 생각나는 대로 대답해 줘요." },
+  { en: "Nice work! Review is done. Now it's chat time. There are no wrong answers!", ko: "잘했어요! 복습은 끝났어요. 이제 대화 시간이에요. 틀린 답은 없어요!" },
+  { en: "Well done! Now let's have a little chat. Just tell me what you think.", ko: "잘했어요! 이제 잠깐 이야기 나눠요. 생각나는 대로 말해 줘요." },
+];
+
+function talkIntroFor(callId: string) {
+  let hash = 7;
+  for (const char of callId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return TALK_INTROS[hash % TALK_INTROS.length]!;
+}
+
+// 안내 화면은 글이 있어 인사보다 조금 길게 보여 준다.
+const TALK_INTRO_AFTER_SPEECH_MS = 1200;
+const TALK_INTRO_MIN_MS = 4500;
+const TALK_INTRO_SILENT_MS = 5500;
+const TALK_INTRO_FALLBACK_MS = 14000;
+
+// 한 번만 0 → 1로 나타난다(말풍선이 생길 때). 움직임 줄이기를 켠 기기에서는 바로 보인다.
+function useAppear(delay = 0) {
+  const value = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    let cancelled = false;
+    let animation: Animated.CompositeAnimation | null = null;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((reduce) => {
+        if (cancelled) return;
+        if (reduce) {
+          value.setValue(1);
+          return;
+        }
+        animation = Animated.timing(value, { toValue: 1, duration: 260, delay, easing: Easing.out(Easing.cubic), useNativeDriver: nativeDriver });
+        animation.start();
+      })
+      .catch(() => value.setValue(1));
+    return () => {
+      cancelled = true;
+      animation?.stop();
+    };
+  }, [delay, value]);
+  return value;
+}
+
+function Appear({ children, delay = 0, style }: { children: React.ReactNode; delay?: number; style?: StyleProp<ViewStyle> }) {
+  const progress = useAppear(delay);
+  return (
+    <Animated.View style={[style, { opacity: progress, transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }]}>
+      {children}
+    </Animated.View>
+  );
+}
+
+// 복습을 마친 뒤 대화로 넘어가는 화면. "복습 끝 → 대화 시간"을 보여 주고, 짧은 대화 예시로 어떻게 하는지 알려 준다.
+function TalkIntroScreen({
+  darkMode,
+  line,
+  reviewCount,
+  onNext,
+}: {
+  darkMode: boolean;
+  line: { en: string; ko: string };
+  reviewCount: number;
+  onNext: () => void;
+}) {
+  const light = !darkMode;
+  const accent = light ? color.success : color.successDark;
+  return (
+    <View style={styles.connectingScreen}>
+      <View style={styles.talkIntroCenter} accessibilityLiveRegion="polite">
+        <Appear style={[styles.talkIntroDone, { backgroundColor: light ? color.successSoft : "#16302A" }]}>
+          <Icon name="check" size={16} strokeWidth={3} color={accent} />
+          <Text style={[styles.talkIntroDoneText, { color: light ? "#17673F" : "#7FDCAE" }]}>
+            {reviewCount > 0 ? `표현 복습 ${reviewCount}개 끝!` : "복습 끝!"}
+          </Text>
+        </Appear>
+        <Appear delay={150} style={styles.talkIntroHeading}>
+          <Image source={befly.call.speaking} style={styles.talkIntroAvatar} accessibilityLabel="베플리 선생님" />
+          <Text style={[styles.talkIntroTitle, light && lightCallStyles.strongText]}>이제 베플리와 대화해요</Text>
+          <Text style={[styles.talkIntroSub, light && lightCallStyles.mutedText]}>따라 말하기가 아니에요. 질문을 듣고 내 생각을 영어로 대답해요.</Text>
+        </Appear>
+        <Appear delay={500} style={[styles.talkIntroDemo, light ? lightCallStyles.raisedSurface : darkAppStyles.card]}>
+          <Text style={[styles.talkIntroDemoLabel, light && lightCallStyles.mutedText]}>이렇게 대화해요</Text>
+          <View style={styles.chatRow}>
+            <Image source={befly.call.default} style={styles.chatAvatarSmall} accessible={false} />
+            <View style={[styles.chatBubble, styles.chatBubbleBefly, light ? styles.chatBubbleBeflyLight : styles.talkIntroDemoBubbleDark]}>
+              <Text style={[styles.talkIntroDemoText, light && lightCallStyles.strongText]}>What's your favorite food?</Text>
+            </View>
+          </View>
+          <Appear delay={1300} style={[styles.chatRow, styles.chatRowMine]}>
+            <View style={[styles.chatBubble, styles.chatBubbleMine, { backgroundColor: light ? color.primary : color.actionDark }]}>
+              <Text style={[styles.talkIntroDemoText, styles.chatMineText]}>I like pizza!</Text>
+            </View>
+          </Appear>
+          <Text style={[styles.talkIntroDemoFoot, light && lightCallStyles.mutedText]}>정답은 없어요 · 한 단어로 말해도 좋아요</Text>
+        </Appear>
+        <Appear delay={300} style={styles.talkIntroLine}>
+          <Text style={[styles.talkIntroLineEn, light && lightCallStyles.strongText]}>{line.en}</Text>
+          <Text style={[styles.talkIntroLineKo, light && lightCallStyles.mutedText]}>{line.ko}</Text>
+        </Appear>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onNext}
+        style={({ pressed }) => [styles.connectingCancel, { backgroundColor: light ? color.primary : color.actionDark }, pressed && styles.buttonPressed]}
+      >
+        <Text style={[styles.connectingCancelText, { color: color.accentInk }]}>대화 시작하기</Text>
       </Pressable>
     </View>
   );
@@ -1695,7 +1853,8 @@ type CallScreenProps = {
   hint: string;
   choiceOptions: ConversationChoice[];
   choiceAssistOpen: boolean;
-  previousReply?: string;
+  // 짧은 대화의 질문·대답 기록(채팅처럼 쌓는다). ack: 대답 뒤 베플리의 맞장구.
+  talkLog: TalkChatEntry[];
   talkPraise: { en: string; ko: string } | null;
   inputMode: InputMode;
   captionsOn: boolean;
@@ -1753,6 +1912,188 @@ function reviewGuide(props: CallScreenProps) {
   return isSentence(props.answerEn) ? "잘 듣고 문장 전체를 따라 말해 볼까요?" : "영어로 말해 볼까요?";
 }
 
+type TalkChatEntry = TalkLogEntry & { ack?: string };
+
+type CallColors = {
+  ink: string;
+  ink2: string;
+  line: string;
+  action: string;
+  actionInk: string;
+  actionSoft: string;
+  surface2: string;
+  okInk: string;
+  okSoft: string;
+};
+
+type ChatMessage =
+  | { key: string; from: "befly"; kind: "question"; text: string; meaningKo: string; latest: boolean }
+  | { key: string; from: "befly"; kind: "ack"; text: string }
+  | { key: string; from: "befly"; kind: "typing" }
+  | { key: string; from: "befly"; kind: "praise"; text: string; ko: string }
+  | { key: string; from: "me"; kind: "answer"; text: string }
+  | { key: string; from: "me"; kind: "listening" | "transcribing" | "preparing" | "my-turn" };
+
+// 짧은 대화를 메신저처럼 보여 준다. 베플리 말풍선은 왼쪽, 내 대답은 오른쪽에 차례로 쌓인다.
+// 마이크를 켜면 내 쪽에 '듣고 있어요' 말풍선이, 기다리는 동안엔 '내 차례' 자리가 보여 대답할 차례임을 알 수 있다.
+function TalkThread({
+  light,
+  compact,
+  colors: t,
+  log,
+  turnLoading,
+  praise,
+  captionsOn,
+  onToggleCaptions,
+  onReplay,
+  voiceState,
+  inputMode,
+}: {
+  light: boolean;
+  compact: boolean;
+  colors: CallColors;
+  log: TalkChatEntry[];
+  turnLoading: boolean;
+  praise: { en: string; ko: string } | null;
+  captionsOn: boolean;
+  onToggleCaptions: () => void;
+  onReplay: () => void;
+  voiceState: VoiceState;
+  inputMode: InputMode;
+}) {
+  const messages: ChatMessage[] = [];
+  log.forEach((entry, index) => {
+    const latest = index === log.length - 1;
+    messages.push({ key: `${entry.key}-q`, from: "befly", kind: "question", text: entry.questionEn, meaningKo: entry.meaningKo, latest: latest && !entry.answer });
+    if (entry.answer) messages.push({ key: `${entry.key}-a`, from: "me", kind: "answer", text: entry.answer });
+    if (entry.answer && entry.ack) messages.push({ key: `${entry.key}-ack`, from: "befly", kind: "ack", text: entry.ack });
+  });
+  const waiting = !turnLoading && !praise && log.length > 0 && !log[log.length - 1]!.answer;
+  if (turnLoading) messages.push({ key: `typing-${log.length}`, from: "befly", kind: "typing" });
+  if (praise) messages.push({ key: "praise", from: "befly", kind: "praise", text: praise.en, ko: praise.ko });
+  if (waiting) {
+    const mine =
+      voiceState === "listening" ? "listening" : voiceState === "transcribing" ? "transcribing" : voiceState === "preparing" ? "preparing" : "my-turn";
+    messages.push({ key: `mine-${log.length}-${mine}`, from: "me", kind: mine });
+  }
+
+  const beflyBubble = [styles.chatBubble, styles.chatBubbleBefly, light ? styles.chatBubbleBeflyLight : styles.chatBubbleBeflyDark];
+  const mineColor = light ? color.primary : color.actionDark;
+
+  return (
+    <View style={styles.chatThread}>
+      <View style={styles.chatTopRow}>
+        <View style={[styles.chatChip, { backgroundColor: t.actionSoft }]}>
+          <Icon name="answer-help" size={14} color={t.actionInk} />
+          <Text style={[styles.chatChipText, { color: t.actionInk }]}>정답은 없어요 · 내 생각을 말해요</Text>
+        </View>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: captionsOn }}
+          accessibilityLabel="한국어 뜻"
+          onPress={onToggleCaptions}
+          style={[styles.meaningToggle, styles.chatMeaningToggle, light && lightCallStyles.utilityButton]}
+        >
+          <View style={[styles.meaningTrack, { backgroundColor: captionsOn ? t.action : t.line }]}>
+            <View style={[styles.meaningKnob, captionsOn && styles.meaningKnobOn]} />
+          </View>
+          <Text style={[styles.meaningToggleText, light && lightCallStyles.strongText]}>한국어 뜻</Text>
+        </Pressable>
+      </View>
+
+      {messages.map((message, index) => {
+        const startsGroup = index === 0 || messages[index - 1]!.from !== message.from;
+        if (message.from === "befly") {
+          return (
+            <Appear key={message.key} style={[styles.chatRow, !startsGroup && styles.chatRowFollow]}>
+              {startsGroup ? (
+                <Image source={befly.call.default} style={styles.talkAvatar} accessible={false} />
+              ) : (
+                <View style={styles.talkAvatarSpacer} />
+              )}
+              {message.kind === "question" ? (
+                <View style={[...beflyBubble, styles.chatQuestionBubble]} accessible accessibilityLabel={`베플리: ${message.text}`}>
+                  <Text style={[styles.chatQuestionText, compact && styles.chatQuestionTextCompact, light && lightCallStyles.strongText]}>{message.text}</Text>
+                  {captionsOn && message.meaningKo ? (
+                    <Text style={[styles.chatMeaningText, light && lightCallStyles.mutedText]}>{message.meaningKo}</Text>
+                  ) : null}
+                </View>
+              ) : message.kind === "ack" ? (
+                <View style={beflyBubble} accessible accessibilityLabel={`베플리: ${message.text}`}>
+                  <Text style={[styles.chatAckText, light && lightCallStyles.strongText]}>{message.text}</Text>
+                </View>
+              ) : message.kind === "typing" ? (
+                <View style={[...beflyBubble, styles.chatTypingBubble]}>
+                  <TypingDots color={t.ink2} />
+                </View>
+              ) : (
+                <View style={[styles.chatBubble, styles.chatBubbleBefly, { backgroundColor: t.okSoft }]} accessibilityLiveRegion="polite" accessibilityLabel="베플리의 칭찬">
+                  <Text style={[styles.chatAckText, { color: t.okInk }]}>{message.text}</Text>
+                  <Text style={[styles.praiseKo, { color: t.ink }]}>{message.ko}</Text>
+                </View>
+              )}
+              {message.kind === "question" && message.latest ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="질문 다시 듣기"
+                  onPress={onReplay}
+                  hitSlop={6}
+                  style={({ pressed }) => [styles.chatReplay, { backgroundColor: t.surface2 }, pressed && styles.utilityPressed]}
+                >
+                  <Icon name="replay" size={18} color={t.ink} />
+                </Pressable>
+              ) : null}
+            </Appear>
+          );
+        }
+        if (message.kind === "answer") {
+          return (
+            <Appear key={message.key} style={[styles.chatRow, styles.chatRowMine]}>
+              <View style={[styles.chatBubble, styles.chatBubbleMine, { backgroundColor: mineColor }]} accessible accessibilityLabel={`내 대답: ${message.text}`}>
+                <Text style={styles.chatMineText}>{message.text}</Text>
+              </View>
+            </Appear>
+          );
+        }
+        // 아직 말하지 않은 내 차례: 점선 자리 → 듣는 중 → 알아듣는 중.
+        return (
+          <Appear key={message.key} style={[styles.chatRow, styles.chatRowMine]}>
+            <View
+              style={[
+                styles.chatBubble,
+                styles.chatBubbleMine,
+                message.kind === "my-turn" ? [styles.chatMyTurn, { borderColor: t.action }] : { backgroundColor: t.actionSoft },
+              ]}
+              accessibilityLiveRegion="polite"
+            >
+              {message.kind === "listening" ? (
+                <View style={styles.chatStatusRow}>
+                  <Signal barColor={t.action} />
+                  <Text style={[styles.chatStatusText, { color: t.actionInk }]}>듣고 있어요</Text>
+                </View>
+              ) : message.kind === "transcribing" ? (
+                <View style={styles.chatStatusRow}>
+                  <TypingDots color={t.actionInk} />
+                  <Text style={[styles.chatStatusText, { color: t.actionInk }]}>알아듣는 중</Text>
+                </View>
+              ) : message.kind === "preparing" ? (
+                <Text style={[styles.chatStatusText, { color: t.actionInk }]}>마이크 준비 중…</Text>
+              ) : (
+                <View style={styles.chatStatusRow}>
+                  <Icon name={inputMode === "voice" ? "mic" : "keyboard"} size={16} color={t.actionInk} />
+                  <Text style={[styles.chatStatusText, { color: t.actionInk }]}>
+                    {inputMode === "voice" ? "내 차례! 영어로 대답해요" : "내 차례! 영어로 써 봐요"}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </Appear>
+        );
+      })}
+    </View>
+  );
+}
+
 function CallScreen(props: CallScreenProps) {
   const { width, height } = useWindowDimensions();
   const compact = width < 350 || height < 700;
@@ -1779,13 +2120,16 @@ function CallScreen(props: CallScreenProps) {
         ? "마이크 준비 중…"
         : props.turnLoading
           ? "잠깐만요…"
-          : "눌러서 말하기";
+          : isChat
+            ? "눌러서 대답하기"
+            : "눌러서 말하기";
   const micBusy = transcribing || preparing || props.turnLoading;
   // 글자로 답을 보내면 키보드를 내려 문제·피드백이 가려지지 않게 한다.
   const submitText = () => {
     Keyboard.dismiss();
     props.onSubmitText();
   };
+  const scrollRef = useRef<ScrollView>(null);
   const step = Number(props.progressLabel.match(/\d+/)?.[0] ?? 1);
   const segmentColor = (index: number) =>
     index < step - 1 || (index === step - 1 && feedback) ? t.action : index === step - 1 ? t.ink2 : t.line;
@@ -1805,7 +2149,7 @@ function CallScreen(props: CallScreenProps) {
           <Text numberOfLines={1} style={[styles.callName, light && lightCallStyles.strongText]}>베플리 선생님</Text>
           <View style={styles.callStatusRow}>
             <View style={[styles.callLiveDot, { backgroundColor: t.live }]} />
-            <Text numberOfLines={1} style={[styles.callProgress, light && lightCallStyles.mutedText]}>통화 중 · {isChat ? "짧은 대화" : "표현 복습"}</Text>
+            <Text numberOfLines={1} style={[styles.callProgress, light && lightCallStyles.mutedText]}>통화 중 · {isChat ? "대화 시간" : "표현 복습"}</Text>
           </View>
         </View>
         <View style={styles.callTopbarActions}>
@@ -1860,54 +2204,28 @@ function CallScreen(props: CallScreenProps) {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         style={styles.dialogueScroll}
         contentContainerStyle={[styles.dialogueContent, compact && styles.dialogueContentCompact]}
         showsVerticalScrollIndicator={false}
+        onContentSizeChange={() => {
+          if (isChat) scrollRef.current?.scrollToEnd({ animated: true });
+        }}
       >
-        {props.previousReply && !wrappingUp ? (
-          <View style={styles.learnerBubble}>
-            <Text style={styles.learnerLabel}>내 답변</Text>
-            <Text style={styles.learnerText}>{props.previousReply}</Text>
-          </View>
-        ) : null}
-
         {isChat ? (
-          <View style={[styles.questionCard, compact && styles.questionCardCompact, light && lightCallStyles.raisedSurface]}>
-            <View style={styles.questionHeader}>
-              <Text style={[styles.questionSpeaker, light && lightCallStyles.strongText]}>베플리의 질문</Text>
-              <Pressable
-                accessibilityRole="switch"
-                accessibilityState={{ checked: props.captionsOn }}
-                accessibilityLabel="한국어 뜻"
-                onPress={props.onToggleCaptions}
-                style={[styles.meaningToggle, light && lightCallStyles.utilityButton]}
-              >
-                <View style={[styles.meaningTrack, { backgroundColor: props.captionsOn ? t.action : t.line }]}>
-                  <View style={[styles.meaningKnob, props.captionsOn && styles.meaningKnobOn]} />
-                </View>
-                <Text style={[styles.meaningToggleText, light && lightCallStyles.strongText]}>한국어 뜻</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="질문 다시 듣기"
-                onPress={props.onReplay}
-                style={({ pressed }) => [styles.replayButton, { backgroundColor: t.surface2 }, pressed && styles.utilityPressed]}
-              >
-                <Icon name="replay" size={20} color={t.ink} />
-              </Pressable>
-            </View>
-            {props.turnLoading ? (
-              <TypingDots color={t.ink2} />
-            ) : (
-              <Text style={[styles.questionEnglish, compact && styles.questionEnglishCompact, light && lightCallStyles.strongText]}>{props.coachLine}</Text>
-            )}
-            {props.captionsOn && props.questionMeaningKo && !props.turnLoading ? (
-              <View style={[styles.questionMeaning, light && lightCallStyles.topBorder]}>
-                <Text style={[styles.questionMeaningLabel, { color: t.actionInk }]}>뜻</Text>
-                <Text style={[styles.questionMeaningText, light && lightCallStyles.mutedText]}>{props.questionMeaningKo}</Text>
-              </View>
-            ) : null}
-          </View>
+          <TalkThread
+            light={light}
+            compact={compact}
+            colors={t}
+            log={props.talkLog}
+            turnLoading={props.turnLoading}
+            praise={props.talkPraise}
+            captionsOn={props.captionsOn}
+            onToggleCaptions={props.onToggleCaptions}
+            onReplay={props.onReplay}
+            voiceState={props.voiceState}
+            inputMode={props.inputMode}
+          />
         ) : props.captionsOn ? (
           <View style={styles.guideRow}>
             <Pressable
@@ -1922,29 +2240,7 @@ function CallScreen(props: CallScreenProps) {
           </View>
         ) : null}
 
-        {wrappingUp && props.talkPraise ? (
-          // 마지막 질문 아래에 학생 대답과 베플리의 칭찬을 차례로 보여 준다.
-          <>
-            {props.previousReply ? (
-              <View style={styles.learnerBubble}>
-                <Text style={styles.learnerLabel}>내 답변</Text>
-                <Text style={styles.learnerText}>{props.previousReply}</Text>
-              </View>
-            ) : null}
-            <View style={[styles.reviewFeedbackCard, { backgroundColor: t.okSoft }]} accessibilityLiveRegion="polite" accessibilityLabel="베플리의 칭찬">
-              <Image source={befly.review.correct} style={styles.reviewFeedbackAvatar} accessible={false} />
-              <View style={styles.reviewFeedbackCopy}>
-                <Text style={[styles.reviewFeedbackAnswer, { color: t.okInk }]}>{props.talkPraise.en}</Text>
-                <Text style={[styles.praiseKo, { color: t.ink }]}>{props.talkPraise.ko}</Text>
-              </View>
-            </View>
-          </>
-        ) : isChat ? (
-          <View style={[styles.replyCue, { backgroundColor: t.actionSoft }]} accessibilityLiveRegion="polite">
-            <Icon name="mic" size={20} color={t.actionInk} />
-            <Text style={[styles.replyCueTitle, { color: t.actionInk }]}>이제 영어로 대답해요</Text>
-          </View>
-        ) : (
+        {isChat ? null : (
           <View style={[styles.promptBlock, compact && styles.promptBlockCompact, light && lightCallStyles.raisedSurface]}>
             <View style={styles.promptHeading}>
               <Text style={[styles.promptKicker, { color: t.actionInk }]}>{sentence ? "듣고 따라 말하기" : "오늘의 복습 표현"}</Text>
@@ -1991,14 +2287,14 @@ function CallScreen(props: CallScreenProps) {
           </View>
         )}
 
-        {listening ? (
+        {listening && !isChat ? (
           <View style={styles.listeningRow} accessibilityLiveRegion="polite">
             <Signal barColor={t.action} />
             <Text style={[styles.listeningText, { color: t.actionInk }]}>듣고 있어요</Text>
           </View>
         ) : null}
 
-        {transcribing || preparing ? (
+        {(transcribing || preparing) && !isChat ? (
           <View style={styles.listeningRow} accessibilityLiveRegion="polite">
             <Text style={[styles.listeningText, { color: t.actionInk }]}>
               {preparing ? "마이크를 준비하고 있어요… 권한을 묻는 창이 뜨면 허용해 주세요." : "말한 내용을 알아듣는 중이에요…"}
@@ -2693,28 +2989,59 @@ const styles = StyleSheet.create({
   callProgress: { color: color.mutedInverse, fontSize: 12, fontWeight: "700" },
   dialogueScroll: { flex: 1 },
   dialogueContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16, gap: 14 },
-  learnerBubble: { alignSelf: "flex-end", maxWidth: "88%", backgroundColor: color.primary, borderRadius: radius.md, padding: space.md, gap: space.xs },
-  learnerLabel: { color: color.primarySoft, fontSize: 11, fontWeight: "800" },
-  learnerText: { color: color.accentInk, fontSize: 16, lineHeight: 23, fontWeight: "700" },
+  chatThread: { gap: 10 },
+  chatTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm, marginBottom: 2 },
+  chatChip: { flexShrink: 1, flexDirection: "row", alignItems: "center", gap: 6, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 7 },
+  chatChipText: { fontSize: 12, fontWeight: "700", flexShrink: 1 },
+  chatMeaningToggle: { minHeight: 36, paddingHorizontal: 10 },
+  chatRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  chatRowFollow: { marginTop: -4 },
+  chatRowMine: { justifyContent: "flex-end" },
+  talkAvatar: { width: 34, height: 34, borderRadius: radius.pill, backgroundColor: color.beflySoft },
+  chatAvatarSmall: { width: 28, height: 28, borderRadius: radius.pill, backgroundColor: color.beflySoft },
+  talkAvatarSpacer: { width: 34 },
+  chatBubble: { maxWidth: "80%", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, gap: 4 },
+  chatBubbleBefly: { borderBottomLeftRadius: 6, flexShrink: 1 },
+  chatBubbleBeflyLight: { backgroundColor: color.surface, borderWidth: 1, borderColor: color.line },
+  chatBubbleBeflyDark: { backgroundColor: color.callRaised },
+  chatBubbleMine: { borderBottomRightRadius: 6 },
+  chatQuestionBubble: { paddingVertical: 12 },
+  chatQuestionText: { color: color.inkInverse, fontFamily: font.englishBold, fontSize: 21, lineHeight: 28, fontWeight: "700", letterSpacing: -0.2 },
+  chatQuestionTextCompact: { fontSize: 18, lineHeight: 24 },
+  chatMeaningText: { color: color.mutedInverse, fontSize: 14, lineHeight: 20 },
+  chatAckText: { color: color.inkInverse, fontFamily: font.english, fontSize: 16, lineHeight: 22 },
+  chatTypingBubble: { paddingVertical: 14 },
+  chatMineText: { color: color.accentInk, fontSize: 17, lineHeight: 24, fontWeight: "700" },
+  chatMyTurn: { borderWidth: 1.5, borderStyle: "dashed", backgroundColor: "transparent" },
+  chatStatusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  chatStatusText: { fontSize: 14, fontWeight: "700" },
+  chatReplay: { width: 36, height: 36, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
+  talkIntroCenter: { flex: 1, width: "100%", alignItems: "center", justifyContent: "center", gap: 18 },
+  talkIntroDone: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 7 },
+  talkIntroDoneText: { fontSize: 14, fontWeight: "800" },
+  talkIntroHeading: { alignItems: "center", gap: 8 },
+  talkIntroAvatar: { width: 96, height: 96, borderRadius: radius.pill, backgroundColor: color.beflySoft, marginBottom: 4 },
+  talkIntroTitle: { color: color.inkInverse, fontFamily: font.display, fontSize: 24, lineHeight: 32, fontWeight: "700", textAlign: "center" },
+  talkIntroSub: { color: color.mutedInverse, fontSize: 15, lineHeight: 22, textAlign: "center" },
+  talkIntroDemo: { width: "100%", borderRadius: radius.md, padding: space.md, gap: 10, borderWidth: 1 },
+  talkIntroDemoBubbleDark: { backgroundColor: color.callPulseOuter },
+  talkIntroDemoLabel: { color: color.mutedInverse, fontSize: 12, fontWeight: "800" },
+  talkIntroDemoText: { color: color.inkInverse, fontFamily: font.english, fontSize: 16, lineHeight: 22 },
+  talkIntroDemoFoot: { color: color.mutedInverse, fontSize: 12, lineHeight: 18, textAlign: "center" },
+  talkIntroLine: { alignItems: "center", gap: 4 },
+  talkIntroLineEn: { color: color.inkInverse, fontFamily: font.english, fontSize: 15, lineHeight: 21, textAlign: "center" },
+  talkIntroLineKo: { color: color.mutedInverse, fontSize: 13, lineHeight: 19, textAlign: "center" },
   coachBubble: { gap: space.xs },
   speakerLabel: { color: color.mutedInverse, fontSize: 12, fontWeight: "800" },
   coachText: { color: color.mutedInverse, fontSize: 16, lineHeight: 25, fontWeight: "500" },
-  questionCard: { backgroundColor: color.callRaised, borderRadius: 24, padding: space.lg, gap: 12 },
-  questionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm },
   questionAvatar: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: color.primary, alignItems: "center", justifyContent: "center" },
   questionAvatarText: { color: color.accentInk, fontSize: 16, fontWeight: "800" },
   questionHeaderCopy: { flex: 1, gap: 2 },
-  questionSpeaker: { color: color.inkInverse, fontSize: 13, fontWeight: "700", flex: 1 },
   questionMode: { color: color.mutedInverse, fontSize: 12, lineHeight: 18 },
   questionEnglish: { color: color.inkInverse, fontFamily: font.englishBold, fontSize: 26, lineHeight: 33, fontWeight: "700", letterSpacing: -0.3 },
-  questionMeaning: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.lineInverse, paddingTop: 10, flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  questionMeaningLabel: { color: color.primarySoft, fontSize: 12, fontWeight: "800" },
-  questionMeaningText: { color: color.mutedInverse, fontSize: 15, lineHeight: 23, flex: 1 },
-  replyCue: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 99, backgroundColor: color.actionSoftDark, paddingHorizontal: 14, paddingVertical: 8 },
   replyCueMarker: { width: 36, height: 36, borderRadius: radius.pill, backgroundColor: color.primarySoft, alignItems: "center", justifyContent: "center" },
   replyCueMarkerText: { color: color.primaryStrong, fontSize: 13, fontWeight: "800" },
   replyCueCopy: { flex: 1, gap: space.xs },
-  replyCueTitle: { color: color.actionInkDark, fontSize: 15, lineHeight: 22, fontWeight: "700" },
   replyCueBody: { color: color.mutedInverse, fontSize: 14, lineHeight: 21 },
   promptBlock: { backgroundColor: color.callRaised, borderRadius: 24, padding: space.lg, minHeight: 160, justifyContent: "center", gap: space.sm },
   promptHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm },
@@ -2834,8 +3161,6 @@ const styles = StyleSheet.create({
   reviewFeedbackAnswer: { color: color.ink, fontFamily: font.englishBold, fontSize: 20, lineHeight: 26 },
   callTopbarCompact: { paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: space.sm },
   dialogueContentCompact: { padding: space.md, gap: space.md },
-  questionCardCompact: { padding: space.md, gap: space.sm },
-  questionEnglishCompact: { fontSize: 21, lineHeight: 27 },
   promptBlockCompact: { padding: space.md, minHeight: 136 },
   promptTextCompact: { fontSize: 23, lineHeight: 31 },
   callDockCompact: { paddingHorizontal: space.md, paddingTop: space.sm, paddingBottom: space.sm },

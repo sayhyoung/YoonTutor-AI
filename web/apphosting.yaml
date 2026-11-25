@@ -72,12 +72,14 @@ env:
     secret: AZURE_SPEECH_KEY
   - variable: AZURE_SPEECH_REGION
     value: koreacentral
-  # 베플리 목소리 기본값: en-US-AnaNeural, 음 높이 -8%(소년처럼). 바꿀 때만 아래 값을 넣는다.
-  # CALL_REVIEW_TTS=gemini 면 예전 목소리(Gemini Kore)로 돌아간다.
+  # 베플리 목소리 기본값: en-US-AnaNeural, 음 높이 -5%(소년처럼), 빠르기 -5%(발음이 또렷하게). 바꿀 때만 아래 값을 넣는다.
+  # (2026-11-25 이전에는 음 -8%·빠르기 기본이었다.) CALL_REVIEW_TTS=gemini 면 예전 목소리(Gemini Kore)로 돌아간다.
   # - variable: AZURE_TTS_VOICE
   #   value: en-US-AnaNeural
   # - variable: AZURE_TTS_PITCH
-  #   value: "-8%"
+  #   value: "-5%"
+  # - variable: AZURE_TTS_RATE
+  #   value: "-5%"
   - variable: GEMINI_API_KEY               # 읽어 주기(Gemini TTS, 한국어·예비용). 기존 GEMINI_API_KEY 시크릿은 다른 서비스용이라 전용 시크릿을 쓴다.
     secret: CALL_REVIEW_GEMINI_API_KEY
   # 서버 푸시(FCM). Cloud Scheduler `call-review-dispatch`가 5분마다 발송 API를 부른다.

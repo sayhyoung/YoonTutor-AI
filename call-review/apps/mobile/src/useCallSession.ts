@@ -9,11 +9,13 @@ import {
   FREE_TALK_EXPRESSIONS,
   gradeReviewAnswer,
   gradeSentenceTyped,
+  heardAsAnswer,
   isCloseMiss,
   isNearSpelling,
   isSentence,
   MAX_REVIEW_ATTEMPTS,
   reviewHint,
+  speechHintsFor,
 } from "@yoon-call/shared";
 
 import {
@@ -34,6 +36,8 @@ export type ReviewFeedback = { kind: "correct" | "hint" | "retry"; answer: strin
 export type ReviewOutcome = "correct" | "hinted" | "retry";
 
 export type ConversationTurnRecord = { questionEn: string; answer: string };
+// 대화 화면에 차례대로 쌓는 질문과 대답(채팅처럼 보여 준다).
+export type TalkLogEntry = { key: string; questionEn: string; meaningKo: string; answer?: string };
 
 // 실회원 모드에서만 주입된다. 없으면(프리뷰) 템플릿 질문과 가짜 인식 결과를 쓴다.
 export type SessionServices = {
@@ -45,7 +49,8 @@ export type SessionServices = {
   voice?: {
     start: () => Promise<void>;
     stop: () => Promise<string | null>;
-    transcribe: (uri: string) => Promise<string>;
+    // hints: 기대하는 답(복습 정답, 대화 답 예시)을 음성 인식에 미리 알려 준다.
+    transcribe: (uri: string, hints?: string[]) => Promise<string>;
   };
   // 읽어 줄 질문이 정해지면 미리 받아 둔다(첫 대화 질문은 복습 중에 미리 만들어진다).
   prepareSpeech?: (questionEn: string) => Promise<void>;
@@ -196,11 +201,23 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     phase === "connecting" ||
     phase === "greeting" ||
     phase === "review" ||
+    phase === "talk-intro" ||
     phase === "free-talk" ||
     phase === "closing";
   const target = plan.targets[targetIndex];
   const freeTalkTurn =
     shownTurns[freeTalkTurnIndex] ?? plan.freeTalk.turns[freeTalkTurnIndex] ?? plan.freeTalk.turns[0]!;
+  const talkLog = useMemo<TalkLogEntry[]>(() => {
+    if (phase !== "free-talk") return [];
+    const log: TalkLogEntry[] = [];
+    for (let index = 0; index <= freeTalkTurnIndex; index += 1) {
+      const turn = shownTurns[index];
+      if (!turn) continue;
+      const answer = conversationTurns[index]?.answer;
+      log.push({ key: `talk-${index}`, questionEn: turn.questionEn, meaningKo: turn.questionMeaningKo, ...(answer ? { answer } : {}) });
+    }
+    return log;
+  }, [conversationTurns, freeTalkTurnIndex, phase, shownTurns]);
   const progressLabel = useMemo(() => {
     if (phase === "free-talk") {
       return `질문 ${freeTalkTurnIndex + 1} / ${plan.freeTalk.maxTurns}`;
@@ -357,6 +374,12 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     else void enterFreeTalk();
   }
 
+  // 대화 안내 화면을 다 보면(또는 바로 시작을 누르면) 짧은 대화를 시작한다.
+  function startTalk() {
+    if (phase !== "talk-intro") return;
+    void enterFreeTalk();
+  }
+
   function cancelConnecting() {
     if (connectTimer.current) clearTimeout(connectTimer.current);
     connectTimer.current = null;
@@ -406,8 +429,10 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     setVoiceState("transcribing");
     try {
       const uri = await services.voice.stop();
-      const text = uri ? (await services.voice.transcribe(uri)).trim() : "";
+      const heard = uri ? (await services.voice.transcribe(uri, listeningHints())).trim() : "";
       if (current !== generation.current) return;
+      // 단어 문항에서 정답과 소리만 같은 단어로 적혔으면(pear → Pair) 정답으로 본다.
+      const text = phase === "review" && target ? heardAsAnswer(heard, target.answerEn) : heard;
       if (!text) {
         setVoiceState("idle");
         setVoiceError("잘 들리지 않았어요. 한 번 더 말해 볼까요?");
@@ -435,6 +460,14 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
           : "말한 내용을 알아듣지 못했어요. 다시 말하거나 글자로 답해 주세요.",
       );
     }
+  }
+
+  // 음성 인식에 알려 줄 기대 답. 복습은 정답(문장이면 빈칸 단어도), 대화는 답 예시와 오늘 복습한 표현.
+  function listeningHints(): string[] {
+    if (phase === "review") return target ? speechHintsFor(target.answerEn) : [];
+    const examples = freeTalkTurn.choices.map((choice) => choice.answerEn);
+    const learned = expressions.flatMap((expression) => speechHintsFor(expression.answerEn).slice(0, 1));
+    return [...new Set([...examples, ...learned])].slice(0, 8);
   }
 
   function beginOrStopVoice() {
@@ -635,7 +668,8 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     setReviewFeedback(null);
     setCarriedHint(null);
     if (targetIndex + 1 >= plan.targets.length) {
-      void enterFreeTalk();
+      // 바로 대화로 가면 아이들이 따라 말하기가 이어지는 줄 알아서, 대화 시간임을 알리는 화면을 먼저 보여 준다.
+      setPhase("talk-intro");
       return;
     }
 
@@ -654,6 +688,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     hintOpen,
     conversationReplies: conversationTurns.map((turn) => turn.answer),
     conversationTurns,
+    talkLog,
     callId,
     callStartedAt,
     reviewAttempts,
@@ -681,6 +716,7 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     closeMyPage: () => setHomeSection("home"),
     showIncomingCall: () => setPhase("incoming"),
     startLesson,
+    startTalk,
     finishClosing: () => setPhase((current) => (current === "closing" ? "complete" : current)),
     declineIncomingCall: () => setPhase("home"),
     answerIncomingCall,

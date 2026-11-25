@@ -79,7 +79,7 @@ export interface CallReviewRepository {
   updateMessage?(id: string, update: MessageUpdate): Promise<TeacherMessage>;
   // 규칙상 틀린 복습 답이 뜻으로는 맞는지 서버 AI 판정.
   checkAnswer?(request: AnswerCheckRequest): Promise<boolean>;
-  transcribe?(uri: string, language?: "en" | "ko"): Promise<string>;
+  transcribe?(uri: string, language?: "en" | "ko", hints?: string[]): Promise<string>;
   // 영어 한 줄 일기: 문장 추천, 오늘 일기 저장, 선생님 댓글 읽음.
   suggestDiary?(body: DiarySuggestBody): Promise<DiarySuggestion[]>;
   saveDiary?(payload: DiarySavePayload): Promise<DiaryEntry>;
@@ -330,10 +330,10 @@ export function createApiCallReviewRepository({
       if (!token) return false;
       return registerPushDevice(token, pushToken).catch(() => false);
     },
-    async transcribe(uri, language) {
+    async transcribe(uri, language, hints) {
       const token = getToken();
       if (!token) throw new UnauthorizedError();
-      return transcribeAnswer(token, uri, language);
+      return transcribeAnswer(token, uri, language, hints);
     },
     async suggestDiary(body) {
       const token = getToken();

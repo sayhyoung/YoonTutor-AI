@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   audioFileName,
+  cleanSpeechHints,
   isAzureSttConfigured,
   transcribeWithAzure,
   transcribeWithOpenAi,
@@ -36,11 +37,14 @@ export async function POST(request: Request) {
   let audio: Blob | null = null;
   // 영어 일기에서 "오늘 있었던 일"을 한국어로 말할 때만 lang=ko. 없으면 예전처럼 영어.
   let language: "en" | "ko" = "en";
+  // 앱이 보내는 정답 힌트(hint 여러 개). 예전 앱은 보내지 않는다.
+  let hints: string[] = [];
   try {
     const form = await request.formData();
     const file = form.get("audio");
     if (file instanceof Blob) audio = file;
     if (form.get("lang") === "ko") language = "ko";
+    if (language === "en") hints = cleanSpeechHints(form.getAll("hint"));
   } catch {
     return NextResponse.json({ error: "녹음을 읽지 못했어요." }, { status: 400, headers });
   }
@@ -56,8 +60,8 @@ export async function POST(request: Request) {
   const fileName = uploadedExtension ? `answer.${uploadedExtension.toLowerCase()}` : audioFileName(audio.type);
   try {
     const text = useAzure
-      ? await transcribeWithAzure(audio, fileName, language)
-      : await transcribeWithOpenAi(audio, fileName, language);
+      ? await transcribeWithAzure(audio, fileName, language, hints)
+      : await transcribeWithOpenAi(audio, fileName, language, hints);
     return NextResponse.json({ text, engine: useAzure ? "azure" : "openai" }, { headers });
   } catch (error) {
     console.error("[stt] 음성 인식 실패:", error instanceof Error ? error.message : "unknown");

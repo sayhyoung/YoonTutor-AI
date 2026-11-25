@@ -50,7 +50,8 @@ export type DiaryServices = {
   suggest?: (body: DiarySuggestBody) => Promise<DiarySuggestion[]>;
   save?: (payload: DiarySavePayload) => Promise<DiaryEntry>;
   readComment?: (id: string) => Promise<DiaryEntry>;
-  transcribe?: (uri: string, language: "en" | "ko") => Promise<string>;
+  // hints: 따라 말할 문장처럼 기대하는 영어. 음성 인식이 그쪽으로 알아듣게 돕는다.
+  transcribe?: (uri: string, language: "en" | "ko", hints?: string[]) => Promise<string>;
   capture: VoiceCapture;
   speechSource?: RemoteSpeechSource;
 };
@@ -516,7 +517,7 @@ export function DiaryScreen({
     setVoice("transcribing");
     try {
       const uri = await services.capture.stop();
-      const text = uri ? (await services.transcribe(uri, "en")).trim() : "";
+      const text = uri ? (await services.transcribe(uri, "en", [choice.sentenceEn])).trim() : "";
       if (!text) {
         setError("잘 못 들었어요. 다시 말해 볼까요?");
         return;

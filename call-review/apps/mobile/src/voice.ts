@@ -104,9 +104,9 @@ let speakGeneration = 0;
 const prefetched = new Map<string, Promise<string | null>>();
 
 // 베플리 목소리를 바꾸면 폴더 이름을 올린다. 예전 목소리로 받아 둔 파일이 섞여 나오지 않도록
-// 옛 폴더는 앱을 켠 뒤 처음 받을 때 한 번 지운다. (v2: Azure 소년 목소리)
-const TTS_CACHE_DIR = "tts-v2";
-const LEGACY_TTS_CACHE_DIRS = ["tts"];
+// 옛 폴더는 앱을 켠 뒤 처음 받을 때 한 번 지운다. (v2: Azure 소년 목소리, v3: 음 -5%·빠르기 -5%로 발음을 또렷하게)
+const TTS_CACHE_DIR = "tts-v3";
+const LEGACY_TTS_CACHE_DIRS = ["tts", "tts-v2"];
 let legacyCacheCleared = false;
 
 function ttsCacheDirectory(): Directory {

@@ -233,10 +233,17 @@ export async function checkAlternativeAnswer(token: string, body: AnswerCheckReq
 
 // 녹음 파일(uri)을 BFF로 올려 텍스트로 바꾼다. 웹은 blob URL, 네이티브는 파일 uri.
 // language: 영어 답변은 en(기본), 영어 일기의 "오늘 있었던 일" 말하기는 ko.
-export async function transcribeAnswer(token: string, uri: string, language: "en" | "ko" = "en"): Promise<string> {
+// hints: 학생이 말할 것으로 기대하는 영어(복습 정답·대화 답 예시). 음성 인식이 그쪽으로 알아듣게 돕는다.
+export async function transcribeAnswer(
+  token: string,
+  uri: string,
+  language: "en" | "ko" = "en",
+  hints: string[] = [],
+): Promise<string> {
   if (!callReviewApiBaseUrl) throw new ApiError("서버 주소가 설정되지 않았어요.", 0);
   const form = new FormData();
   if (language === "ko") form.append("lang", "ko");
+  for (const hint of hints) form.append("hint", hint);
   if (Platform.OS === "web") {
     const blob = await fetch(uri).then((response) => response.blob());
     form.append("audio", blob, blob.type.includes("webm") ? "answer.webm" : "answer.m4a");

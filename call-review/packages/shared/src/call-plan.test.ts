@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { alternativeAnswerMessage, containsBadWords, buildCallPlanFromLearningItems, gradeSentenceTyped, isCloseMiss, isNearSpelling, sentenceBlanks, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
+import { alternativeAnswerMessage, containsBadWords, heardAsAnswer, speechHintsFor, buildCallPlanFromLearningItems, gradeSentenceTyped, isCloseMiss, isNearSpelling, sentenceBlanks, buildTemplateFreeTalk, FREE_TALK_TURNS, gradeReviewAnswer, kstToIso, reviewHint, selectCallItems, type LearningHistoryItem, type PracticeRecord } from "./index.ts";
 
 function item(answerEn: string, sourceType: "word" | "sentence", studiedAt: string): LearningHistoryItem {
   return {
@@ -276,5 +276,37 @@ describe("containsBadWords", () => {
     for (const text of ["I'm in class.", "My assistant teacher", "Scunthorpe", "He is from China.", "I took a shower.", "Dick and Jane", "새해 복 많이 받아", "시발점"]) {
       assert.equal(containsBadWords(text), false, text);
     }
+  });
+});
+
+describe("speechHintsFor", () => {
+  it("gives the answer, every slash option, and the blank words of a sentence", () => {
+    assert.deepEqual(speechHintsFor("insect"), ["insect"]);
+    assert.deepEqual(speechHintsFor("Hi./Hello."), ["Hi.", "Hello."]);
+    const sentence = speechHintsFor("I'm good at drawing pictures.");
+    assert.equal(sentence[0], "I'm good at drawing pictures.");
+    assert.ok(sentence.length >= 2 && sentence.slice(1).every((hint) => "I'm good at drawing pictures.".includes(hint)));
+  });
+
+  it("drops Korean or empty answers", () => {
+    assert.deepEqual(speechHintsFor("사과"), []);
+    assert.deepEqual(speechHintsFor("  "), []);
+  });
+});
+
+describe("heardAsAnswer", () => {
+  it("accepts a word that only sounds like the answer", () => {
+    assert.equal(heardAsAnswer("Pair.", "pear"), "pear");
+    assert.equal(heardAsAnswer("Flower.", "flour"), "flour");
+    assert.equal(heardAsAnswer("um night", "knight"), "knight");
+    assert.equal(gradeReviewAnswer(heardAsAnswer("Night.", "knight"), "knight"), "exact");
+  });
+
+  it("keeps other answers as heard", () => {
+    assert.equal(heardAsAnswer("Bear.", "pear"), "Bear.");
+    assert.equal(heardAsAnswer("a pair", "pear"), "a pair");
+    assert.equal(heardAsAnswer("Pair.", "pair"), "Pair.");
+    assert.equal(heardAsAnswer("I see.", "sea"), "I see.");
+    assert.equal(heardAsAnswer("Flower.", "I like flour."), "Flower.");
   });
 });
