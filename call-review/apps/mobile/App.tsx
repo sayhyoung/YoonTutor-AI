@@ -1392,7 +1392,7 @@ function IncomingScreen({
         <RingRipple ringColor={darkMode ? "#5A4130" : "#E2C9AE"} delay={0} />
         <RingRipple ringColor={darkMode ? "#5A4130" : "#E2C9AE"} delay={1200} />
         <View style={[styles.incomingHalo, { backgroundColor: darkMode ? "#2A1F1A" : "#F7EDC9" }]} />
-        <Image source={befly.incoming} style={[styles.incomingAvatar, darkMode && darkAppStyles.beflyRing]} accessibilityLabel="헤드셋을 쓰고 손 흔드는 베플리 선생님" />
+        <Image source={befly.incoming} style={[styles.incomingAvatar, darkMode && darkAppStyles.beflyRing]} accessibilityLabel="헤드셋을 쓴 베플리 선생님" />
       </View>
       <View style={styles.incomingIdentity}><Text style={[styles.incomingName,!darkMode && lightCallStyles.strongText]}>베플리 선생님</Text><Text style={[styles.incomingMeta,!darkMode && lightCallStyles.mutedText]}>오늘 복습할 표현 {reviewCount}개</Text></View>
       <View style={[styles.incomingSpeech,!darkMode && lightCallStyles.raisedSurface]}><Text style={[styles.incomingEnglish,!darkMode && lightCallStyles.strongText]}>Hi! Let’s talk!</Text><Text style={[styles.incomingKo,!darkMode && lightCallStyles.strongText]}>오늘 배운 표현으로 짧게 이야기해 볼까요?</Text></View>
@@ -1597,7 +1597,7 @@ function ConnectingScreen({
               <Path d="M84 6a78 78 0 0 1 78 78" fill="none" stroke={light ? color.befly : color.beflyDark} strokeWidth={6} strokeLinecap="round" />
             </Svg>
           </Animated.View>
-          <Image source={befly.call.default} style={styles.connectingAvatar} accessibilityLabel="베플리 선생님" />
+          <Image source={befly.incoming} style={styles.connectingAvatar} accessibilityLabel="헤드셋을 쓴 베플리 선생님" />
         </View>
         <View style={styles.connectingCopy} accessibilityLiveRegion="polite">
           <Text style={[styles.connectingTitle, light && lightCallStyles.strongText]}>베플리와 연결하고 있어요</Text>
@@ -1675,7 +1675,7 @@ function GreetingScreen({ darkMode, line, onNext }: { darkMode: boolean; line: {
   return (
     <View style={styles.connectingScreen}>
       <View style={styles.connectingCenter} accessibilityLiveRegion="polite">
-        <Image source={befly.call.speaking} style={styles.connectingAvatar} accessibilityLabel="베플리 선생님" />
+        <Image source={befly.greeting} style={styles.connectingAvatar} accessibilityLabel="손 흔드는 베플리 선생님" />
         <View style={styles.connectingCopy}>
           <Text style={[styles.closingLabel, { color: light ? color.befly : color.beflyDark }]}>베플리와 연결됐어요</Text>
           <Text style={[styles.closingEnglish, light && lightCallStyles.strongText]}>{line.en}</Text>
@@ -1771,7 +1771,7 @@ function TalkIntroScreen({
           </Text>
         </Appear>
         <Appear delay={150} style={styles.talkIntroHeading}>
-          <Image source={befly.call.speaking} style={styles.talkIntroAvatar} accessibilityLabel="베플리 선생님" />
+          <Image source={befly.talkIntro} style={styles.talkIntroAvatar} accessibilityLabel="마이크 앞에서 말하는 베플리 선생님" />
           <Text style={[styles.talkIntroTitle, light && lightCallStyles.strongText]}>이제 베플리와 대화해요</Text>
           <Text style={[styles.talkIntroSub, light && lightCallStyles.mutedText]}>따라 말하기가 아니에요. 질문을 듣고 내 생각을 영어로 대답해요.</Text>
         </Appear>
@@ -1818,7 +1818,7 @@ function ClosingScreen({ darkMode, talkCount, onNext }: { darkMode: boolean; tal
   return (
     <View style={styles.connectingScreen}>
       <View style={styles.connectingCenter} accessibilityLiveRegion="polite">
-        <Image source={befly.result.completed} style={styles.connectingAvatar} accessibilityLabel="베플리 선생님" />
+        <Image source={befly.cheer} style={styles.connectingAvatar} accessibilityLabel="응원하는 베플리 선생님" />
         <View style={styles.connectingCopy}>
           <Text style={[styles.closingLabel, { color: light ? color.befly : color.beflyDark }]}>대화 {talkCount}개를 모두 마쳤어요</Text>
           <Text style={[styles.closingEnglish, light && lightCallStyles.strongText]}>{CLOSING_LINE_EN}</Text>
@@ -3020,7 +3020,7 @@ const styles = StyleSheet.create({
   talkIntroDone: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 7 },
   talkIntroDoneText: { fontSize: 14, fontWeight: "800" },
   talkIntroHeading: { alignItems: "center", gap: 8 },
-  talkIntroAvatar: { width: 96, height: 96, borderRadius: radius.pill, backgroundColor: color.beflySoft, marginBottom: 4 },
+  talkIntroAvatar: { width: 116, height: 116, borderRadius: radius.pill, backgroundColor: color.beflySoft, marginBottom: 4 },
   talkIntroTitle: { color: color.inkInverse, fontFamily: font.display, fontSize: 24, lineHeight: 32, fontWeight: "700", textAlign: "center" },
   talkIntroSub: { color: color.mutedInverse, fontSize: 15, lineHeight: 22, textAlign: "center" },
   talkIntroDemo: { width: "100%", borderRadius: radius.md, padding: space.md, gap: 10, borderWidth: 1 },

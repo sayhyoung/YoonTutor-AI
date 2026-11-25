@@ -628,7 +628,7 @@ export function DiaryScreen({
             </View>
           ) : (
             <View style={[styles.card, styles.introCard, card]}>
-              <Image source={befly.home} style={styles.introAvatar} accessibilityLabel="베플리 선생님" />
+              <Image source={befly.diary} style={styles.introAvatar} accessibilityLabel="연필을 든 베플리 선생님" />
               <View style={styles.introCopy}>
                 <Text style={[styles.introTitle, ink]}>오늘 있었던 일을 영어 한 줄로 남겨요</Text>
                 <Text style={[styles.body, muted]}>한글이나 영어로 쓰거나 말하면, 베플리가 영어 문장을 추천해 줘요.</Text>
@@ -674,7 +674,7 @@ export function DiaryScreen({
           {header}
           {loading ? (
             <View style={[styles.card, styles.loadingCard, card]} accessibilityLiveRegion="polite">
-              <Image source={befly.home} style={styles.loadingAvatar} accessibilityLabel="베플리 선생님" />
+              <Image source={befly.diary} style={styles.loadingAvatar} accessibilityLabel="연필을 든 베플리 선생님" />
               <TypingDots tint={palette.accent} />
               <Text style={[styles.body, ink]}>베플리가 영어 문장을 만들고 있어요</Text>
             </View>
