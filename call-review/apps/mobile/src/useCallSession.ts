@@ -112,6 +112,8 @@ const FIRST_TURN_WAIT_MS = 2500;
 const SPEECH_READY_WAIT_MS = 5000;
 // 복습 문항을 맞히면 정답 카드를 이만큼 보여 준 뒤 저절로 다음 표현으로 넘어간다.
 const AUTO_NEXT_MS = 1600;
+// 세 번 다 틀려 정답을 보여 주면, 읽을 틈을 준 뒤 저절로 다음 표현으로 넘어간다(같은 문항을 끝없이 다시 말하지 않게).
+const REVEAL_NEXT_MS = 4000;
 // 짧은 대화 마지막 대답 뒤 베플리의 칭찬. 대답을 보여 준 채 칭찬을 말하고 나서 마무리 인사로 넘어간다.
 export const TALK_PRAISES: { en: string; ko: string }[] = [
   { en: "Good job! You did great today.", ko: "잘했어요! 오늘 정말 잘했어요." },
@@ -444,7 +446,9 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       }
       // 짧은 대화는 들은 말을 확인하지 않고 바로 대답으로 보내 다음 질문으로 넘어간다.
       // 복습 문항도 들은 말이 정답이면 바로 채점한다. 틀렸을 때만 잘못 들었을 수 있으니 확인을 받는다.
-      if (phase === "free-talk" || (target && gradeReviewAnswer(text, target.answerEn) !== "wrong")) {
+      // 마지막 기회(세 번째)는 다시 말해도 정답 공개로 이어지므로 확인 없이 바로 채점한다.
+      const lastTry = (wrongCounts.current[targetIndex] ?? 0) + 1 >= MAX_REVIEW_ATTEMPTS;
+      if (phase === "free-talk" || (target && (gradeReviewAnswer(text, target.answerEn) !== "wrong" || lastTry))) {
         submitAnswer(text);
         return;
       }
@@ -539,6 +543,41 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     void judgeReviewAnswer(value);
   }
 
+  // 잠시 뒤 다음 표현(마지막이면 대화 안내)으로 넘어간다. 그사이 '다음으로'를 누르거나 통화가 바뀌면 취소된다.
+  function scheduleNext(ms: number) {
+    const current = generation.current;
+    if (autoNext.current) clearTimeout(autoNext.current);
+    autoNext.current = setTimeout(() => {
+      autoNext.current = null;
+      if (current === generation.current) continueReview();
+    }, ms);
+  }
+
+  // '이렇게 들었어요'에서 보내지 않고 다시 말하기를 눌러도 한 번 시도한 걸로 센다(팀 의견, 2026-11-27:
+  // 보내지 않고 계속 다시 녹음하면 같은 문항이 끝나지 않았다). 세 번째면 정답을 보여 주고 넘어간다.
+  // 정답을 보여 줬으면 true(다시 녹음하지 않는다).
+  function countRerecordedTry(heard: string): boolean {
+    if (!target || reviewOutcomes[targetIndex]) return false;
+    const index = targetIndex;
+    setReviewAttempts((attempts) => ({ ...attempts, [index]: [...(attempts[index] ?? []), heard] }));
+    const tries = (wrongCounts.current[index] ?? 0) + 1;
+    wrongCounts.current[index] = tries;
+    helped.current[index] = true;
+    if (tries >= MAX_REVIEW_ATTEMPTS) {
+      setHeardText("");
+      setVoiceState("idle");
+      lastRetryMessage.current = pickRetryMessage(lastRetryMessage.current, Math.random, isCloseMiss(heard, target.answerEn));
+      setReviewFeedback({ kind: "retry", answer: heard, message: lastRetryMessage.current });
+      setReviewOutcomes((outcomes) => (outcomes[index] ? outcomes : { ...outcomes, [index]: "retry" }));
+      setCoachLine("괜찮아요. 같이 다시 볼까요?");
+      scheduleNext(REVEAL_NEXT_MS);
+      return true;
+    }
+    // 보냈을 때와 같은 힌트를 문제 칸에 보여 주고 다시 말하게 한다.
+    setCarriedHint(reviewHint(target.answerEn, tries === 1 ? 1 : 2, "speak"));
+    return false;
+  }
+
   // 복습 답 판정: 규칙 채점 → (틀리면) 뜻이 맞는 다른 답인지 AI 판정 → 1·2번째 오답은 힌트, 3번째 오답은 정답 공개.
   async function judgeReviewAnswer(value: string) {
     if (!target) return;
@@ -555,6 +594,8 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
       setReviewFeedback(feedback);
       setReviewOutcomes((outcomes) => (outcomes[index] ? outcomes : { ...outcomes, [index]: outcome }));
       setCoachLine(line);
+      // 정답을 보여 줬으면(세 번 다 틀림) 다시 말하기 없이 잠시 뒤 다음 표현으로 넘어간다.
+      if (feedback.kind === "retry") scheduleNext(REVEAL_NEXT_MS);
     };
 
     // 문장 문항을 글자로 답할 때는 빈칸 단어만 써도 된다. 말할 때는 문장 전체로 채점한다.
@@ -573,17 +614,20 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
           ? remember(pickCloseMessage(lastRetryMessage.current))
           : undefined;
       finish(hinted ? "hinted" : "correct", { kind: "correct", answer: value, ...(message ? { message } : {}) }, "좋아요! 아주 자연스러워요.");
-      // 맞히면 버튼을 누르지 않아도 잠시 뒤 다음 표현(마지막이면 짧은 대화)으로 넘어간다.
-      if (autoNext.current) clearTimeout(autoNext.current);
-      autoNext.current = setTimeout(() => {
-        autoNext.current = null;
-        if (current === generation.current) continueReview();
-      }, AUTO_NEXT_MS);
+      // 맞히면 버튼을 누르지 않아도 잠시 뒤 다음 표현(마지막이면 대화 안내)으로 넘어간다.
+      scheduleNext(AUTO_NEXT_MS);
       return;
     }
 
-    // 문장을 말로 답할 때 빈칸 단어만 말했으면(맞는 단어) 오답으로 세지 않고 문장 전체로 다시 말하게 한다.
+    // 문장을 말로 답할 때 빈칸 단어만 말했으면(맞는 단어) 틀렸다고 하지 않고 문장 전체로 다시 말하게 한다.
     if (sentence && !typedSentence && gradeReviewAnswer(value, blankAnswerTarget(target.answerEn)) !== "wrong") {
+      // 이것도 한 번 시도로 센다(세 번이 넘으면 문장을 보여 주고 넘어간다).
+      const tries = (wrongCounts.current[index] ?? 0) + 1;
+      wrongCounts.current[index] = tries;
+      if (!decided && tries >= MAX_REVIEW_ATTEMPTS) {
+        finish("retry", { kind: "retry", answer: value, message: remember("단어는 맞았어요! 문장은 이렇게 말해요") }, "괜찮아요. 같이 다시 볼까요?");
+        return;
+      }
       setReviewFeedback({ kind: "hint", answer: value, message: "단어는 맞았어요! 이번엔 전체 문장으로 다시 말해 봐요." });
       setCoachLine("전체 문장으로 다시 말해 볼까요?");
       return;
@@ -736,17 +780,12 @@ export function useCallSession(plan: CallPlan, services: SessionServices = {}) {
     beginOrStopVoice,
     submitTypedAnswer,
     continueReview,
-    retryReview: () => {
-      setReviewFeedback(null);
-      setVoiceState("idle");
-      setVoiceError(null);
-      setHeardText("");
-      setTypedText("");
-      setCoachLine("천천히 다시 말해 볼까요?");
-    },
     retryVoice: () => {
+      if (phase === "review" && voiceState === "review" && heardText.trim() && countRerecordedTry(heardText)) return;
       void startListening();
     },
+    // '이렇게 들었어요'에서 다시 말하기를 눌러도 남는 기회(이번 것을 센 뒤).
+    retriesLeft: target ? Math.max(0, MAX_REVIEW_ATTEMPTS - (wrongCounts.current[targetIndex] ?? 0) - 1) : 0,
     chooseAnswer: submitAnswer,
     toggleChoiceAssist: () => setChoiceAssistOpen((current) => !current),
     endCall: () => {

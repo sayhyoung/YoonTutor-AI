@@ -1040,7 +1040,7 @@ function CallReviewApp({
             onSubmitText={session.submitTypedAnswer}
             onRetryVoice={session.retryVoice}
             onContinueReview={session.continueReview}
-            onRetryReview={session.retryReview}
+            retriesLeft={session.retriesLeft}
             isLastTarget={session.isLastTarget}
             onChooseAnswer={session.chooseAnswer}
             onToggleChoiceAssist={session.toggleChoiceAssist}
@@ -1872,7 +1872,8 @@ type CallScreenProps = {
   onSubmitText: () => void;
   onRetryVoice: () => void;
   onContinueReview: () => void;
-  onRetryReview: () => void;
+  // '이렇게 들었어요'에서 다시 말해도 남는 기회.
+  retriesLeft: number;
   isLastTarget: boolean;
   onEnd: () => void;
   idleStopSeconds: number;
@@ -1904,7 +1905,7 @@ function reviewGuide(props: CallScreenProps) {
       ? "좋아요! 아주 자연스러워요."
       : props.reviewFeedback.kind === "hint"
         ? "힌트를 보고 다시 말해 볼까요?"
-        : "괜찮아요, 같이 다시 볼까요?";
+        : "정답을 같이 볼까요?";
   }
   if (props.inputMode === "text") return isSentence(props.answerEn) ? "빈칸 단어만 써도 좋아요." : "글자로 써도 좋아요.";
   if (props.voiceState === "listening") return "천천히 말해도 괜찮아요.";
@@ -2313,7 +2314,11 @@ function CallScreen(props: CallScreenProps) {
           <View style={[styles.heardCard, { backgroundColor: t.actionSoft }]} accessibilityLabel="음성 인식 결과">
             <Text style={[styles.heardLabel, { color: t.actionInk }]}>이렇게 들었어요</Text>
             <Text style={[styles.heardText, { color: t.ink }]}>“{props.heardText}”</Text>
-            {!isChat && <Text style={[styles.heardHelp, { color: t.ink2 }]}>맞으면 보내고, 아니면 다시 말해요.</Text>}
+            {!isChat && (
+              <Text style={[styles.heardHelp, { color: t.ink2 }]}>
+                맞으면 보내고, 아니면 다시 말해요. (남은 기회 {props.retriesLeft}번)
+              </Text>
+            )}
           </View>
         ) : null}
 
@@ -2439,12 +2444,13 @@ function CallScreen(props: CallScreenProps) {
             <Text style={[styles.autoNextText, { color: t.actionInk }]}>{props.isLastTarget ? "이제 베플리와 짧게 대화해요…" : "다음 표현으로 넘어가요…"}</Text>
           </View>
         ) : feedback?.kind === "retry" ? (
-          <View style={styles.confirmActions}>
-            <Pressable accessibilityRole="button" onPress={props.onRetryReview} style={({ pressed }) => [styles.confirmSecondary, light && lightCallStyles.utilityButton, pressed && styles.buttonPressed]}>
-              <Text style={[styles.confirmSecondaryText, light && lightCallStyles.strongText]}>{props.inputMode === "text" ? "다시 입력하기" : "다시 말하기"}</Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" onPress={props.onContinueReview} style={({ pressed }) => [styles.confirmPrimary, { backgroundColor: t.action }, pressed && styles.buttonPressed]}>
-              <Text style={styles.confirmPrimaryText}>다음으로</Text>
+          // 세 번 다 틀리면 정답을 보여 주고 잠시 뒤 저절로 넘어간다. 다시 말하기는 두지 않는다.
+          <View style={styles.revealDock}>
+            <Text style={[styles.autoNextText, styles.revealText, { color: t.actionInk }]} accessibilityLiveRegion="polite">
+              {props.isLastTarget ? "정답을 보고 대화로 넘어가요…" : "정답을 보고 다음 표현으로 넘어가요…"}
+            </Text>
+            <Pressable accessibilityRole="button" onPress={props.onContinueReview} style={({ pressed }) => [styles.confirmPrimary, styles.revealNext, { backgroundColor: t.action }, pressed && styles.buttonPressed]}>
+              <Text style={styles.confirmPrimaryText}>바로 다음으로</Text>
             </Pressable>
           </View>
         ) : props.inputMode === "voice" && props.voiceState === "review" ? (
@@ -2890,7 +2896,8 @@ const styles = StyleSheet.create({
   // 일기 카드까지 스크롤 없이 보이도록 카드 사이를 촘촘하게 둔다.
   homeContent: { padding: 20, paddingTop: 44, paddingBottom: 16, gap: 14 },
   homeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: space.sm },
-  brandEyebrow: { color: color.muted, fontFamily: font.body, fontSize: 13, fontWeight: "700" },
+  // 줄 높이를 정해 두지 않으면 안드로이드에서 한글 받침(윤·선·관의 ㄴ)이 아래가 잘려 보였다.
+  brandEyebrow: { color: color.muted, fontFamily: font.body, fontSize: 13, lineHeight: 20, fontWeight: "700" },
   homeTitle: { color: color.ink, fontFamily: font.display, fontSize: 27, lineHeight: 35, fontWeight: "800", letterSpacing: -0.8, marginTop: space.xs },
   myButton: { minWidth: 52, height: 44, borderRadius: radius.pill, backgroundColor: color.surface, borderWidth: 1, borderColor: color.line, alignItems: "center", justifyContent: "center", paddingHorizontal: space.md },
   myButtonText: { color: color.ink, fontSize: 14, fontWeight: "700" },
@@ -3050,6 +3057,9 @@ const styles = StyleSheet.create({
   promptText: { color: color.inkInverse, fontFamily: font.display, fontSize: 30, lineHeight: 40, fontWeight: "700", letterSpacing: -0.6 },
   promptGuide: { color: color.mutedInverse, fontSize: 13, lineHeight: 19, marginTop: space.xs },
   promptMeaning: { color: color.mutedInverse, fontSize: 16, lineHeight: 23 },
+  revealDock: { alignItems: "stretch", gap: space.sm },
+  revealNext: { flex: 0, minHeight: 52 },
+  revealText: { textAlign: "center" },
   autoNextRow: { minHeight: 50, alignItems: "center", justifyContent: "center" },
   praiseKo: { fontSize: 15, lineHeight: 22 },
   autoNextText: { fontSize: 15, fontWeight: "700" },
