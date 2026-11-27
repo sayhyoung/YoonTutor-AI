@@ -60,7 +60,8 @@ describe("selectCallItems", () => {
       { answerEn: "sleepy", outcome: "retry", practicedAt: at },
     ]);
     assert.equal(selection.mode, "new");
-    assert.deepEqual(names(selection), ["like", "I am tired.", "Wow, how fast!", "She is a student.", "Do you like movies?"]);
+    // 새로 틀린 단어가 1개뿐이라, 문장 수에 맞춰 통화에서 본 단어(다시 볼 것 먼저 → 맞힌 것)로 채운다.
+    assert.deepEqual(names(selection), ["like", "sleepy", "close", "I am tired.", "Wow, how fast!", "She is a student.", "Do you like movies?"]);
   });
 
   it("asks a new lesson's wrong answers again even if the expression was practiced before", () => {
@@ -90,7 +91,73 @@ describe("selectCallItems", () => {
     }));
     const selection = selectCallItems(items, practiced);
     assert.equal(selection.mode, "rotation");
-    assert.deepEqual(names(selection), ["close", "sleepy", "like"]);
+    assert.deepEqual(names(selection), ["close", "sleepy", "He is from China."]);
+  });
+
+  it("asks five words and five sentences when there are plenty of both", () => {
+    const sentences = Array.from({ length: 12 }, (_, index) => item(`I like toy number ${index}.`, "sentence", "2026-11-20T10:00:00"));
+    const words = Array.from({ length: 8 }, (_, index) => item(`word${index}`, "word", "2026-11-01T10:00:00"));
+    const selection = selectCallItems([...sentences, ...words]);
+    assert.deepEqual(names(selection), [
+      ...words.slice(0, 5).map((target) => target.answerEn),
+      ...sentences.slice(0, 5).map((target) => target.answerEn),
+    ]);
+  });
+
+  it("brings back practiced words to match the sentences when no new word was missed", () => {
+    const at = "2026-11-10T00:00:00.000Z";
+    const words = Array.from({ length: 8 }, (_, index) => item(`word${index}`, "word", "2026-11-01T10:00:00"));
+    const sentences = Array.from({ length: 12 }, (_, index) => item(`I like toy number ${index}.`, "sentence", "2026-11-20T10:00:00"));
+    const practiced: PracticeRecord[] = words.map((target, index) => ({
+      answerEn: target.answerEn,
+      outcome: index === 6 ? "retry" : "correct",
+      practicedAt: at,
+    }));
+    const selection = selectCallItems([...words, ...sentences], practiced);
+    assert.equal(selection.mode, "new");
+    // 다시 볼 단어(word6)가 먼저, 그다음 맞힌 단어.
+    assert.deepEqual(names(selection).slice(0, 5), ["word6", "word0", "word1", "word2", "word3"]);
+    assert.equal(selection.items.filter((target) => target.sourceType === "sentence").length, 5);
+  });
+
+  it("fills a call with few new mistakes using expressions missed in earlier calls", () => {
+    const at = "2026-11-10T00:00:00.000Z";
+    const words = Array.from({ length: 6 }, (_, index) => item(`word${index}`, "word", "2026-11-01T10:00:00"));
+    const sentences = Array.from({ length: 6 }, (_, index) => item(`I like toy number ${index}.`, "sentence", "2026-11-01T10:00:00"));
+    const practiced: PracticeRecord[] = [...words, ...sentences].map((target, index) => ({
+      answerEn: target.answerEn,
+      outcome: index % 2 === 0 ? "retry" : "hinted",
+      practicedAt: at,
+    }));
+    const newSentence = item("I am tired.", "sentence", "2026-11-20T10:00:00");
+    const selection = selectCallItems([...words, ...sentences, newSentence], practiced);
+    assert.equal(selection.mode, "new");
+    // 단어 5개: 틀린 것 먼저, 그다음 힌트 받은 것. 문장 5개: 새 오답 먼저, 그다음 복습 필요.
+    assert.deepEqual(names(selection), [
+      "word0",
+      "word2",
+      "word4",
+      "word1",
+      "word3",
+      "I am tired.",
+      "I like toy number 0.",
+      "I like toy number 2.",
+      "I like toy number 4.",
+      "I like toy number 1.",
+    ]);
+  });
+
+  it("does not stretch a short call with practiced words", () => {
+    const at = "2026-11-10T00:00:00.000Z";
+    const words = Array.from({ length: 8 }, (_, index) => item(`word${index}`, "word", "2026-11-01T10:00:00"));
+    const practiced: PracticeRecord[] = words.map((target) => ({ answerEn: target.answerEn, outcome: "correct", practicedAt: at }));
+    const selection = selectCallItems([...words, item("I am tired.", "sentence", "2026-11-20T10:00:00"), item("I am happy.", "sentence", "2026-11-20T10:00:00")], practiced);
+    assert.deepEqual(names(selection), ["word0", "word1", "I am tired.", "I am happy."]);
+  });
+
+  it("fills the call with sentences when the student has no words at all", () => {
+    const sentences = Array.from({ length: 12 }, (_, index) => item(`I like toy number ${index}.`, "sentence", "2026-11-20T10:00:00"));
+    assert.equal(selectCallItems(sentences).items.length, 10);
   });
 });
 

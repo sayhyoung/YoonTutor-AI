@@ -118,11 +118,38 @@ export type CallPlanSelection = {
   items: LearningHistoryItem[];
 };
 
+type CallPick = { main: LearningHistoryItem[]; extra: LearningHistoryItem[] };
+
+// 단어와 문장을 번갈아 하나씩 고른다(10문항이면 5:5). main은 이번 통화에서 꼭 볼 표현이고,
+// extra는 한쪽이 모자랄 때 그 종류만 다른 종류 수만큼 채우는 표현이다(통화가 쓸데없이 길어지지 않게).
+// 한쪽 종류가 아예 없거나 다 떨어지면 남은 자리는 다른 종류의 main으로 채운다. 결과는 단어 먼저, 문장 나중.
+function pickWordsAndSentences(words: CallPick, sentences: CallPick, maxTargets: number): LearningHistoryItem[] {
+  const pools = {
+    word: { main: [...words.main], extra: [...words.extra] },
+    sentence: { main: [...sentences.main], extra: [...sentences.extra] },
+  };
+  const picked: Record<"word" | "sentence", LearningHistoryItem[]> = { word: [], sentence: [] };
+  while (picked.word.length + picked.sentence.length < maxTargets) {
+    const order = picked.word.length <= picked.sentence.length ? (["word", "sentence"] as const) : (["sentence", "word"] as const);
+    const type = order.find((kind) => {
+      const other = kind === "word" ? "sentence" : "word";
+      return pools[kind].main.length > 0 || (pools[kind].extra.length > 0 && picked[kind].length < picked[other].length);
+    });
+    if (!type) break;
+    const pool = pools[type];
+    picked[type].push((pool.main.length > 0 ? pool.main : pool.extra).shift()!);
+  }
+  return [...picked.word, ...picked.sentence];
+}
+
 // 출제 규칙
 // 1. 새 학습 우선: 표현을 마지막으로 통화에서 연습한 뒤(또는 한 번도 연습 안 한 상태에서) 학습 차시에서 또 틀린 표현.
 //    최근 학습한 차시부터, 차시 안에서는 학습 순서대로. 여러 차시를 학습했으면 모두 내되 최대 10문항.
-// 2. 새 학습이 없으면 복습 필요: 가장 최근 통화 결과가 틀림(먼저)·힌트로 완료·넘김인 표현. 오래전에 연습한 것부터, 최대 10문항.
-// 3. 그것도 없으면(모두 맞힘) 가장 오래전에 연습한 표현 3개를 돌아가며 다시 본다.
+// 2. 복습 필요: 가장 최근 통화 결과가 틀림(먼저)·힌트로 완료·넘김인 표현. 오래전에 연습한 것부터.
+//    새 학습이 10문항보다 적으면 남는 자리를 이 표현으로 채우고, 새 학습이 없으면 이 표현만 최대 10문항.
+// 3. 둘 다 없으면(모두 맞힘) 가장 오래전에 연습한 표현 3개를 돌아가며 다시 본다.
+// 어느 경우든 단어와 문장을 반반(10문항이면 5:5) 고른다. 한 종류가 모자라면 그 종류는 다음 단계 표현
+// (복습 필요 → 맞힌 표현 중 오래전에 연습한 것)으로 다른 종류 수만큼 채우고, 그래도 없으면 다른 종류로 채운다.
 export function selectCallItems(
   items: LearningHistoryItem[],
   practiced: PracticeRecord[] = [],
@@ -135,29 +162,40 @@ export function selectCallItems(
     if (!seen || seen.practicedAt < record.practicedAt) latest.set(key, record);
   }
   const ranked = items.map((item, order) => ({ item, order, record: latest.get(expressionKey(item.answerEn)) }));
+  type Ranked = (typeof ranked)[number];
 
+  const isFresh = ({ item, record }: Ranked) => !record || (item.studiedAt ?? "") > record.practicedAt;
   const fresh = ranked
-    .filter(({ item, record }) => !record || (item.studiedAt ?? "") > record.practicedAt)
+    .filter(isFresh)
     .sort((a, b) => (b.item.studiedAt ?? "").localeCompare(a.item.studiedAt ?? "") || a.order - b.order);
-  if (fresh.length > 0) return { mode: "new", items: fresh.slice(0, maxTargets).map(({ item }) => item) };
 
   const outcomeRank = { retry: 0, hinted: 1, skipped: 2, correct: 3 } as const;
   const review = ranked
-    .filter(({ record }) => record && record.outcome !== "correct")
+    .filter((entry) => !isFresh(entry) && entry.record!.outcome !== "correct")
     .sort(
       (a, b) =>
         outcomeRank[a.record!.outcome] - outcomeRank[b.record!.outcome] ||
         a.record!.practicedAt.localeCompare(b.record!.practicedAt) ||
         a.order - b.order,
     );
-  if (review.length > 0) return { mode: "review", items: review.slice(0, maxTargets).map(({ item }) => item) };
 
-  const rotation = [...ranked].sort(
-    (a, b) => (a.record?.practicedAt ?? "").localeCompare(b.record?.practicedAt ?? "") || a.order - b.order,
-  );
-  if (rotation.length > 0) {
-    return { mode: "rotation", items: rotation.slice(0, Math.min(ROTATION_TARGETS, maxTargets)).map(({ item }) => item) };
-  }
+  const mastered = ranked
+    .filter((entry) => !isFresh(entry) && entry.record!.outcome === "correct")
+    .sort((a, b) => a.record!.practicedAt.localeCompare(b.record!.practicedAt) || a.order - b.order);
+
+  const byType = (list: Ranked[], word: boolean) =>
+    list.filter(({ item }) => (item.sourceType === "word") === word).map(({ item }) => item);
+  const pick = (main: Ranked[], extra: Ranked[], limit: number) =>
+    pickWordsAndSentences(
+      { main: byType(main, true), extra: byType(extra, true) },
+      { main: byType(main, false), extra: byType(extra, false) },
+      limit,
+    );
+
+  // 종류마다 새 학습을 먼저 담고, 모자란 자리는 복습 필요 표현으로 채운다.
+  if (fresh.length > 0) return { mode: "new", items: pick([...fresh, ...review], mastered, maxTargets) };
+  if (review.length > 0) return { mode: "review", items: pick(review, mastered, maxTargets) };
+  if (mastered.length > 0) return { mode: "rotation", items: pick(mastered, [], Math.min(ROTATION_TARGETS, maxTargets)) };
   return { mode: "empty", items: [] };
 }
 
@@ -171,9 +209,8 @@ export function buildCallPlanFromLearningItems({
   maxTargets = MAX_CALL_TARGETS,
   practiced = [],
 }: BuildCallPlanInput): CallPlan {
-  // 고르는 순서(우선순위)는 그대로 두고, 통화에서는 단어 복습을 문장 복습보다 먼저 묻는다.
-  const picked = selectCallItems(items, practiced, maxTargets).items;
-  const selected = [...picked.filter((item) => item.sourceType === "word"), ...picked.filter((item) => item.sourceType !== "word")];
+  // 고른 문항은 이미 단어 먼저, 문장 나중 순서다(종류 안에서는 우선순위 순).
+  const selected = selectCallItems(items, practiced, maxTargets).items;
 
   return {
     id,

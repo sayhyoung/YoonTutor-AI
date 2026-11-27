@@ -105,7 +105,7 @@ export function StudentReport({ student, onBack }: { student: TeacherStudentRow;
   const plannedItems = planned ? planned.items.slice(0, plannedDiary ? MAX_CALL_TARGETS - 1 : MAX_CALL_TARGETS) : [];
   const plannedNote =
     planned?.mode === "new"
-      ? "새로 학습한 차시의 오답"
+      ? "새로 학습한 차시의 오답 먼저, 모자라면 복습이 필요한 표현"
       : planned?.mode === "review"
         ? "새 학습이 없어 복습이 필요한 표현"
         : planned?.mode === "rotation"
